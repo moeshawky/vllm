@@ -305,7 +305,163 @@ def resolve_kv_cache_layout(
     logger.info_once("Using %s KV cache layout.", layout.name)
     cache_config.kv_cache_layout = layout.name
     return layout
+# ---------------------------------------------------------------------------
+# Backward-compatibility shims for pre-6-value KV cache layout API
+# ---------------------------------------------------------------------------
+# At d626108 utils.py exposed get_kv_cache_layout() / set_kv_cache_layout()
+# with Literal["NHD","HND"] and a module-global _KV_CACHE_LAYOUT_OVERRIDE.
+# Commit 8bdc70ec7 (#51718) replaced that with a 6-value KVCacheLayout enum
+# (LBNHC, LBHNC, BLHNC, BLNHC, BHLNC, LHBNC) plus record_kv_cache_layout() /
+# resolve_kv_cache_layout() backed by CacheConfig.kv_cache_layout. Consumer
+# tpu_inference/runner/kv_cache_manager.py:33 still imports get/set and calls
+# set(DEFAULT="NHD") at :749. Without shims the cold-start import fails
+# (ImportError: cannot import name 'get_kv_cache_layout') even though the
+# engine is the provider and the consumer is the pinned commit. Shims below
+# restore the 2-value surface as alias-aware delegates to the new state.
 
+_KV_CACHE_LAYOUT_OVERRIDE: str | None = None
+
+
+def get_kv_cache_layout() -> str | None:
+    """Return the currently resolved KV cache layout name.
+
+    Backward-compat shim for ``tpu_inference.runner.kv_cache_manager`` and
+    other callers pinned to the 2-value ``"NHD" / "HND"`` surface at
+    d626108. Delegates to the new 6-value state when available and falls
+    back to the legacy global / env / connector chain.
+
+    Priority:
+        1. ``CacheConfig.kv_cache_layout`` from the current
+           :class:`vllm.config.VllmConfig` (via
+           :func:`vllm.config.get_current_vllm_config_or_none`) when a config
+           context is active (engine core / worker) — authoritative once the
+           engine resolves it.
+        2. Module-global ``_KV_CACHE_LAYOUT_OVERRIDE`` set via
+           :func:`set_kv_cache_layout` (legacy explicit override; a stale
+           value can never mask a resolved config).
+        3. ``VLLM_KV_CACHE_LAYOUT`` env var (``vllm.envs``).
+        4. KV connector required layout
+           (:func:`vllm.distributed.kv_transfer.kv_connector.utils.get_kv_connector_cache_layout`).
+        5. Fallback to ``_DEFAULT_LAYOUT_PREFERENCE[0]`` (``"LBNHC"``, alias
+           ``"NHD"``) — preserves cold-start behavior where the old code would
+           return ``None`` and the TPU consumer would immediately
+           ``set(DEFAULT="NHD")``; new callers get a concrete default.
+
+    Args:
+        None
+
+    Returns:
+        Layout name string (one of ``"LBNHC"``, ``"LBHNC"``, ``"BLHNC"``,
+        ``"BLNHC"``, ``"BHLNC"``, ``"LHBNC"`` or legacy aliases ``"NHD"``
+        → ``LBNHC``, ``"HND"`` → ``LBHNC``). A resolved
+        ``CacheConfig.kv_cache_layout`` always wins over the module-global
+        ``_KV_CACHE_LAYOUT_OVERRIDE``. ``None`` only when every tier misses,
+        including the cold-start default table.
+
+    Raises:
+        None directly; invalid env/connector values propagate as ``ValueError``
+        from ``_layout_from_name`` only when the caller subsequently calls
+        :func:`set_kv_cache_layout` or :func:`record_kv_cache_layout`.
+
+    Invariants:
+        - Thread-safe for reads (no lock; global read is atomic in CPython).
+        - Idempotent; repeated calls without intervening :func:`set_kv_cache_layout`
+          return the same value.
+        - Never mutates ``CacheConfig``.
+    """
+    # 1. engine-resolved config state (authoritative once engine resolves)
+    try:
+        from vllm.config import get_current_vllm_config_or_none
+
+        cfg = get_current_vllm_config_or_none()
+        if cfg is not None:
+            layout = cfg.cache_config.kv_cache_layout
+            if layout is not None:
+                return layout
+    except Exception:
+        pass
+    # 2. legacy override fallback (stale values never mask resolved config)
+    if _KV_CACHE_LAYOUT_OVERRIDE is not None:
+        return _KV_CACHE_LAYOUT_OVERRIDE
+    # 3. env
+    try:
+        if envs.VLLM_KV_CACHE_LAYOUT is not None:
+            return envs.VLLM_KV_CACHE_LAYOUT
+    except Exception:
+        pass
+    # 4. connector
+    try:
+        conn = get_kv_connector_cache_layout()
+        if conn is not None:
+            return conn
+    except Exception:
+        pass
+    # 5. cold-start default
+    try:
+        return _DEFAULT_LAYOUT_PREFERENCE[0].name
+    except Exception:
+        return None
+
+
+def set_kv_cache_layout(layout: str | None) -> None:
+    """Set the KV cache layout (backward-compat shim).
+
+    Accepts both legacy aliases (``"NHD"`` → ``LBNHC``, ``"HND"`` → ``LBHNC``)
+    and the 6-value canonical names. When a :class:`vllm.config.VllmConfig`
+    context is active, delegates to :func:`record_kv_cache_layout` so the new
+    ``CacheConfig.kv_cache_layout`` is the source of truth; otherwise stores
+    the (canonicalized) name in the module-global
+    ``_KV_CACHE_LAYOUT_OVERRIDE`` for :func:`get_kv_cache_layout` to return.
+
+    Args:
+        layout: Layout name string. Must be one of ``KVCacheLayout`` member
+            names (``"LBNHC"``, ``"LBHNC"``, ``"BLHNC"``, ``"BLNHC"``,
+            ``"BHLNC"``, ``"LHBNC"``) or legacy aliases ``"NHD"``/``"HND"``,
+            or ``None`` to clear the override (mirrors d626108 behavior where
+            ``None`` cleared ``_KV_CACHE_LAYOUT_OVERRIDE`` and
+            ``get_kv_cache_layout.cache_clear()``).
+
+    Returns:
+        None
+
+    Raises:
+        ValueError: If ``layout`` is not a known layout name/alias, or if a
+            layout is already resolved to a different value on the current
+            ``CacheConfig`` (via :func:`record_kv_cache_layout`).
+
+    Invariants:
+        - Thread-safe for the global fallback (CPython atomic assignment).
+        - Idempotent when called with the same ``layout`` repeatedly.
+        - When ``VllmConfig`` is present, ``CacheConfig.kv_cache_layout``
+          becomes the authoritative store; the global mirrors it.
+    """
+    global _KV_CACHE_LAYOUT_OVERRIDE
+    if layout is None:
+        _KV_CACHE_LAYOUT_OVERRIDE = None
+        return
+    # Validate / canonicalize via new helper (handles NHD→LBNHC alias)
+    try:
+        canonical = _layout_from_name(layout).name
+    except ValueError:
+        raise ValueError(
+            f"Unknown KV cache layout {layout!r}. Valid layouts: "
+            f"{[m.name for m in KVCacheLayout]} (plus legacy aliases "
+            f"NHD→LBNHC, HND→LBHNC)."
+        ) from None
+    # Try new path first
+    try:
+        from vllm.config import get_current_vllm_config_or_none
+
+        cfg = get_current_vllm_config_or_none()
+        if cfg is not None:
+            record_kv_cache_layout(cfg.cache_config, canonical)
+            _KV_CACHE_LAYOUT_OVERRIDE = canonical
+            return
+    except ValueError:
+        raise
+    except Exception:
+        pass
+    _KV_CACHE_LAYOUT_OVERRIDE = canonical
 
 @dataclass
 class PerLayerParameters:
