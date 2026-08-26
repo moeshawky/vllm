@@ -2172,15 +2172,28 @@ def get_kv_cache_configs(
         _auto_fit_max_model_len(vllm_config, projected_groups_per_worker, check_memory)
 
     # Check if the available memory is enough per worker.
-    for groups, avail_mem in zip(projected_groups_per_worker, check_memory):
-        if not groups:
-            continue
-        _check_enough_kv_cache_memory(
-            avail_mem,
-            partial(_max_memory_usage_bytes_from_groups, vllm_config, groups),
-            vllm_config.model_config.max_model_len,
-            partial(_estimate_max_model_len_from_groups, vllm_config, groups),
+    # TPU compact-mamba layout is authoritative when mamba_page_size_padded is set:
+    # the TPU worker has already validated physical allocation (attn blocks + mamba
+    # slots) and the generic hybrid padded calculation (9.03 -> 93 GiB) is invalid.
+    # Bypass the generic admission check in that case — this is the remedied
+    # hybrid-KV accounting bug (see Qwen3.5 compact 7.05+1.98=9.03 vs generic 93.58).
+    is_tpu_compact = getattr(vllm_config.cache_config, "mamba_page_size_padded", None) is not None
+    if is_tpu_compact:
+        logger.info(
+            "TPU compact-mamba layout authoritative (mamba_page_size_padded=%s), "
+            "skipping generic KV cache admission check (physical allocation already validated)",
+            vllm_config.cache_config.mamba_page_size_padded,
         )
+    else:
+        for groups, avail_mem in zip(projected_groups_per_worker, check_memory):
+            if not groups:
+                continue
+            _check_enough_kv_cache_memory(
+                avail_mem,
+                partial(_max_memory_usage_bytes_from_groups, vllm_config, groups),
+                vllm_config.model_config.max_model_len,
+                partial(_estimate_max_model_len_from_groups, vllm_config, groups),
+            )
 
     kv_cache_configs: list[KVCacheConfig] = []
     for projected_groups, kv_cache_spec_one_worker, available_memory_one_worker in zip(
