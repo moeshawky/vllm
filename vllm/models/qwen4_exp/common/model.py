@@ -80,7 +80,13 @@ from vllm.v1.kv_cache_interface import MambaSpec
 
 from ..config import Qwen4ExpConfig
 from .hyperconnection import GatedResidual, HyperConnectionConfig
-from .mtp import Qwen4ExpMTP
+try:
+    from ..nvidia.mtp import Qwen4ExpMTP
+except ImportError:
+    # Device MTP module (nvidia/amd) is incomplete in this checkout
+    # (missing low_latency_gemm / model_state). MTP is disabled for this
+    # test, so the class is only required when mtp_num_layers > 0.
+    Qwen4ExpMTP = None
 
 try:
     from .ple_layer import Qwen4ExpPLELayer
@@ -456,13 +462,12 @@ class Qwen4ExpModel(nn.Module):
 
 
 class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
-    def __init__(
-        self,
-        config: Qwen4ExpConfig,
-        vllm_config: VllmConfig,
-        quant_config: QuantizationConfig | None = None,
-    ) -> None:
-        super().__init__(config, vllm_config, quant_config)
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "model") -> None:
+        nn.Module.__init__(self)
+        config: Qwen4ExpConfig = vllm_config.model_config.hf_config
+        quant_config = vllm_config.quant_config
+        self.config = config
+        self.model_config = vllm_config.model_config
         self.model = Qwen4ExpModel(config, vllm_config, quant_config)
         self.lm_head = ParallelLMHead(
             config.text_config.hidden_size,
@@ -544,7 +549,6 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
             inputs["multimodal_features"] = multimodal_features
         return inputs
 
-    @support_torch_compile
     def forward_with_torch_compile(
         self,
         input_ids: torch.Tensor,

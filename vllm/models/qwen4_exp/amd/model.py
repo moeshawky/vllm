@@ -21,7 +21,6 @@ from vllm.model_executor.layers.mamba.gdn.qwen_gdn_linear_attn import (
 from vllm.model_executor.layers.mamba.mamba_utils import (
     MambaStateCopyFunc,
     MambaStateCopyFuncCalculator,
-    MambaStateCopyFuncsByType,
     MambaStateDtypeCalculator,
     MambaStateShapeCalculator,
 )
@@ -759,7 +758,7 @@ class Qwen4ExpForCausalLM(
     def get_mamba_state_copy_funcs(
         cls,
         mamba_types: set[MambaAttentionBackendEnum],
-    ) -> MambaStateCopyFuncsByType:
+    ) -> dict[MambaAttentionBackendEnum, tuple[MambaStateCopyFunc, MambaStateCopyFunc]]:
         copy_funcs_by_type = {
             MambaAttentionBackendEnum.GDN_ATTN: cls.get_mamba_state_copy_func(),
             MambaAttentionBackendEnum.SHORT_CONV: (
@@ -1037,7 +1036,7 @@ class Qwen4ExpForConditionalGeneration(
     def get_mamba_state_copy_funcs(
         cls,
         mamba_types: set[MambaAttentionBackendEnum],
-    ) -> MambaStateCopyFuncsByType:
+    ) -> dict[MambaAttentionBackendEnum, tuple[MambaStateCopyFunc, MambaStateCopyFunc]]:
         return Qwen4ExpForCausalLM.get_mamba_state_copy_funcs(mamba_types)
 
     @classmethod
