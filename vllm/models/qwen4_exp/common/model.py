@@ -578,6 +578,12 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
         )
 
 
+class Qwen4ExpForCausalLM(Qwen4ExpForConditionalGeneration):
+    """Device-agnostic causal-LM variant; aliases the conditional-generation model."""
+
+    pass
+
+
 __all__ = [
     "Qwen4ExpForConditionalGeneration",
     "Qwen4ExpForCausalLM",
