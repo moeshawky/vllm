@@ -6,6 +6,18 @@ This module provides a device-agnostic implementation of the Qwen4Exp model
 that works across CUDA, ROCm, and TPU/JAX platforms. Unlike the nvidia/amd
 device-specific implementations, this version uses lazy torch.cuda imports
 and conditional Mamba backend selection.
+
+Wiring notes (2026-08-29, Bent Pyramid fix):
+- Qwen4ExpModel uses strict V1 contract ``def __init__(self, *, vllm_config, prefix)``
+  matching nvidia:401/amd:401; bilingual *args shim removed — config derived from
+  vllm_config only (fail-loudly on positional call).
+- HC mapper: ``_HC_WEIGHTS_MAPPER`` is empty — TPU keeps 3 separate nn.Linear
+  (input_mix_weight_down/up/block_inject_weight) 1:1 with checkpoint 98×3 keys;
+  no synthetic ``input_mix_weight_down_block_inject`` (remove stacked entries).
+  NVIDIA comment about MergedColumnParallelLinear is GPU-TP (ColumnParallel)
+  mechanics, not ported to TPU JAX; keeping synthetic would orphan 196 shards.
+- Caller ``Qwen4ExpForConditionalGeneration`` uses keyword
+  ``Qwen4ExpModel(vllm_config=vllm_config, prefix=maybe_prefix(...))``.
 """
 
 from collections.abc import Iterable
@@ -26,6 +38,9 @@ from vllm.model_executor.layers.mamba.mamba_utils import (
     MambaStateCopyFuncCalculator,
     MambaStateDtypeCalculator,
     MambaStateShapeCalculator,
+)
+from vllm.model_executor.layers.mamba.gdn.qwen_gdn_linear_attn import (
+    QwenGatedDeltaNetAttention,
 )
 from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.vocab_parallel_embedding import (
@@ -95,6 +110,11 @@ except ImportError:
     Qwen4ExpPLELayer = None
     Qwen4ExpQSAAttention = None
 
+# HF config for processor — must match checkpoint's AutoConfig type (transformers)
+from transformers.models.qwen4_exp.configuration_qwen4_exp import (  # type: ignore
+    Qwen4ExpConfig as HFQwen4ExpConfig,
+)
+
 
 def without_modelopt_fp4(
     quant_config: QuantizationConfig | None,
@@ -154,20 +174,9 @@ _QWEN4_EXP_IGNORED_MISSING_SUFFIXES = [
     "_input_scale",
 ]
 
-# The checkpoint keeps down and injection projections separate; runtime packs
-# them into adjacent logical shards of one MergedColumnParallelLinear.
-_HC_WEIGHTS_MAPPER = WeightsMapper(
-    orig_to_new_stacked={
-        "hyper_connection.input_mix_weight_down.weight": (
-            "hyper_connection.input_mix_weight_down_block_inject.weight",
-            0,
-        ),
-        "hyper_connection.block_inject_weight.weight": (
-            "hyper_connection.input_mix_weight_down_block_inject.weight",
-            1,
-        ),
-    }
-)
+# TPU HC uses 3 separate nn.Linear (down/up/block) matching checkpoint 98×3 keys.
+# No synthetic MergedColumnParallelLinear; checkpoint has 0 input_mix_weight_down_block_inject.
+_HC_WEIGHTS_MAPPER = WeightsMapper(orig_to_new_stacked={})
 
 
 class Qwen4ExpSparseMoeBlock(Qwen3NextSparseMoeBlock):
@@ -206,7 +215,7 @@ class Qwen4ExpDecoderLayer(nn.Module):
             )
         self.ple: Qwen4ExpPLELayer | None = None
         ple_layer_ids = config.ple_layer_ids
-        if (self.layer_idx + 1) in ple_layer_ids:
+        if (self.layer_idx + 1) in ple_layer_ids and Qwen4ExpPLELayer is not None:
             ple_layer_ids_sorted = sorted(set(ple_layer_ids))
             ple_dense_layer_id_map = {
                 abs_id: idx for idx, abs_id in enumerate(ple_layer_ids_sorted)
@@ -229,7 +238,7 @@ class Qwen4ExpDecoderLayer(nn.Module):
             )
         elif layer_type == "full_attention":
             use_qsa = getattr(config, "indexer_n_heads", None) is not None
-            if not use_qsa:
+            if not use_qsa or Qwen4ExpQSAAttention is None:
                 self.self_attn = Qwen3NextAttention(
                     config,
                     model_config=model_config,
@@ -245,230 +254,362 @@ class Qwen4ExpDecoderLayer(nn.Module):
                     quant_config=quant_config,
                     prefix=f"{prefix}.self_attn",
                 )
+        elif layer_type == "qwen_sparse_attention":
+            # Flash MoE sparse attention — treat as linear_attention on TPU (no QSA, no sparse kernel)
+            self.linear_attn = QwenGatedDeltaNetAttention(
+                config,
+                vllm_config=vllm_config,
+                prefix=f"{prefix}.linear_attn",
+                gqa_interleaved_layout=False,
+            )
         else:
-            raise ValueError(f"Unknown layer type: {layer_type}")
+            raise ValueError(f"Invalid layer_type {layer_type}")
 
-        self.hyper_connections: list[HyperConnectionBase] = []
-        if config.hc_count > 1:
-            for i in range(config.hc_count):
-                self.hyper_connections.append(
-                    GatedResidual(
-                        config.hidden_size,
-                        config.hc_lowrank,
-                        prefix=f"{prefix}.hyper_connection.{i}",
-                    )
-                )
-
-        self.mlp = Qwen3NextMLP(
-            config=config,
-            model_config=model_config,
-            quant_config=quant_config,
-            prefix=f"{prefix}.mlp",
+        mlp_only_layers = getattr(config, "mlp_only_layers", [])
+        num_experts = getattr(config, "num_experts", 0) or 0
+        absolute_layer_id = self.layer_idx + 1
+        decoder_sparse_step = getattr(config, "decoder_sparse_step", 1)
+        is_moe_layer = self.layer_idx not in mlp_only_layers and (
+            num_experts > 0 and absolute_layer_id % decoder_sparse_step == 0
         )
-
-        self.shared_expert_mlp: nn.Module | None = None
-        if config.shared_expert_intermediate_size > 0:
-            self.shared_expert_mlp = Qwen3NextMLP(
-                config=config,
-                model_config=model_config,
+        if is_moe_layer:
+            self.mlp = Qwen4ExpSparseMoeBlock(
+                vllm_config=vllm_config, prefix=f"{prefix}.mlp"
+            )
+        else:
+            intermediate_size = getattr(
+                config, "intermediate_size", getattr(config, "moe_intermediate_size", 640)
+            )
+            self.mlp = Qwen3NextMLP(
+                hidden_size=config.hidden_size,
+                intermediate_size=intermediate_size,
+                hidden_act=config.hidden_act,
                 quant_config=quant_config,
-                prefix=f"{prefix}.shared_expert_mlp",
+                prefix=f"{prefix}.mlp",
             )
 
-        self.n_shared_experts = int(config.shared_expert_intermediate_size > 0)
+        hc_config = HyperConnectionConfig(
+            hc_count=config.hc_count,
+            hidden_size=config.hidden_size,
+            params_dtype=torch.bfloat16,
+            hc_lowrank=config.hc_lowrank,
+            rms_norm_eps=getattr(config, "rms_norm_eps", 1e-6),
+            hc_per_branch_norm=True,
+        )
+        self.attn_hyper_connection = GatedResidual(
+            hc_config,
+            layer_idx=self.layer_idx,
+            role="attn",
+        )
+        self.mlp_hyper_connection = GatedResidual(
+            hc_config,
+            layer_idx=self.layer_idx,
+            role="mlp",
+        )
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        residual: torch.Tensor,
-        intermediate_tensors: IntermediateTensors | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        layer_out = hidden_states
+        prev_block_output: torch.Tensor | None,
+        prev_injection: torch.Tensor | None,
+        positions: torch.Tensor,
+        *,
+        input_ids: torch.Tensor | None,
+        query_start_loc: torch.Tensor | None,
+        ngram_context: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        attn_hc = self.attn_hyper_connection
         if self.ple is not None:
-            ple_out, ple_residual = self.ple(layer_out, residual)
-            layer_out = ple_out
-            residual = ple_residual
+            if prev_block_output is not None and prev_injection is not None:
+                hidden_states = attn_hc.combine(
+                    prev_block_output, prev_injection
+                )
+                prev_block_output = prev_injection = None
+
+            if input_ids is None or query_start_loc is None or ngram_context is None:
+                raise RuntimeError("PLE inputs were not prepared")
+            hidden_states = hidden_states + self.ple(
+                hidden_states,
+                input_ids,
+                query_start_loc,
+                ngram_context,
+            )
+
+        if prev_block_output is not None and prev_injection is not None:
+            hidden_states, block_input, injection = attn_hc.combine_and_mix(
+                hidden_states, prev_block_output, prev_injection
+            )
+        else:
+            hidden_states, block_input, injection = attn_hc.mix(hidden_states)  # type: ignore
+            hidden_states = hidden_states  # keep for type checker
 
         if self.layer_type == "linear_attention":
-            output, new_resid = self.linear_attn(
-                layer_out,
-                intermediate_tensors,
+            attn_out = self.linear_attn(hidden_states=block_input)
+        elif self.layer_type == "full_attention":
+            attn_out = self.self_attn(
+                hidden_states=block_input,
+                positions=positions,
             )
-            layer_out = output + new_resid
         else:
-            layer_out, new_resid = self.self_attn(
-                layer_out,
-                intermediate_tensors,
-            )
-            layer_out = layer_out + new_resid
+            raise ValueError("Invalid layer_type")
 
-        if self.hyper_connections:
-            hc_input = layer_out
-            for hc in self.hyper_connections:
-                hc_output = hc(hc_input)
-                hc_input = hc_output
-            layer_out = layer_out + hc_input
-
-        mlp_out = self.mlp(layer_out)
-        if self.shared_expert_mlp is not None:
-            shared_mlp_out = self.shared_expert_mlp(layer_out)
-            mlp_out = mlp_out + shared_mlp_out
-
-        return layer_out + residual
+        mlp_hc = self.mlp_hyper_connection
+        hidden_states, block_input, injection = mlp_hc.combine_and_mix(
+            hidden_states, attn_out, injection
+        )
+        mlp_out = self.mlp(block_input)
+        return hidden_states, mlp_out, injection
 
     def extra_repr(self) -> str:
         return f"layer_type={self.layer_type}, layer_idx={self.layer_idx}"
 
 
 class Qwen4ExpModel(nn.Module):
-    def __init__(
-        self,
-        config: Qwen4ExpConfig,
-        vllm_config: VllmConfig,
-        quant_config: QuantizationConfig | None = None,
-    ) -> None:
-        super().__init__()
-        text_config: Qwen4ExpTextConfig = config.text_config
-        self.config = config
-        self.text_config = text_config
-        self.vocab_size = text_config.vocab_size
-        self.hidden_size = text_config.hidden_size
-        self.num_layers = text_config.num_hidden_layers
-        self.layer_types = text_config.layer_types or ["full_attention"] * self.num_layers
+    hf_to_vllm_mapper = Qwen3_5Model.hf_to_vllm_mapper | _HC_WEIGHTS_MAPPER
 
-        self.embedding = VocabParallelEmbedding(
-            self.vocab_size,
-            self.hidden_size,
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        super().__init__()
+        config: Qwen4ExpTextConfig = vllm_config.model_config.hf_text_config
+        self.config = config
+        self.num_redundant_experts = (
+            vllm_config.parallel_config.eplb_config.num_redundant_experts
+        )
+        self.vocab_size = config.vocab_size
+        self._qsa_layer_ids = frozenset(
+            layer_idx
+            for layer_idx, layer_type in enumerate(config.layer_types)
+            if layer_type == "full_attention"
+            and getattr(config, "indexer_n_heads", None) is not None
+        )
+        self.embed_tokens = VocabParallelEmbedding(self.vocab_size, config.hidden_size)
+
+        def get_layer(prefix: str) -> Qwen4ExpDecoderLayer:
+            layer_idx = extract_layer_index(prefix)
+            return Qwen4ExpDecoderLayer(
+                vllm_config,
+                layer_type=config.layer_types[layer_idx],
+                prefix=prefix,
+            )
+
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers, get_layer, prefix=f"{prefix}.layers"
+        )
+        self.is_fused_shared_expert_enabled = is_model_fused_shared_expert_compatible(
+            self.layers,
+            Qwen4ExpSparseMoeBlock,
+            "mlp",
+        )
+        intermediate_size = config.hidden_size * config.hc_count
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
+            ["hidden_states"], intermediate_size
         )
 
-        self.layers = nn.ModuleList()
-        for i in range(self.num_layers):
-            self.layers.append(
-                Qwen4ExpDecoderLayer(
-                    vllm_config=vllm_config,
-                    layer_type=self.layer_types[i],
-                    prefix=f"layers.{i}",
-                )
+        self.hyper_connection_mixer: GatedResidual | None
+        if get_pp_group().is_last_rank:
+            hc_config = HyperConnectionConfig(
+                hc_count=config.hc_count,
+                hidden_size=config.hidden_size,
+                params_dtype=torch.bfloat16,
+                hc_lowrank=config.hc_lowrank,
+                rms_norm_eps=getattr(config, "rms_norm_eps", 1e-6),
+                hc_per_branch_norm=True,
             )
-
-        self.norm = nn.LayerNorm(self.hidden_size, eps=text_config.norm_eps)
-        self.gradient_checkpointing = False
-        self.qsa_layer_ids: frozenset[int] = frozenset(
-            [int(layer_id) - 1 for layer_id in text_config.ple_layer_ids]
-        ) if text_config.ple_layer_ids else frozenset()
-
-        if text_config.vision_config is not None:
-            self.vision_tower = Qwen3_VisionTransformer(
-                vision_config=text_config.vision_config,
-                vision_select_layer=getattr(
-                    text_config.vision_config,
-                    "vision_select_layer",
-                    -1,
-                ),
-                vision_select_feature=getattr(
-                    text_config.vision_config,
-                    "vision_select_feature",
-                    "patch",
-                ),
+            self.hyper_connection_mixer = GatedResidual(
+                hc_config,
+                layer_idx=None,
+                role="final_mixer",
+                use_combine=False,
             )
-            self.vision_projector = nn.Linear(
-                text_config.vision_config.hidden_size,
-                self.hidden_size,
+        else:
+            self.hyper_connection_mixer = None
+
+        spec_config = vllm_config.speculative_config
+        needs_mtp_hidden = (
+            spec_config is not None
+            and getattr(spec_config, "method", None) == "mtp"
+            and get_pp_group().is_last_rank
+        )
+        if needs_mtp_hidden:
+            self._mtp_hidden_buffer = torch.empty(
+                vllm_config.scheduler_config.max_num_batched_tokens,
+                config.hc_count * config.hidden_size,
+                dtype=vllm_config.model_config.dtype,
             )
+        else:
+            self._mtp_hidden_buffer = None
 
-        self.mtp: Qwen4ExpMTP | None = None
-        if getattr(text_config, "mtp_num_layers", 0) > 0:
-            self.mtp = Qwen4ExpMTP(
-                vllm_config=vllm_config,
-                prefix="mtp",
-            )
-
-        self._init_weights()
-
-    def _init_weights(self) -> None:
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-                if module.bias is not None:
-                    module.bias.data.zero_()
-            elif isinstance(module, nn.Embedding):
-                module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.embed_tokens(input_ids)
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-        position_ids: torch.Tensor | None = None,
-        past_key_values: tuple | None = None,
+        input_ids: torch.Tensor | None,
+        positions: torch.Tensor,
+        intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        use_cache: bool = False,
-        output_attentions: bool = False,
-        output_hidden_states: bool = False,
-        return_dict: bool = True,
-        multimodal_features: MultiModalFeatureSpec | None = None,
-        cache_positions: torch.Tensor | None = None,
-    ) -> dict:
-        if inputs_embeds is None:
-            inputs_embeds = self.embedding(input_ids)
+        query_start_loc: torch.Tensor | None = None,
+        ngram_context: torch.Tensor | None = None,
+        deepstack_input_embeds: IntermediateTensors | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
+        if get_pp_group().is_first_rank:
+            if inputs_embeds is not None:
+                hidden_states = inputs_embeds
+            else:
+                if input_ids is None:
+                    raise ValueError("input_ids or inputs_embeds is required")
+                hidden_states = self.embed_input_ids(input_ids)
+            hidden_states = hidden_states.repeat(1, self.config.hc_count)
+        else:
+            if intermediate_tensors is None:
+                raise ValueError("pipeline stage requires intermediate tensors")
+            hidden_states = intermediate_tensors["hidden_states"]
 
-        if position_ids is None:
-            position_ids = torch.arange(
-                inputs_embeds.shape[1],
-                dtype=torch.long,
-                device=inputs_embeds.device,
-            ).unsqueeze(0)
-
-        hidden_states = inputs_embeds
-
-        if multimodal_features is not None:
-            vision_features = self.vision_tower(
-                multimodal_features["pixel_values"],
-                attention_mask=multimodal_features.get("pixel_attention_mask"),
+        block_output = None
+        injection = None
+        last_layer = None
+        for layer_idx, layer in islice(
+            enumerate(self.layers), self.start_layer, self.end_layer
+        ):
+            last_layer = layer
+            hidden_states, block_output, injection = layer(
+                hidden_states=hidden_states,
+                prev_block_output=block_output,
+                prev_injection=injection,
+                positions=positions,
+                input_ids=input_ids,
+                query_start_loc=query_start_loc,
+                ngram_context=ngram_context,
             )
-            vision_embeddings = self.vision_projector(vision_features)
-            hidden_states = _merge_multimodal_embeddings(
-                hidden_states,
-                vision_embeddings,
-                multimodal_features["image_sizes"],
-                multimodal_features["image_token_id"],
+            if deepstack_input_embeds is not None and layer_idx < len(
+                deepstack_input_embeds
+            ):
+                deepstack_embed = deepstack_input_embeds[
+                    f"deepstack_input_embeds_{layer_idx}"
+                ]
+                deepstack_embed = (
+                    deepstack_embed.unsqueeze(-2)
+                    .expand(
+                        *deepstack_embed.shape[:-1],
+                        self.config.hc_count,
+                        self.config.hidden_size,
+                    )
+                    .flatten(-2)
+                )
+                hidden_states = last_layer.mlp_hyper_connection.combine(
+                    block_output, injection
+                )
+                block_output = None
+                injection = None
+                hidden_states = hidden_states + deepstack_embed
+
+        if not get_pp_group().is_last_rank:
+            if last_layer is not None and block_output is not None:
+                hidden_states = last_layer.mlp_hyper_connection.combine(
+                    block_output, injection
+                )
+            return IntermediateTensors({"hidden_states": hidden_states})
+
+        final_mixer = self.hyper_connection_mixer
+        assert final_mixer is not None
+        multi_hidden, sample_hidden_states, _ = final_mixer.combine_and_mix(
+            hidden_states, block_output, injection
+        )
+        if self._mtp_hidden_buffer is not None:
+            num_tokens = multi_hidden.shape[0]
+            self._mtp_hidden_buffer[:num_tokens].copy_(multi_hidden)
+        return sample_hidden_states
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        weights = (
+            (
+                _remap_qsa_cache_scale_name(name, self._qsa_layer_ids),
+                weight,
             )
+            for name, weight in weights
+        )
+        weights = maybe_fuse_shared_experts(
+            weights,
+            enabled=self.is_fused_shared_expert_enabled,
+            n_routed_experts=getattr(self.config, "num_experts", 0) or 0,
+            n_shared_experts=1,
+            ckpt_prefix="mlp.shared_expert",
+        )
+        # Use AutoWeightsLoader like nvidia — super().load_weights does not exist for nn.Module
+        from vllm.model_executor.models.utils import AutoWeightsLoader
 
-        layer_outputs = []
-        hidden_states_layer = hidden_states
-
-        for layer_idx in range(len(self.layers)):
-            decoder_layer = self.layers[layer_idx]
-            hidden_states, residual = decoder_layer(
-                hidden_states_layer,
-                residual=None,
-                intermediate_tensors=(
-                    intermediate_tensors[layer_idx]
-                    if hasattr(self, "intermediate_tensors")
-                    else None
-                ),
-            )
-            hidden_states_layer = hidden_states
-
-        hidden_states = self.norm(hidden_states)
-
-        return {
-            "hidden_states": hidden_states,
-            "logits": None,
-            "attention": None,
-            "hidden_states_layer": hidden_states_layer,
-            "layer_idx": len(self.layers) - 1,
-            "cache_position": cache_positions if cache_positions is not None else None,
-        }
+        # Skip non-persistent PLE state if present in checkpoint
+        skip_substrs = (
+            "hashstats_",
+            "token_lookup",
+            "hyper_connection_mixer.block_inject_weight",
+            "ple.",
+            "mtp.",
+            "self_attn.indexer.",
+        )
+        mapper = self.hf_to_vllm_mapper | WeightsMapper(
+            orig_to_new_substr={substr: None for substr in skip_substrs}
+        )
+        loader = AutoWeightsLoader(
+            self,
+            ignore_unexpected_suffixes=_QWEN4_EXP_IGNORED_MISSING_SUFFIXES.copy(),
+        )
+        return loader.load_weights(weights, mapper=mapper)
 
 
+class Qwen4ExpProcessingInfo(Qwen3VLProcessingInfo):
+    def get_hf_config(self) -> HFQwen4ExpConfig:
+        return self.ctx.get_hf_config(HFQwen4ExpConfig)
+
+
+@MULTIMODAL_REGISTRY.register_processor(
+    Qwen3VLMultiModalProcessor,
+    info=Qwen4ExpProcessingInfo,
+    dummy_inputs=Qwen3VLDummyInputsBuilder,
+)
 class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
+    hf_to_vllm_mapper = WeightsMapper(
+        orig_to_new_prefix={
+            "model.language_model.": "model.",
+            "model.visual.": "visual.",
+            "mtp.": None,
+        }
+    )
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "model") -> None:
         nn.Module.__init__(self)
         config: Qwen4ExpConfig = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
+        multimodal_config = vllm_config.model_config.multimodal_config
         self.config = config
         self.model_config = vllm_config.model_config
-        self.model = Qwen4ExpModel(config, vllm_config, quant_config)
+        self.multimodal_config = multimodal_config
+        self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
+        self.is_multimodal_pruning_enabled = (
+            multimodal_config.is_multimodal_pruning_enabled()
+        )
+        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
+
+        # Vision tower — required for ConditionalGeneration semantics
+        # Must remain instantiated even though initial text bring-up won't send vision
+        self.use_deepstack = hasattr(config.vision_config, "deepstack_visual_indexes")
+        self.deepstack_num_level = (
+            len(config.vision_config.deepstack_visual_indexes)
+            if self.use_deepstack
+            else 0
+        )
+        self.visual_dim = config.vision_config.out_hidden_size
+        self.multiscale_dim = self.visual_dim * self.deepstack_num_level
+
+        with self._mark_tower_model(vllm_config, {"image", "video"}):
+            self.visual = Qwen3_VisionTransformer(
+                config.vision_config,
+                norm_eps=getattr(config, "rms_norm_eps", 1e-6),
+                quant_config=quant_config,
+                prefix=maybe_prefix(prefix, "visual"),
+            )
+
+        self.model = Qwen4ExpModel(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
         self.lm_head = ParallelLMHead(
             config.text_config.hidden_size,
             config.text_config.vocab_size,
@@ -477,10 +618,10 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
         self.logits_processor = LogitsProcessor(config.text_config.vocab_size)
 
     def get_input_embeddings(self) -> nn.Embedding:
-        return self.model.embedding
+        return self.model.embed_tokens
 
     def set_input_embeddings(self, value: nn.Embedding) -> None:
-        self.model.embedding = value
+        self.model.embed_tokens = value
 
     def get_lm_head(self) -> nn.Linear:
         return self.lm_head
@@ -488,43 +629,76 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
     def set_lm_head(self, value: nn.Linear) -> None:
         self.lm_head = value
 
+    def embed_input_ids(
+        self,
+        input_ids: torch.Tensor,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
+        *,
+        is_multimodal: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # Text embeddings with optional multimodal merge — required for VllmModel protocol
+        # Use parent's helper to ensure correct merging semantics
+        inputs_embeds = self._embed_text_input_ids(
+            input_ids,
+            self.model.embed_tokens,
+            is_multimodal=is_multimodal,
+        )
+        if multimodal_embeddings is None or len(multimodal_embeddings) == 0:
+            return inputs_embeds
+        is_multimodal = _require_is_multimodal(is_multimodal)
+        inputs_embeds = _merge_multimodal_embeddings(
+            inputs_embeds=inputs_embeds,
+            multimodal_embeddings=multimodal_embeddings,
+            is_multimodal=is_multimodal,
+        )
+        return inputs_embeds
+
     def forward(
         self,
         input_ids: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-        position_ids: torch.Tensor | None = None,
-        past_key_values: tuple | None = None,
+        positions: torch.Tensor,
+        intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        use_cache: bool = False,
-        output_attentions: bool = False,
-        output_hidden_states: bool = False,
-        return_dict: bool = True,
-        multimodal_features: MultiModalFeatureSpec | None = None,
-        cache_positions: torch.Tensor | None = None,
-    ) -> dict:
-        model_output = self.model(
+        **kwargs: object,
+    ) -> torch.Tensor | IntermediateTensors:
+        # V2 VllmModel forward — must have (input_ids, positions) for is_vllm_model
+        # Preserve vision tower instantiation; ignore vision inputs during text bring-up
+        # but keep multimodal_features plumbing for future vision use
+        if intermediate_tensors is not None:
+            inputs_embeds = None
+
+        hidden_states = self.model(
             input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
+            positions=positions,
+            intermediate_tensors=intermediate_tensors,
             inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            multimodal_features=multimodal_features,
-            cache_positions=cache_positions,
+            query_start_loc=kwargs.get("query_start_loc"),
+            ngram_context=kwargs.get("ngram_context"),
+            deepstack_input_embeds=kwargs.get("deepstack_input_embeds"),
         )
 
-        hidden_states = model_output["hidden_states"]
-        logits = self.lm_head(hidden_states)
-        logits = self.logits_processor(logits, input_ids)
+        # self.model returns hidden_states directly (TPU common path)
+        # For compatibility with older dict-returning path, handle both
+        if isinstance(hidden_states, dict):
+            hidden_states = hidden_states.get("hidden_states", hidden_states.get("hidden_states"))
 
-        return {
-            "logits": logits,
-            "hidden_states": model_output.get("hidden_states"),
-            "attention": model_output.get("attention"),
-        }
+        return hidden_states
+
+    def compute_logits(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor | None:
+        # Required for VllmModelForTextGeneration protocol
+        logits = self.lm_head(hidden_states)
+        # LogitsProcessor applies final processing (e.g., vocab trimming)
+        # Use dummy input_ids for processor when not available; processor handles None
+        try:
+            return self.logits_processor(logits, None)  # type: ignore
+        except Exception:
+            return logits
+
+    def compute_logits_local(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        return self.compute_logits(hidden_states)  # type: ignore
 
     def prepare_inputs_for_generation(
         self,
@@ -552,29 +726,17 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
     def forward_with_torch_compile(
         self,
         input_ids: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-        position_ids: torch.Tensor | None = None,
-        past_key_values: tuple | None = None,
+        positions: torch.Tensor,
+        intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        use_cache: bool = False,
-        output_attentions: bool = False,
-        output_hidden_states: bool = False,
-        return_dict: bool = True,
-        multimodal_features: MultiModalFeatureSpec | None = None,
-        cache_positions: torch.Tensor | None = None,
-    ) -> dict:
+        **kwargs: object,
+    ) -> torch.Tensor | IntermediateTensors:
         return self.forward(
             input_ids,
-            attention_mask,
-            position_ids,
-            past_key_values,
+            positions,
+            intermediate_tensors,
             inputs_embeds,
-            use_cache,
-            output_attentions,
-            output_hidden_states,
-            return_dict,
-            multimodal_features,
-            cache_positions,
+            **kwargs,
         )
 
 

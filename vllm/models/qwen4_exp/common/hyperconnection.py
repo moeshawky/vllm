@@ -133,6 +133,14 @@ class HyperConnectionBase(nn.Module):
         combined = residual_reshaped + block_output.unsqueeze(-2)
         return combined.flatten(-2)
 
+    def combine_and_mix(
+        self, hidden_states: torch.Tensor, block_output: torch.Tensor, residual: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Fused combine + mix for decoder layer pipeline."""
+        hidden_states = self.combine(block_output, residual)
+        block_input, injection = self.mix(hidden_states)
+        return hidden_states, block_input, injection
+
 
 # ---------------------------------------------------------------------------
 # Gated-residual variant
@@ -240,6 +248,18 @@ class GatedResidual(HyperConnectionBase):
         )
         output = residual + block_output.unsqueeze(-2) * injection_weight.unsqueeze(-1)
         return output.flatten(-2).to(hyper_input.dtype)
+
+    def combine_and_mix(
+        self,
+        hidden_states: torch.Tensor,
+        block_output: torch.Tensor,
+        residuals: tuple[torch.Tensor, torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """Fused combine (previous block) + mix (next block) for pipeline."""
+        if hasattr(self, "block_inject_weight"):
+            hidden_states = self.combine(block_output, residuals)
+        block_input, new_residuals = self.mix(hidden_states)
+        return hidden_states, block_input, new_residuals
 
 
 __all__ = [
