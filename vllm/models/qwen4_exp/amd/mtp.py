@@ -49,8 +49,11 @@ from vllm.transformers_utils.configs.qwen4_exp import (
     Qwen4ExpTextConfig,
 )
 
-from .hyperconnection import GatedResidual, HyperConnectionConfig
-from .low_latency_gemm import enable_qwen4_exp_low_latency_gemm
+from ..common.hyperconnection import GatedResidual, HyperConnectionConfig
+try:
+    from .low_latency_gemm import enable_qwen4_exp_low_latency_gemm
+except ImportError:
+    enable_qwen4_exp_low_latency_gemm = None
 from .model import (
     _HC_WEIGHTS_MAPPER,
     _QWEN4_EXP_IGNORED_MISSING_SUFFIXES,

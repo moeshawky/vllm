@@ -40,7 +40,11 @@ def __getattr__(name: str) -> Any:
                 Qwen4ExpForCausalLM,
                 Qwen4ExpForConditionalGeneration,
             )
-            from .common.mtp import Qwen4ExpMTP
+            try:
+                from .common.mtp import Qwen4ExpMTP
+            except ImportError:
+                # MTP device-agnostic module absent in this checkout; disabled on TPU/JAX
+                Qwen4ExpMTP = None
         elif current_platform.is_rocm():
             from .amd.model import (
                 Qwen4ExpForCausalLM,
