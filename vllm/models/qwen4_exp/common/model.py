@@ -364,6 +364,17 @@ class Qwen4ExpDecoderLayer(nn.Module):
         return f"layer_type={self.layer_type}, layer_idx={self.layer_idx}"
 
 
+@support_torch_compile(
+    dynamic_arg_dims={
+        "input_ids": 0,
+        "positions": -1,
+        "intermediate_tensors": 0,
+        "inputs_embeds": 0,
+        "query_start_loc": 0,
+        "ngram_context": 0,
+        "deepstack_input_embeds": 0,
+    }
+)
 class Qwen4ExpModel(nn.Module):
     hf_to_vllm_mapper = Qwen3_5Model.hf_to_vllm_mapper | _HC_WEIGHTS_MAPPER
 
@@ -616,6 +627,9 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
             bias=False,
         )
         self.logits_processor = LogitsProcessor(config.text_config.vocab_size)
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors
+        )
 
     def get_input_embeddings(self) -> nn.Embedding:
         return self.model.embed_tokens
@@ -689,13 +703,8 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
         # Required for VllmModelForTextGeneration protocol
-        logits = self.lm_head(hidden_states)
-        # LogitsProcessor applies final processing (e.g., vocab trimming)
-        # Use dummy input_ids for processor when not available; processor handles None
-        try:
-            return self.logits_processor(logits, None)  # type: ignore
-        except Exception:
-            return logits
+        # LogitsProcessor applies lm_head + final processing (e.g., vocab trimming)
+        return self.logits_processor(self.lm_head, hidden_states)
 
     def compute_logits_local(self, hidden_states: torch.Tensor) -> torch.Tensor:
         return self.compute_logits(hidden_states)  # type: ignore
