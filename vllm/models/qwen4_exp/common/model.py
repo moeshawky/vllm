@@ -634,8 +634,8 @@ class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
 
         self.model = Qwen4ExpModel(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
         self.lm_head = ParallelLMHead(
-            config.text_config.hidden_size,
             config.text_config.vocab_size,
+            config.text_config.hidden_size,
             bias=False,
         )
         self.logits_processor = LogitsProcessor(config.text_config.vocab_size)
