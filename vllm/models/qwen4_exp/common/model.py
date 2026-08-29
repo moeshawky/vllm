@@ -255,13 +255,25 @@ class Qwen4ExpDecoderLayer(nn.Module):
                     prefix=f"{prefix}.self_attn",
                 )
         elif layer_type == "qwen_sparse_attention":
-            # Flash MoE sparse attention — treat as linear_attention on TPU (no QSA, no sparse kernel)
-            self.linear_attn = QwenGatedDeltaNetAttention(
-                config,
-                vllm_config=vllm_config,
-                prefix=f"{prefix}.linear_attn",
-                gqa_interleaved_layout=False,
-            )
+            # Qwen4Exp sparse layers are transformed full_attention (checkpoint has self_attn with indexer).
+            # No sparse kernel on TPU — fallback to dense self_attn like full_attention.
+            use_qsa = getattr(config, "indexer_n_heads", None) is not None
+            if not use_qsa or Qwen4ExpQSAAttention is None:
+                self.self_attn = Qwen3NextAttention(
+                    config,
+                    model_config=model_config,
+                    cache_config=cache_config,
+                    quant_config=quant_config,
+                    prefix=f"{prefix}.self_attn",
+                )
+            else:
+                self.self_attn = Qwen4ExpQSAAttention(
+                    vllm_config=vllm_config,
+                    config=config,
+                    layer_id=self.layer_idx,
+                    quant_config=quant_config,
+                    prefix=f"{prefix}.self_attn",
+                )
         else:
             raise ValueError(f"Invalid layer_type {layer_type}")
 
@@ -345,7 +357,7 @@ class Qwen4ExpDecoderLayer(nn.Module):
 
         if self.layer_type == "linear_attention":
             attn_out = self.linear_attn(hidden_states=block_input)
-        elif self.layer_type == "full_attention":
+        elif self.layer_type in ("full_attention", "qwen_sparse_attention"):
             attn_out = self.self_attn(
                 hidden_states=block_input,
                 positions=positions,
