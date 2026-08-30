@@ -314,7 +314,7 @@ class Qwen4ExpDecoderLayer(nn.Module):
                 hidden_states, prev_block_output, prev_injection
             )
         else:
-            hidden_states, block_input, injection = attn_hc.mix(hidden_states)
+            block_input, injection = attn_hc.mix(hidden_states)
 
         if self.layer_type == "linear_attention":
             attn_out = self.linear_attn(hidden_states=block_input)
