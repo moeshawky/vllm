@@ -39,7 +39,6 @@ kaggle-backend run vllm-tpu -- vllm serve "$MODEL" \
   --enable_prefix_caching \
   --mamba_cache_mode align \
   --enforce-eager \
-  --disable_chunked_mm_input \
   --reasoning_parser qwen3 \
   --enable_auto_tool_choice \
   --tool_call_parser qwen3_coder \
