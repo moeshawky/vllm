@@ -8,11 +8,11 @@ export TPU_WORKER_ID=0
 export TPU_WORKER_HOSTNAMES=localhost
 export TPU_PROCESS_ADDRESSES=local
 export TPU_CHIPS_PER_HOST_BOUNDS=2,4,1
-export XLA_PYTHON_CLIENT_MEM_FRACTION=0.70
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.90
 export HF_HOME=/dev/shm/huggingface
 export HF_HUB_CACHE=/dev/shm/huggingface/hub
 export VLLM_TARGET_DEVICE=tpu
-export VLLM_XLA_CACHE_PATH=/dev/shm/vllm_xla_cache_flash_tp4_bank5
+export VLLM_XLA_CACHE_PATH=/dev/shm/vllm_xla_cache_flash_tp8_262k
 export QWEN_BANK_DIR=/kaggle/input/datasets/moeshawky/qwen38-flash-expert-banks
 export MOE_EXPERT_OFFLOAD=1
 export MOE_EXPERT_OFFLOAD_SLOTS=32
@@ -22,21 +22,24 @@ export MOE_EXPERT_OFFLOAD_HOST_MEMORY_RESERVE_GIB=12
 export MOE_EXPERT_OFFLOAD_CPU_WORKING_SET_GIB=16
 export MOE_EXPERT_OFFLOAD_DISK_BACKED=0
 export MOE_EXPERT_OFFLOAD_STORE=0
-mkdir -p /dev/shm/huggingface /dev/shm/vllm_xla_cache_flash_tp4_bank5
+mkdir -p /dev/shm/huggingface /dev/shm/vllm_xla_cache_flash_tp8_262k
 MODEL=/kaggle/input/models/manarmilad/qwen3.8-flash-next-uncensored/transformers/fp8/1
-echo "[flash_tp4_bank5] $(date) start wall=$(date +%s) HEAD=$(git -C /kaggle/working/vllm-src rev-parse HEAD) tpu-inf=$(git -C /kaggle/working/tpu-inference rev-parse HEAD)"
+echo "[flash_tp8_262k] $(date -u) start wall=$(date +%s) HEAD=$(git -C /kaggle/working/vllm-src rev-parse HEAD) tpu-inf=$(git -C /kaggle/working/tpu-inference rev-parse HEAD)"
 echo "[bank] count $(ls $QWEN_BANK_DIR/layer_*.bank 2>/dev/null | wc -l) at $QWEN_BANK_DIR"
-echo "[patch] common mix fix: $(grep -n "block_input, injection = attn_hc.mix" /kaggle/working/vllm-src/vllm/models/qwen4_exp/common/model.py)"
+echo "[patch] mix $(grep -n "block_input, injection = attn_hc.mix" /kaggle/working/vllm-src/vllm/models/qwen4_exp/common/model.py)"
+echo "[config] max_position_embeddings=$(python3 -c "import json; print(json.load(open('$MODEL/config.json'))['text_config']['max_position_embeddings'])") tp=8 len=262144"
 kaggle-backend run vllm-tpu -- vllm serve "$MODEL" \
-  --tensor_parallel_size 4 \
+  --tensor_parallel_size 8 \
   --dtype bfloat16 \
-  --max_model_len 8192 \
+  --max_model_len 262144 \
   --max_num_seqs 32 \
-  --max_num_batched_tokens 16384 \
-  --gpu_memory_utilization 0.70 \
+  --max_num_batched_tokens 32768 \
+  --gpu_memory_utilization 0.90 \
+  --kv_cache_dtype fp8 \
   --enable_prefix_caching \
   --mamba_cache_mode align \
   --enforce-eager \
+  --disable_chunked_mm_input \
   --reasoning_parser qwen3 \
   --enable_auto_tool_choice \
   --tool_call_parser qwen3_coder \
