@@ -293,8 +293,6 @@ def flash_attn_varlen_func(
         real_window_size = (window_size[0], window_size[1])
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
 
-    dummy_cu_seqlens_k = torch.empty_like(cu_seqlens_q)
-
     if fa_version == 2:
         if (
             scheduler_metadata is not None
@@ -322,7 +320,7 @@ def flash_attn_varlen_func(
             cu_seqlens_q,
             # cu_seqlens_k not used since we use seqused_k, but flash_api.cpp
             # still wants it so we pass all zeros
-            dummy_cu_seqlens_k if cu_seqlens_k is None else cu_seqlens_k,
+            torch.empty_like(cu_seqlens_q) if cu_seqlens_k is None else cu_seqlens_k,
             seqused_k,
             None,
             block_table,
