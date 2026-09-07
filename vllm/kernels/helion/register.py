@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+import threading
 
 import torch
 from torch.library import Library
@@ -368,6 +369,7 @@ class HelionKernelWrapper:
 
 # Global registry for tracking all registered HelionKernelWrapper instances
 _REGISTERED_KERNELS: dict[str, HelionKernelWrapper] = {}
+_REGISTRATION_LOCK = threading.Lock()
 
 
 def get_registered_kernels() -> dict[str, HelionKernelWrapper]:
@@ -439,31 +441,32 @@ def register_kernel(
     def decorator(kernel_func: Callable) -> HelionKernelWrapper:
         final_op_name = op_name if op_name else kernel_func.__name__
 
-        if final_op_name in _REGISTERED_KERNELS:
-            raise ValueError(
-                f"Helion kernel '{final_op_name}' is already registered. "
-                f"Use a different op_name or check for duplicate registrations."
+        with _REGISTRATION_LOCK:
+            if final_op_name in _REGISTERED_KERNELS:
+                raise ValueError(
+                    f"Helion kernel '{final_op_name}' is already registered. "
+                    f"Use a different op_name or check for duplicate registrations."
+                )
+
+            final_fake_impl = fake_impl
+            if final_fake_impl is None:
+                final_fake_impl = infer_fake_impl(kernel_func, helion_settings)
+                logger.debug(
+                    "Auto-generated fake_impl for Helion kernel '%s'",
+                    kernel_func.__name__,
+                )
+
+            kernel_wrapper = HelionKernelWrapper(
+                raw_kernel_func=kernel_func,
+                op_name=final_op_name,
+                fake_impl=final_fake_impl,
+                config_picker=config_picker,
+                mutates_args=mutates_args,
+                helion_settings=helion_settings,
+                input_generator=input_generator,
             )
 
-        final_fake_impl = fake_impl
-        if final_fake_impl is None:
-            final_fake_impl = infer_fake_impl(kernel_func, helion_settings)
-            logger.debug(
-                "Auto-generated fake_impl for Helion kernel '%s'",
-                kernel_func.__name__,
-            )
-
-        kernel_wrapper = HelionKernelWrapper(
-            raw_kernel_func=kernel_func,
-            op_name=final_op_name,
-            fake_impl=final_fake_impl,
-            config_picker=config_picker,
-            mutates_args=mutates_args,
-            helion_settings=helion_settings,
-            input_generator=input_generator,
-        )
-
-        _REGISTERED_KERNELS[final_op_name] = kernel_wrapper
+            _REGISTERED_KERNELS[final_op_name] = kernel_wrapper
 
         logger.info(
             "Registered Helion kernel '%s' as HelionKernelWrapper",
