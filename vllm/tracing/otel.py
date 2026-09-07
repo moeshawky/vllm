@@ -106,7 +106,7 @@ def init_otel_worker_tracer(
     instrumenting_module_name: str,
     process_kind: str,
     process_name: str,
-) -> Tracer:
+) -> Tracer | None:
     """
     Backend-specific initialization for OpenTelemetry in a worker process.
     """
