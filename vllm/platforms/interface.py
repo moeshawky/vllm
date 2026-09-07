@@ -6,6 +6,7 @@ import functools
 import os
 import platform
 import sys
+import threading
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -32,6 +33,8 @@ logger = init_logger(__name__)
 
 _assigned_physical_gpu_ids: list[int] | None = None
 
+_assigned_physical_gpu_ids_lock = threading.Lock()
+
 
 def set_assigned_physical_gpu_ids(ids: list[int]) -> None:
     """Set the physical GPU IDs assigned to this worker process.
@@ -44,14 +47,15 @@ def set_assigned_physical_gpu_ids(ids: list[int]) -> None:
 
     This is expected to run during single-threaded worker initialization."""
     global _assigned_physical_gpu_ids
-    if _assigned_physical_gpu_ids is not None:
-        if _assigned_physical_gpu_ids != ids:
-            raise RuntimeError(
-                f"set_assigned_physical_gpu_ids called with conflicting values: "
-                f"existing={_assigned_physical_gpu_ids}, new={ids}"
-            )
-        return
-    _assigned_physical_gpu_ids = ids
+    with _assigned_physical_gpu_ids_lock:
+        if _assigned_physical_gpu_ids is not None:
+            if _assigned_physical_gpu_ids != ids:
+                raise RuntimeError(
+                    f"set_assigned_physical_gpu_ids called with conflicting values: "
+                    f"existing={_assigned_physical_gpu_ids}, new={ids}"
+                )
+            return
+        _assigned_physical_gpu_ids = ids
 
 
 def get_assigned_physical_gpu_ids() -> list[int] | None:
