@@ -192,7 +192,7 @@ class CpuPlatform(Platform):
                 "Reset SSM cache type to float32 for accelerated GDN mamba attention."
             )
 
-        # Lagecy setting
+        # Legacy setting
         env_key = "VLLM_CPU_KVCACHE_SPACE"
         if env_key in os.environ and os.environ[env_key] != "":
             kv_cache_space = int(os.environ[env_key])
