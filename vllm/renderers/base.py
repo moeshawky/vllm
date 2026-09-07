@@ -479,6 +479,10 @@ class BaseRenderer(ABC, Generic[_T]):
         kwargs = params.get_encode_kwargs()
         if want_offsets:
             kwargs = {**kwargs, "return_offsets_mapping": True}
+        if not isinstance(prompt["prompt"], str):
+            raise TypeError(
+                f"Expected str for prompt, got {type(prompt['prompt']).__name__}"
+            )
         encoding = tokenizer(prompt["prompt"], **kwargs)
         return self._build_tokens_prompt(
             encoding["input_ids"],
