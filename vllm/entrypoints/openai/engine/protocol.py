@@ -366,7 +366,7 @@ def get_logits_processors(
                 )
             try:
                 logits_processor = resolve_obj_by_qualname(qualname)
-            except Exception as e:
+            except (ImportError, AttributeError) as e:
                 raise ValueError(
                     f"Logits processor '{qualname}' could not be resolved: {e}"
                 ) from e
