@@ -199,12 +199,16 @@ def fused_recurrent_gated_delta_rule_fwd(
     num_warps = 1
 
     o = q.new_empty(NK, *v.shape)
-    if inplace_final_state:
-        final_state = initial_state
+    if initial_state is not None:
+        if inplace_final_state:
+            final_state = initial_state
+        else:
+            final_state = q.new_empty(T, HV, V, K, dtype=initial_state.dtype)
     else:
-        final_state = q.new_empty(T, HV, V, K, dtype=initial_state.dtype)
+        final_state = q.new_empty(T, HV, V, K, dtype=q.dtype)
+        inplace_final_state = False
 
-    stride_init_state_token = initial_state.stride(0)
+    stride_init_state_token = initial_state.stride(0) if initial_state is not None else 0
     stride_final_state_token = final_state.stride(0)
 
     if ssm_state_indices is None:
