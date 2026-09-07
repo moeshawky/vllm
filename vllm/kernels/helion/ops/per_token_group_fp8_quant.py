@@ -3,6 +3,7 @@
 
 from itertools import product
 from typing import Any
+import threading
 
 import torch
 
@@ -80,6 +81,7 @@ def generate_inputs() -> dict[CaseKey, tuple[Any, ...]]:
 
 
 _pick_cache: dict[tuple[int, int, int], CaseKey | None] = {}
+_pick_cache_lock = threading.Lock()
 
 
 def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | None:
@@ -102,37 +104,38 @@ def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | 
     num_tokens, hidden_size = input.shape
 
     cache_key = (num_tokens, group_size, hidden_size)
-    cached = _pick_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    with _pick_cache_lock:
+        cached = _pick_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
-    configs: dict[int, dict[int, list[int]]] = {}
-    for key in config_keys:
-        if key.is_default():
-            continue
-        configs.setdefault(key["hidden_size"], {}).setdefault(
-            key["group_size"], []
-        ).append(key["num_tokens"])
+        configs: dict[int, dict[int, list[int]]] = {}
+        for key in config_keys:
+            if key.is_default():
+                continue
+            configs.setdefault(key["hidden_size"], {}).setdefault(
+                key["group_size"], []
+            ).append(key["num_tokens"])
 
-    if not configs:
-        return None
+        if not configs:
+            return None
 
-    best_hidden_size = min(configs, key=lambda s: abs(s - hidden_size))
-    best_group_size = min(configs[best_hidden_size], key=lambda s: abs(s - group_size))
-    available_num_tokens = sorted(configs[best_hidden_size][best_group_size])
-    best_num_tokens = next(
-        (n for n in available_num_tokens if n >= num_tokens), available_num_tokens[-1]
-    )
+        best_hidden_size = min(configs, key=lambda s: abs(s - hidden_size))
+        best_group_size = min(configs[best_hidden_size], key=lambda s: abs(s - group_size))
+        available_num_tokens = sorted(configs[best_hidden_size][best_group_size])
+        best_num_tokens = next(
+            (n for n in available_num_tokens if n >= num_tokens), available_num_tokens[-1]
+        )
 
-    result = CaseKey(
-        {
-            "hidden_size": best_hidden_size,
-            "group_size": best_group_size,
-            "num_tokens": best_num_tokens,
-        }
-    )
-    _pick_cache[cache_key] = result
-    return result
+        result = CaseKey(
+            {
+                "hidden_size": best_hidden_size,
+                "group_size": best_group_size,
+                "num_tokens": best_num_tokens,
+            }
+        )
+        _pick_cache[cache_key] = result
+        return result
 
 
 def fake_impl(
