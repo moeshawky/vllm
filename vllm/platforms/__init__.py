@@ -229,6 +229,7 @@ def resolve_current_platform_cls_qualname() -> str:
     platform_plugins = load_plugins_by_group(PLATFORM_PLUGINS_GROUP)
 
     activated_plugins = []
+    resolved_qualnames: dict[str, str] = {}
 
     for name, func in chain(builtin_platform_plugins.items(), platform_plugins.items()):
         try:
@@ -236,8 +237,10 @@ def resolve_current_platform_cls_qualname() -> str:
             platform_cls_qualname = func()
             if platform_cls_qualname is not None:
                 activated_plugins.append(name)
-        except Exception:
-            pass
+                resolved_qualnames[name] = platform_cls_qualname
+        except (ImportError, AttributeError) as e:
+            logger.debug("Plugin %s failed to load: %s", name, str(e))
+            continue
 
     activated_builtin_plugins = list(
         set(activated_plugins) & set(builtin_platform_plugins.keys())
@@ -250,7 +253,7 @@ def resolve_current_platform_cls_qualname() -> str:
             f"{activated_oot_plugins}"
         )
     elif len(activated_oot_plugins) == 1:
-        platform_cls_qualname = platform_plugins[activated_oot_plugins[0]]()
+        platform_cls_qualname = resolved_qualnames[activated_oot_plugins[0]]
         logger.info("Platform plugin %s is activated", activated_oot_plugins[0])
     elif len(activated_builtin_plugins) >= 2:
         raise RuntimeError(
@@ -258,7 +261,7 @@ def resolve_current_platform_cls_qualname() -> str:
             f"{activated_builtin_plugins}"
         )
     elif len(activated_builtin_plugins) == 1:
-        platform_cls_qualname = builtin_platform_plugins[activated_builtin_plugins[0]]()
+        platform_cls_qualname = resolved_qualnames[activated_builtin_plugins[0]]
         logger.debug(
             "Automatically detected platform %s.", activated_builtin_plugins[0]
         )
