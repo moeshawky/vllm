@@ -21,14 +21,13 @@ def prepare_object_to_dump(obj) -> str:
         return f"'{obj}'"  # Double quotes
     elif isinstance(obj, dict):
         dict_str = ", ".join(
-            {f"{str(k)}: {prepare_object_to_dump(v)}" for k, v in obj.items()}
+            [f"{str(k)}: {prepare_object_to_dump(v)}" for k, v in obj.items()]
         )
         return f"{{{dict_str}}}"
     elif isinstance(obj, list):
         return f"[{', '.join([prepare_object_to_dump(v) for v in obj])}]"
     elif isinstance(obj, set):
         return f"[{', '.join([prepare_object_to_dump(v) for v in list(obj)])}]"
-        # return [prepare_object_to_dump(v) for v in list(obj)]
     elif isinstance(obj, tuple):
         return f"[{', '.join([prepare_object_to_dump(v) for v in obj])}]"
     elif isinstance(obj, enum.Enum):
@@ -70,7 +69,7 @@ def _dump_engine_exception(
     scheduler_stats: SchedulerStats | None,
 ):
     logger.error(
-        "Dumping input data for V1 LLM engine (v%s) with config: %s, ",
+        "Dumping input data for V1 LLM engine (v%s) with config: %s",
         VLLM_VERSION,
         config,
     )
