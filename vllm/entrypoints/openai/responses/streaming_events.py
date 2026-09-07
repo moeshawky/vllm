@@ -651,7 +651,10 @@ def emit_browser_tool_events(
 ) -> list[StreamingResponsesResponse]:
     """Emit events for browser tool calls (web search)."""
     function_name = previous_item.recipient[len("browser.") :]
-    parsed_args = json.loads(previous_item.content[0].text)
+    try:
+        parsed_args = json.loads(previous_item.content[0].text)
+    except json.JSONDecodeError:
+        return []
     action = None
 
     if function_name == "search":
