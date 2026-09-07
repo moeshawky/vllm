@@ -228,8 +228,8 @@ def fused_sigmoid_gating_delta_rule_update(
     else:
         final_state = q.new_empty(T, HV, V, K, dtype=initial_state.dtype)
 
-    stride_init_state_token = initial_state.stride(0)
-    stride_final_state_token = final_state.stride(0)
+    stride_init_state_token = initial_state.stride(0) if initial_state is not None else 1
+    stride_final_state_token = final_state.stride(0) if final_state is not None else 1
 
     if ssm_state_indices is None:
         stride_indices_seq, stride_indices_tok = 1, 1
