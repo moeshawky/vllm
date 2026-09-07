@@ -9,6 +9,7 @@ import torch
 from vllm.kernels.helion.case_key import CaseKey
 from vllm.logger import init_logger
 from vllm.utils.import_utils import has_helion
+import threading
 
 if not has_helion():
     raise ImportError(
@@ -104,6 +105,7 @@ def generate_inputs() -> dict[CaseKey, tuple[Any, ...]]:
 
 
 _pick_cache: dict[tuple[int, int, int], CaseKey | None] = {}
+_pick_cache_lock = threading.Lock()
 
 
 def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | None:
@@ -126,9 +128,10 @@ def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | 
     num_tokens = qkv.shape[0]
 
     cache_key = (num_tokens, q_heads, kv_heads)
-    cached = _pick_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    with _pick_cache_lock:
+        cached = _pick_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     configs: dict[int, dict[int, list[int]]] = {}
     for key in config_keys:
@@ -155,7 +158,8 @@ def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | 
             "num_tokens": best_num_tokens,
         }
     )
-    _pick_cache[cache_key] = result
+    with _pick_cache_lock:
+        _pick_cache[cache_key] = result
     return result
 
 
