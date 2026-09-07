@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+import threading
 
 from vllm.kernels.helion.case_key import CaseKey
 from vllm.logger import init_logger
@@ -49,6 +50,7 @@ def generate_silu_mul_fp8_inputs() -> dict[CaseKey, tuple[Any, ...]]:
 
 
 _pick_cache: dict[tuple[int, int], CaseKey | None] = {}
+_pick_cache_lock = threading.Lock()
 
 
 def pick_silu_mul_fp8_config(
@@ -71,26 +73,27 @@ def pick_silu_mul_fp8_config(
     num_tokens = int(input_tensor.view(-1, input_tensor.shape[-1]).shape[0])
 
     cache_key = (num_tokens, intermediate_size)
-    cached = _pick_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    with _pick_cache_lock:
+        cached = _pick_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
-    by_isize: dict[int, list[int]] = {}
-    for k in config_keys:
-        if k.is_default():
-            continue
-        by_isize.setdefault(k["intermediate"], []).append(k["numtokens"])
+        by_isize: dict[int, list[int]] = {}
+        for k in config_keys:
+            if k.is_default():
+                continue
+            by_isize.setdefault(k["intermediate"], []).append(k["numtokens"])
 
-    if not by_isize:
-        return None
+        if not by_isize:
+            return None
 
-    best_isize = min(by_isize, key=lambda s: abs(s - intermediate_size))
-    available = sorted(by_isize[best_isize])
-    best_ntokens = next((n for n in available if n >= num_tokens), available[-1])
+        best_isize = min(by_isize, key=lambda s: abs(s - intermediate_size))
+        available = sorted(by_isize[best_isize])
+        best_ntokens = next((n for n in available if n >= num_tokens), available[-1])
 
-    result = CaseKey({"intermediate": best_isize, "numtokens": best_ntokens})
-    _pick_cache[cache_key] = result
-    return result
+        result = CaseKey({"intermediate": best_isize, "numtokens": best_ntokens})
+        _pick_cache[cache_key] = result
+        return result
 
 
 @register_kernel(
