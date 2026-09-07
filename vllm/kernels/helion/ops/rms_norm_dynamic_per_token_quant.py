@@ -5,6 +5,7 @@ from itertools import product
 from typing import Any
 
 import torch
+import threading
 
 from vllm.kernels.helion.case_key import CaseKey
 from vllm.kernels.helion.utils import (
@@ -75,6 +76,7 @@ def generate_inputs() -> dict[CaseKey, tuple[Any, ...]]:
 
 
 _pick_cache: dict[tuple[int, int], CaseKey | None] = {}
+_pick_cache_lock = threading.Lock()
 
 
 def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | None:
@@ -95,9 +97,10 @@ def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | 
     num_tokens, hidden_size = input.shape
 
     cache_key = (num_tokens, hidden_size)
-    cached = _pick_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    with _pick_cache_lock:
+        cached = _pick_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     configs: dict[int, list[int]] = {}
     for key in config_keys:
@@ -115,7 +118,8 @@ def pick_config(args: tuple[Any, ...], config_keys: list[CaseKey]) -> CaseKey | 
     )
 
     result = CaseKey({"hidden_size": best_hidden_size, "num_tokens": best_num_tokens})
-    _pick_cache[cache_key] = result
+    with _pick_cache_lock:
+        _pick_cache[cache_key] = result
     return result
 
 
