@@ -611,11 +611,6 @@ def emit_previous_item_done_events(
     This is a Harmony-specific dispatcher that extracts values from the
     Harmony parser's message object and delegates to shared leaf helpers.
     """
-    if not state.sent_output_item_added and not state.is_first_function_call_delta:
-        # Suppress done events for items had no delta and thus had no
-        # added/in-progress lifecycle events. This is a bug.
-        # TODO: Ensure added/in-progress events are emitted for zero-delta items.
-        return []
 
     text = previous_item.content[0].text
     if previous_item.recipient is not None:
