@@ -39,12 +39,15 @@ class RendererRegistry:
 
     def register(self, renderer_mode: str, module: str, class_name: str) -> None:
         if renderer_mode in self.renderers:
+            displaced_module, displaced_class = self.renderers[renderer_mode]
             logger.warning(
-                "%s.%s is already registered for renderer_mode=%r. "
+                "%s.%s is already registered for renderer_mode=%r (displaced by %s.%s). "
                 "It is overwritten by the new one.",
+                displaced_module,
+                displaced_class,
+                renderer_mode,
                 module,
                 class_name,
-                renderer_mode,
             )
 
         self.renderers[renderer_mode] = (module, class_name)
