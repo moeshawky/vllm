@@ -308,7 +308,7 @@ class ScalarType:
     @classmethod
     def from_id(cls, scalar_type_id: int):
         if scalar_type_id not in _SCALAR_TYPES_ID_MAP:
-            raise ValueError(f"scalar_type_id {scalar_type_id} doesn't exists.")
+            raise ValueError(f"scalar_type_id {scalar_type_id} doesn't exist.")
         return _SCALAR_TYPES_ID_MAP[scalar_type_id]
 
 
