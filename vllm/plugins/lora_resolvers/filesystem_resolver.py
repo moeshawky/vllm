@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import json
 import os
+import hashlib
 
 import vllm.envs as envs
 from vllm.lora.request import LoRARequest
@@ -39,7 +40,7 @@ class FilesystemResolver(LoRAResolver):
                 ):
                     lora_request = LoRARequest(
                         lora_name=lora_name,
-                        lora_int_id=abs(hash(lora_name)),
+                        lora_int_id=int(hashlib.sha256(lora_name.encode()).hexdigest(), 16) & 0x7FFFFFFF or 1,  # int32: np.int32 array in lora_utils.py requires <= 2^31-1
                         lora_path=lora_path,
                     )
                     return lora_request
