@@ -17,4 +17,7 @@ except ImportError:
     logger.error(
         "tpu_inference not found, please install tpu_inference to run vllm on TPU"
     )
-    pass
+    raise ImportError(
+        "tpu_inference package is required to use vLLM on TPU."
+        "Please install tpu_inference."
+    )
