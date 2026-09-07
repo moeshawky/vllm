@@ -127,6 +127,12 @@ def get_cached_tokenizer(tokenizer: HfTokenizer) -> HfTokenizer:
 
         mistral_tekkenizer = mistral_common_tekkenizer(tokenizer)
 
+    if not tokenizer_vocab:
+        raise ValueError(
+            "Cannot create CachedTokenizer because the tokenizer vocabulary is "
+            "empty. This likely indicates a misconfiguration of the tokenizer "
+            "or model path. Please verify the tokenizer configuration."
+        )
     max_token_id = max(tokenizer_vocab.values())
     max_chars_per_token = max(len(tok) for tok in tokenizer_vocab)
 
