@@ -523,10 +523,20 @@ class KVCacheManager:
 
         # Keep `reserved_blocks` free for other in-flight sequences, and an
         # additional watermark of headroom for waiting/preempted admissions.
+        logger.warning(
+            "SCHED-TRACE kv_pre_alloc free_before=%d kv_usage=%.4f",
+            self.block_pool.get_num_free_blocks(),
+            self.block_pool.get_usage(),
+        )
         available_blocks = self.block_pool.get_num_free_blocks() - reserved_blocks
         required_blocks = num_blocks_to_allocate + watermark_blocks
         if required_blocks > available_blocks:
             # Cannot allocate new blocks
+            logger.warning(
+                "SCHED-TRACE alloc_fail req=%s reason=insufficient_blocks free_blocks=%d",
+                request.request_id,
+                self.block_pool.get_num_free_blocks(),
+            )
             return None
 
         if (
