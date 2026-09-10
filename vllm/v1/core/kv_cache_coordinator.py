@@ -816,7 +816,13 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                     )
                     continue
 
-                drop_eagle_block = use_eagle and idx not in eagle_verified
+                needs = any(
+                    getattr(self.single_type_managers[gid],
+                            'drop_eagle_checkpoint_block', False)
+                    for gid in group_ids
+                )
+                traditional = use_eagle and idx not in eagle_verified
+                drop = traditional or needs
 
                 _max_length = curr_hit_length
                 # Eagle matches one extra drop unit (one hash unit for
@@ -824,7 +830,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                 # it, landing back at the candidate length. No margin for
                 # mamba: its finder never drops (draft models have no mamba
                 # layers), so the hit would grow past the candidate.
-                if drop_eagle_block and not isinstance(spec, MambaSpec):
+                if (traditional) and not isinstance(spec, MambaSpec):
                     eagle_margin = (
                         self.hash_block_size
                         if self.enable_partial_hash_hits
@@ -841,7 +847,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                     kv_cache_group_ids=group_ids,
                     block_pool=self.block_pool,
                     kv_cache_spec=spec,
-                    drop_eagle_block=drop_eagle_block,
+                    drop_eagle_block=drop,
                     alignment_tokens=self._cache_hit_alignment_tokens,
                     dcp_world_size=(
                         self.dcp_world_size
@@ -849,7 +855,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                         else 1
                     ),
                 )
-                if drop_eagle_block:
+                if traditional:
                     eagle_verified.add(idx)
                 elif _new_hit_length < curr_hit_length:
                     # length shrunk; invalidate previous eagle verifications
@@ -904,13 +910,19 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
         hit_lengths: list[int] = [0] * num_groups
 
         for spec, group_ids, manager_cls, use_eagle in self.attention_groups:
+            needs = any(
+                getattr(self.single_type_managers[gid],
+                        'drop_eagle_checkpoint_block', False)
+                for gid in group_ids
+            )
+            drop = use_eagle or needs
             blocks, group_hit = manager_cls.find_longest_cache_hit(
                 block_hashes=block_hashes,
                 max_length=max_cache_hit_length,
                 kv_cache_group_ids=group_ids,
                 block_pool=self.block_pool,
                 kv_cache_spec=spec,
-                drop_eagle_block=use_eagle,
+                drop_eagle_block=drop,
                 alignment_tokens=self._cache_hit_alignment_tokens,
             )
             for gid, blks in zip(group_ids, blocks):
