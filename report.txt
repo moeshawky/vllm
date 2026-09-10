@@ -1,0 +1,50 @@
+TOPOLOGY:
+current verified branch tips + merge base
+`i-j-port`: a4d1a25bf2bec0c30940dbcb1fba9f9a4ddf2ecb
+`main`: 3006c9752585dc03f4057db8a6a963f89c6b311e
+`reconcile/upstream-2026-08-28-vllm`: e3cc7c8a3afe43b023ab501b75ac99940e4298f2
+merge base: 7a9993878cccc5b598d0b8934becf6fffb03e6fb
+
+TOTAL UNIQUE COMMITS INSPECTED:
+88
+
+PROVENANCE COUNTS:
+* upstream-equivalent: 83
+* reconciliation mechanics: 2
+* local/project-specific: 3
+* docs/tests: 0
+* uncertain: 0
+
+SALVAGE CANDIDATES:
+* SHA: 23540a9eb
+* intent: local fix to skip generic admission for compact mamba
+* current equivalent: absent
+* dependencies: independent
+* recommendation: investigate (uncertain safety/relevance on top of i-j-port)
+
+* SHA: 5e9559e44
+* intent: local fix to shim KV layout compat (config authoritative over stale global)
+* current equivalent: absent
+* dependencies: independent
+* recommendation: investigate (needs operator review for potential conflict with i-j-port shims)
+
+* SHA: 3b1854501
+* intent: local experiment to rebase MTP/PP port onto verified vllm d626108
+* current equivalent: absent
+* dependencies: independent
+* recommendation: investigate (MTP scope drift, forbidden to port merely because it exists)
+
+ALREADY PRESERVED:
+None identified from local fixes.
+
+OBSOLETE:
+None identified.
+
+UNCERTAIN:
+23540a9eb, 5e9559e44, 3b1854501 require operator review for salvage safety.
+
+PR CREATED:
+none
+
+BRANCH RETIREMENT VERDICT:
+DO NOT RETIRE — UNRESOLVED CANDIDATES REMAIN
