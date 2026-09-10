@@ -1293,6 +1293,7 @@ class MambaManager(SingleTypeKVCacheManager):
             # into a private cow_block; we record that block for connector
             # offload (see _pending_partial_tail_offloads).
             self._producer_partial_tail_reqs: dict[str, int] = {}
+            self.drop_eagle_checkpoint_block = False
 
     @classmethod
     def find_longest_cache_hit(
