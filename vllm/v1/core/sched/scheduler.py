@@ -25,6 +25,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1 import (
 from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorMetadata
 from vllm.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 from vllm.logger import init_logger
+from vllm import envs
 from vllm.model_executor.layers.fused_moe.routed_experts_capturer import (
     RoutedExpertsManager,
 )
@@ -701,6 +702,11 @@ class Scheduler(SchedulerInterface):
                     else:
                         preempted_req = self.running.pop()
 
+                    if envs.VLLM_TRACE_SCHEDULER:
+                        logger.warning(
+                            "SCHED-TRACE preempt_victim req=%s old=RUNNING new=PREEMPTED",
+                            preempted_req.request_id,
+                        )
                     self._preempt_request(
                         preempted_req,
                         scheduled_timestamp,
@@ -721,6 +727,11 @@ class Scheduler(SchedulerInterface):
             request_id = request.request_id
             req_to_new_blocks[request_id] = new_blocks
             num_scheduled_tokens[request_id] = num_new_tokens
+            if envs.VLLM_TRACE_SCHEDULER:
+                logger.warning(
+                    "SCHED-TRACE scheduled req=%s num_new_tokens=%d",
+                    request.request_id, num_new_tokens,
+                )
             token_budget -= num_new_tokens
             input_budget -= num_new_tokens + draft_slots
             req_index += 1
@@ -1382,6 +1393,11 @@ class Scheduler(SchedulerInterface):
         self.encoder_cache_manager.free(request)
         self._inflight_prefills.discard(request)
         request.status = RequestStatus.PREEMPTED
+        if envs.VLLM_TRACE_SCHEDULER:
+            logger.warning(
+                "SCHED-TRACE preempted req=%s computed_tokens=%d",
+                request.request_id, request.num_computed_tokens,
+            )
         request.num_computed_tokens = 0
         if request.spec_token_ids:
             request.spec_token_ids = []
