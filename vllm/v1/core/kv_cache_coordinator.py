@@ -533,7 +533,7 @@ class UnitaryKVCacheCoordinator(KVCacheCoordinator):
             kv_cache_group_ids=[0],
             block_pool=self.block_pool,
             kv_cache_spec=self.kv_cache_spec,
-            drop_eagle_block=0 in self.eagle_group_ids,
+            drop_eagle_block=(0 in self.eagle_group_ids) or getattr(self.single_type_managers[0], 'drop_eagle_checkpoint_block', False),
             alignment_tokens=self.block_size,
             dcp_world_size=self.dcp_world_size,
             pcp_world_size=self.pcp_world_size,
@@ -816,7 +816,11 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                     )
                     continue
 
-                drop_eagle_block = use_eagle and idx not in eagle_verified
+                needs_checkpoint_drop = any(
+                    getattr(self.single_type_managers[gid], 'drop_eagle_checkpoint_block', False)
+                    for gid in group_ids
+                )
+                drop_eagle_block = (use_eagle and idx not in eagle_verified) or needs_checkpoint_drop
 
                 _max_length = curr_hit_length
                 # Eagle matches one extra drop unit (one hash unit for
@@ -824,7 +828,8 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                 # it, landing back at the candidate length. No margin for
                 # mamba: its finder never drops (draft models have no mamba
                 # layers), so the hit would grow past the candidate.
-                if drop_eagle_block and not isinstance(spec, MambaSpec):
+                # Only traditional speculative eagle drops require margin padding.
+                if (use_eagle and idx not in eagle_verified) and not isinstance(spec, MambaSpec):
                     eagle_margin = (
                         self.hash_block_size
                         if self.enable_partial_hash_hits
@@ -904,13 +909,17 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
         hit_lengths: list[int] = [0] * num_groups
 
         for spec, group_ids, manager_cls, use_eagle in self.attention_groups:
+            needs_checkpoint_drop = any(
+                getattr(self.single_type_managers[gid], 'drop_eagle_checkpoint_block', False)
+                for gid in group_ids
+            )
             blocks, group_hit = manager_cls.find_longest_cache_hit(
                 block_hashes=block_hashes,
                 max_length=max_cache_hit_length,
                 kv_cache_group_ids=group_ids,
                 block_pool=self.block_pool,
                 kv_cache_spec=spec,
-                drop_eagle_block=use_eagle,
+                drop_eagle_block=use_eagle or needs_checkpoint_drop,
                 alignment_tokens=self._cache_hit_alignment_tokens,
             )
             for gid, blks in zip(group_ids, blocks):
