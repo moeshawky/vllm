@@ -1554,6 +1554,8 @@ class MambaManager(SingleTypeKVCacheManager):
             )
             if not apply_admission_cap:
                 self._num_checkpoint_blocks[request_id] = checkpoint_block
+            if checkpoint_block > 0:
+                self.drop_eagle_checkpoint_block = True  # align-mode internal checkpoint needs last-block drop for TPU
             if num_new_blocks > 0:
                 num_new_blocks = 1 + int(has_partial_hit) + checkpoint_block
                 if request_id not in self._allocated_block_reqs:
@@ -1735,6 +1737,7 @@ class MambaManager(SingleTypeKVCacheManager):
 
     def new_step_starts(self) -> None:
         self.cached_blocks_this_step.clear()
+        self.drop_eagle_checkpoint_block = False  # per-step reset prevents stale-True cross-step contamination
 
     def _cache_partial_tail_block(
         self,

@@ -821,6 +821,12 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                             'drop_eagle_checkpoint_block', False)
                     for gid in group_ids
                 )
+                if needs:
+                    logger.debug(
+                        "drop_eagle_checkpoint_block fired: "
+                        "group_ids=%s use_eagle=%s",
+                        group_ids, use_eagle,
+                    )
                 traditional = use_eagle and idx not in eagle_verified
                 drop = traditional or needs
 
@@ -915,6 +921,12 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                         'drop_eagle_checkpoint_block', False)
                 for gid in group_ids
             )
+            if needs:
+                logger.debug(
+                    "drop_eagle_checkpoint_block fired: "
+                    "group_ids=%s use_eagle=%s",
+                    group_ids, use_eagle,
+                )
             drop = use_eagle or needs
             blocks, group_hit = manager_cls.find_longest_cache_hit(
                 block_hashes=block_hashes,
