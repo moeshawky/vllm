@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Eagle speculative decoding model for Mistral Large 3, combining DeepseekV2
+structure with speculative decoding capabilities.
+"""
 
 import copy
 from collections.abc import Iterable

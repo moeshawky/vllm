@@ -18,6 +18,9 @@ logger = init_logger(__name__)
 
 
 class Step3p7ForConditionalGeneration(Step3VLForConditionalGeneration):
+    """Conditional generation model combining PerceptionEncoder vision model
+    with Llama language model via Step3VLForConditionalGeneration base."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.vision_model.": "vision_model.",
@@ -38,6 +41,8 @@ class Step3p7ForConditionalGeneration(Step3VLForConditionalGeneration):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initialize vision model with PerceptionEncoder, vit_large_projector
+        ColumnParallelLinear, and language model via init_vllm_registered_model."""
         super(Step3VLForConditionalGeneration, self).__init__()
 
         config = vllm_config.model_config.hf_config
@@ -79,6 +84,8 @@ class Step3p7ForConditionalGeneration(Step3VLForConditionalGeneration):
     def _get_vision_model_output(
         self, input_tensor: torch.Tensor | None
     ) -> torch.Tensor | None:
+        """Returns vision model output, using data-parallel sharded vision model
+        when enabled."""
         if input_tensor is None:
             return None
         if self.use_data_parallel:
@@ -86,5 +93,7 @@ class Step3p7ForConditionalGeneration(Step3VLForConditionalGeneration):
         return self.vision_model(input_tensor)
 
     def _process_image_features(self, image_features: torch.Tensor) -> torch.Tensor:
+        """Processes image features through vit_large_projector and returns the
+        result."""
         image_features, _ = self.vit_large_projector(image_features)
         return image_features

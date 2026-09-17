@@ -77,6 +77,8 @@ from .utils import (
 
 
 class LlamaMLP(nn.Module):
+    """FFN block with fused gate-up projection using SiLU activation."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -120,6 +122,8 @@ class LlamaMLP(nn.Module):
 
 
 class LlamaAttention(nn.Module):
+    """RoPE attention with GQA support for LLaMA models."""
+
     def __init__(
         self,
         config: LlamaConfig,
@@ -246,6 +250,8 @@ class LlamaAttention(nn.Module):
 
 
 class LlamaDecoderLayer(nn.Module):
+    """Pre-norm decoder layer with attention and FFN for LLaMA models."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -271,9 +277,8 @@ class LlamaDecoderLayer(nn.Module):
             attention_bias = config.qkv_bias
 
         # By default, Llama uses causal attention as it is a decoder-only model.
-        # You can override the HF config with `is_causal=False` to enable
-        # bidirectional attention, which is used in some embedding models
-        # (e.g. nvidia/llama-nemotron-embed-1b-v2)
+        # Override with is_causal=False in the HF config for bidirectional attention
+        # in embedding models (e.g. nvidia/llama-nemotron-embed-1b-v2)
         if getattr(config, "is_causal", True):
             attn_type = AttentionType.DECODER
         else:
@@ -342,6 +347,8 @@ class LlamaDecoderLayer(nn.Module):
     },
 )
 class LlamaModel(nn.Module, EagleModelMixin):
+    """LLaMA transformer backbone with attention and FFN decoder layers."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -452,6 +459,8 @@ class LlamaForCausalLM(
     SupportsEagle3,
     SupportsQuant,
 ):
+    """LLaMA causal language model for text generation."""
+
     hf_to_vllm_mapper = LlamaModel.hf_to_vllm_mapper
     # LoRA specific attributes
     packed_modules_mapping = {
@@ -544,12 +553,14 @@ class LlamaForCausalLM(
 
 
 class LlamaBidirectionalForSequenceClassification(as_seq_cls_model(LlamaForCausalLM)):
+    """Bidirectional LLaMA sequence classifier using mean pooling."""
     # This class sets the correct attention type and pooling type
     # through LlamaBidirectionalConfig.
     pass
 
 
 class LlamaBidirectionalModel(as_embedding_model(LlamaForCausalLM)):
+    """Bidirectional LLaMA embedding model using mean pooling."""
     # This class sets the correct attention type and pooling type
     # through LlamaBidirectionalConfig.
     pass

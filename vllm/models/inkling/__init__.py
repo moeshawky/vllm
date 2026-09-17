@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Lazy imports and platform-specific symbol re-exports."""
+
 from typing import TYPE_CHECKING
 
 from vllm.platforms import current_platform
@@ -26,6 +28,8 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    """Lazy attribute loader; dispatches platform-specific imports
+    based on current platform."""
     if name == "InklingMTP":
         if current_platform.is_rocm():
             from .amd import mtp as amd_mtp

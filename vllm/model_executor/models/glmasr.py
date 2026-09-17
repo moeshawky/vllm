@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""GLM-ASR audio encoder, projector, and speech-to-text conditioning."""
 
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Any, Literal, TypeAlias
@@ -917,6 +918,8 @@ class GlmAsrMultiModalProcessor(BaseMultiModalProcessor["GlmAsrProcessingInfo"])
 class GlmAsrForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsTranscription
 ):
+    """Audio encoder and language model for speech transcription."""
+
     supported_languages = ISO639_1_SUPPORTED_LANGS
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -963,12 +966,14 @@ class GlmAsrForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Return audio token string for audio modality."""
         if modality.startswith("audio"):
             return "<|begin_of_audio|><|pad|><|end_of_audio|>"
 
         raise ValueError("Only audio modality is supported")
 
     def get_mm_mapping(self) -> MultiModelKeys:
+        """Return module prefixes for language, connector, and tower."""
         return MultiModelKeys.from_string_field(
             language_model="language_model.",
             connector="multi_modal_projector.",
@@ -976,6 +981,7 @@ class GlmAsrForConditionalGeneration(
         )
 
     def _parse_and_validate_audio_input(self, **kwargs: object) -> GlmAsrInputs | None:
+        """Extract audio embeddings or features from multimodal kwargs."""
         audio_embeds = kwargs.pop("audio_embeds", None)
         if audio_embeds is not None:
             return GlmAsrEmbeddingInputs(type="audio_embeds", audio_embeds=audio_embeds)
@@ -994,6 +1000,7 @@ class GlmAsrForConditionalGeneration(
     def _process_audio_input(
         self, audio_input: GlmAsrInputs
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
+        """Run audio through encoder, projector, and frame merging."""
         if audio_input["type"] == "audio_embeds":
             return tuple(audio_input["audio_embeds"])
 
@@ -1056,6 +1063,7 @@ class GlmAsrForConditionalGeneration(
         return _group_audio_embeddings(chunk_embeddings, chunk_counts)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Parse audio input and return masked audio features."""
         audio_input = self._parse_and_validate_audio_input(**kwargs)
         if audio_input is None:
             return []
@@ -1106,6 +1114,7 @@ class GlmAsrForConditionalGeneration(
     def get_speech_to_text_config(
         cls, model_config: ModelConfig, task_type: str
     ) -> SpeechToTextConfig:
+        """Extract audio clip length and sample rate for speech config."""
         processor = cached_processor_from_config(model_config)
         feature_extractor = processor.feature_extractor
         max_audio_clip_s = getattr(processor, "max_audio_len", DEFAULT_MAX_AUDIO_LEN_S)

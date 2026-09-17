@@ -53,6 +53,13 @@ from .utils import (
 
 
 class GraniteMoeHybridMambaDecoderLayer(nn.Module):
+    """Hybrid decoder layer with Mamba mixer and optional MoE/MLP.
+
+    Applies a MambaMixer2 with pre-norm RMSNorm, then optionally routes
+    through a sparse MoE, a shared MLP, or both (additive). Residual
+    connections are scaled by residual_multiplier.
+    """
+
     def __init__(
         self,
         config: GraniteMoeHybridConfig,
@@ -141,6 +148,13 @@ class GraniteMoeHybridMambaDecoderLayer(nn.Module):
 
 
 class GraniteMoeHybridAttentionDecoderLayer(nn.Module):
+    """Hybrid decoder layer with attention and optional MoE/MLP.
+
+    Applies multi-head attention with pre-norm RMSNorm, then optionally
+    routes through a sparse MoE, a shared MLP, or both (additive).
+    Residual connections are scaled by residual_multiplier.
+    """
+
     def __init__(
         self,
         config: GraniteMoeHybridConfig,
@@ -221,6 +235,13 @@ class GraniteMoeHybridAttentionDecoderLayer(nn.Module):
 
 
 class GraniteMoeHybridAttention(nn.Module):
+    """Multi-head attention with optional NeoX-style rotary embeddings.
+
+    Uses QKVParallelLinear for query/key/value projections and
+    RowParallelLinear for output projection. Supports configurable
+    attention multiplier for scaling.
+    """
+
     def __init__(
         self,
         config: GraniteMoeHybridConfig,
@@ -316,6 +337,8 @@ class GraniteMoeHybridAttention(nn.Module):
         return hidden_states
 
 
+# Maps layer type strings to corresponding decoder layer classes for
+# dynamic layer selection.
 ALL_DECODER_LAYER_TYPES = {
     # Transformers < 5.13.0
     "attention": GraniteMoeHybridAttentionDecoderLayer,
@@ -328,6 +351,12 @@ ALL_DECODER_LAYER_TYPES = {
 
 @support_torch_compile
 class GraniteMoeHybridModel(nn.Module):
+    """Hybrid transformer backbone mixing Mamba and attention layers.
+
+    Selects layer type per decoder position from config.layer_types,
+    supporting combinations of attention, Mamba, and MoE/MLP blocks.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -587,6 +616,13 @@ class GraniteMoeHybridForCausalLM(
     SupportsQuant,
     SupportsMambaPrefixCaching,
 ):
+    """Causal language model with hybrid Mamba/attention/MoE architecture.
+
+    Supports Mamba state management (inner state, prefix caching), LoRA,
+    pipeline parallelism, and quantization. Provides classmethods for
+    computing Mamba state dtypes and shapes.
+    """
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

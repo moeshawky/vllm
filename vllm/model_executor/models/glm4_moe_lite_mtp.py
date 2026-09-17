@@ -62,6 +62,8 @@ from .utils import get_spec_layer_idx_from_weight_name, maybe_prefix
 
 
 class SharedHead(nn.Module):
+    """Norm head shared across MTP layers."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -78,10 +80,13 @@ class SharedHead(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply RMSNorm to hidden states."""
         return self.norm(hidden_states)
 
 
 class Glm4MoeLiteMultiTokenPredictorLayer(nn.Module):
+    """Single MTP predictor layer with embedding and previous-state fusion."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -127,6 +132,7 @@ class Glm4MoeLiteMultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Fuse embedding and previous hidden states, pass through decoder."""
         assert inputs_embeds is not None
         # masking inputs at position 0, as not needed by MTP
         inputs_embeds[positions == 0] = 0
@@ -145,6 +151,8 @@ class Glm4MoeLiteMultiTokenPredictorLayer(nn.Module):
 
 
 class Glm4MoeLiteMultiTokenPredictor(nn.Module):
+    """Collection of MTP layers selected round-robin by step index."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -180,6 +188,7 @@ class Glm4MoeLiteMultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Select MTP layer by mod arithmetic and pass inputs through it."""
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         current_step_idx = spec_step_idx % self.num_mtp_layers
@@ -196,6 +205,7 @@ class Glm4MoeLiteMultiTokenPredictor(nn.Module):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Apply shared head and logits processor to selected MTP layer."""
         current_step_idx = spec_step_idx % self.num_mtp_layers
         mtp_layer = self.layers[str(self.mtp_start_layer_idx + current_step_idx)]
         logits = self.logits_processor(
@@ -205,6 +215,8 @@ class Glm4MoeLiteMultiTokenPredictor(nn.Module):
 
 
 class Glm4MoeLiteMTP(nn.Module, SupportsPP, Glm4MixtureOfExperts):
+    """Draft model for speculative decoding with GLM-4.7-Flash."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config
@@ -246,6 +258,7 @@ class Glm4MoeLiteMTP(nn.Module, SupportsPP, Glm4MixtureOfExperts):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Delegate to the underlying multi-token predictor."""
         hidden_states = self.model(
             input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
         )
@@ -256,9 +269,11 @@ class Glm4MoeLiteMTP(nn.Module, SupportsPP, Glm4MixtureOfExperts):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor | None:
+        """Delegate logits computation to the underlying predictor."""
         return self.model.compute_logits(hidden_states, spec_step_idx)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load checkpoint weights with spec layer name rewriting."""
         stacked_params_mapping = [
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),

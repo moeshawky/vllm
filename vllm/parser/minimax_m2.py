@@ -58,6 +58,8 @@ _PARTIAL_PARAM_RE = re.compile(
 
 
 def _minimax_m2_arg_converter(raw_args: str, partial: bool) -> str:
+    """Convert MiniMax M2 XML-style tool call parameters
+    to JSON string."""
     params: dict[str, object] = {}
 
     for match in _PARAM_RE.finditer(raw_args):
@@ -92,6 +94,8 @@ def _minimax_m2_arg_converter(raw_args: str, partial: bool) -> str:
 
 @functools.cache
 def minimax_m2_config() -> ParserEngineConfig:
+    """Return a ParserEngineConfig for MiniMax M2
+    XML-style tool calls with reasoning support."""
     return ParserEngineConfig(
         name="minimax_m2",
         initial_state=ParserState.REASONING,
@@ -200,11 +204,15 @@ class MinimaxM2Parser(ParserEngine):
     """MiniMax M2 parser backed by the declarative parser engine."""
 
     def __init__(self, tokenizer, tools=None, **kwargs) -> None:
+        """Initialize the MinimaxM2Parser. Sets up
+        parser_engine_config and think_end_token_id."""
         kwargs.setdefault("parser_engine_config", minimax_m2_config())
         super().__init__(tokenizer, tools, **kwargs)
         self._think_end_token_id = self.vocab.get(THINK_END)
 
     def extract_content_ids(self, input_ids: list[int]) -> list[int]:
+        """Extract content token IDs after the last
+        THINK_END token."""
         end_id = self._think_end_token_id
         if end_id is None:
             return []

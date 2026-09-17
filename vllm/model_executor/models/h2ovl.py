@@ -9,6 +9,9 @@
 # Licensed under Apache 2.0 License [see LICENSE for details]
 # --------------------------------------------------------
 
+"""Inference-only H2OVL multimodal model with dynamic image patching and
+MSAC support adapted from H2O.ai."""
+
 import torch
 from transformers import PretrainedConfig
 
@@ -39,6 +42,8 @@ from .internvl import (
 
 
 class H2OVLProcessingInfo(BaseInternVLProcessingInfo):
+    """Processing metadata for H2OVL images with dynamic patch sizing."""
+
     def get_image_processor(self, **kwargs):
         config = self.get_hf_config()
         vision_config = config.vision_config
@@ -85,6 +90,8 @@ class H2OVLProcessingInfo(BaseInternVLProcessingInfo):
 
 
 class H2OVLMultiModalProcessor(BaseInternVLMultiModalProcessor[H2OVLProcessingInfo]):
+    """Multi-modal processor computing per-image token replacements."""
+
     def _get_prompt_repl_image(
         self,
         mm_items: MultiModalDataItems,
@@ -155,6 +162,8 @@ class H2OVLMultiModalProcessor(BaseInternVLMultiModalProcessor[H2OVLProcessingIn
     dummy_inputs=BaseInternVLDummyInputsBuilder,
 )
 class H2OVLChatModel(InternVLChatModel):
+    """H2OVL chat model with selective vision layer extraction."""
+
     def _init_vision_model(
         self,
         config: PretrainedConfig,

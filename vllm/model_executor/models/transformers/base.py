@@ -88,6 +88,8 @@ logger = init_logger(__name__)
 
 
 class PreTrainedModelClasses(NamedTuple):
+    """Named tuple holding decoder class and encoder class mapping
+    for each modality."""
     decoder: type["PreTrainedModel"]
     encoders: dict[str, type["PreTrainedModel"]]
     """Modality -> encoder class, for each modality that has one."""
@@ -102,9 +104,16 @@ class Base(
     SupportsEagle,
     SupportsEagle3,
 ):
+    """Base model class for Transformers backend implementing VllmModel,
+    SupportsQuant, SupportsLoRA, SupportsPP, SupportsEagle, and
+    SupportsEagle3 interfaces."""
+
     embedding_modules = ["embed_tokens"]  # TODO transformers will have a util to get it
 
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
+        """Initializes Base with VllmConfig, loads PreTrainedModel from
+        config, creates weight mappers, applies pipeline parallel and
+        recursive replacements."""
         super().__init__()
         logger.info("Using Transformers modeling backend.")
 
@@ -671,6 +680,8 @@ class Base(
                 tensor.data = tensor.data.to(torch.float32)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Looks up token embeddings from input_ids via the model's
+        get_input_embeddings."""
         return self.model.get_input_embeddings()(input_ids)
 
     def forward(
@@ -681,6 +692,9 @@ class Base(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
+        """Adds batch dimension, passes through Transformers model,
+        removes batch dimension, returns hidden_states or auxiliary
+        hidden states."""
         if not self.pp_group.is_first_rank:
             assert intermediate_tensors is not None
             input_ids = None
@@ -725,6 +739,8 @@ class Base(
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads model weights using AutoWeightsLoader with
+        ignore_unexpected_prefixes and suffixes."""
         loader = AutoWeightsLoader(
             self,
             ignore_unexpected_prefixes=self.ignore_unexpected_prefixes,
@@ -734,6 +750,8 @@ class Base(
 
     @staticmethod
     def check_version(min_version: str, feature: str):
+        """Raises ImportError if the installed transformers version
+        is below the required minimum."""
         installed = Version(transformers.__version__)
         required = Version(min_version)
         if installed < required:
@@ -743,6 +761,8 @@ class Base(
             )
 
     def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        """Sets up auxiliary hidden state layers for Eagle3 support
+        with OutputRecorder and capturing hooks."""
         self.check_version("5.2.0", "Eagle3 support")
         from transformers.utils.output_capturing import (
             OutputRecorder,
@@ -766,5 +786,7 @@ class Base(
         maybe_install_capturing_hooks(self.model)
 
     def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
+        """Returns default auxiliary hidden state layer indices for
+        Eagle3 support."""
         num_layers = self.text_config.num_hidden_layers
         return (2, num_layers // 2, num_layers - 3)

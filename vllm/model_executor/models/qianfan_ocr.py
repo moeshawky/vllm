@@ -4,6 +4,9 @@
 # QianfanOCR is built on InternVL with a Qwen3 language backbone.
 # The model architecture and weights are fully compatible with InternVLChatModel,
 # only the config model_type / architectures strings differ.
+"""QianfanOCR model module built on InternVL with Qwen3 language backbone.
+Registers QianfanOCRForConditionalGeneration model type.
+"""
 
 from transformers import PretrainedConfig
 

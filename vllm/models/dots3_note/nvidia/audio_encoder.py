@@ -28,6 +28,8 @@ __all__ = ["DotsSpeechEncoder"]
 
 
 class RMSNorm(nn.Module):
+    """RMS normalization layer computing variance with an epsilon
+    term, scaled by weight."""
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
@@ -40,11 +42,15 @@ class RMSNorm(nn.Module):
 
 
 def swiglu(x: torch.Tensor) -> torch.Tensor:
+    """Applies the SwiGLU activation: splits the input in half,
+    applies SiLU to the first half, and multiplies by the second half."""
     x1, x2 = x.chunk(2, dim=-1)
     return torch.nn.functional.silu(x1) * x2
 
 
 class RotaryEmbedding(nn.Module):
+    """Rotary position embedding module that precomputes and caches cos/sin
+    values for attention with partial rotary dimension support."""
     def __init__(
         self,
         head_dim: int,
@@ -86,6 +92,8 @@ class RotaryEmbedding(nn.Module):
     def get_cos_sin(
         self, position_ids: torch.Tensor, dtype: torch.dtype, device: torch.device
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        """Computes cos and sin rotary embeddings for position IDs,
+        with caching for single-batch inference to avoid recomputation."""
         if self.rotary_dim == 0:
             return None, None
         seq_len = position_ids.shape[-1]
@@ -138,6 +146,8 @@ class RotaryEmbedding(nn.Module):
 
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
+    """Rotates half of the input tensor by negating and swapping the two
+    halves, used for rotary position embedding."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
@@ -149,6 +159,8 @@ def apply_rotary_pos_emb(
     cos: torch.Tensor | None,
     sin: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Applies rotary position embedding to query and key tensors,
+    handling both 3D [tokens, H, D] and 4D [B, T, H, D] input shapes."""
     if cos is None or sin is None:
         return q, k
 
@@ -182,6 +194,8 @@ def apply_rotary_pos_emb(
 
 
 class WhisperPositionalEmbedding(nn.Embedding):
+    """Learned positional embedding that slices the embedding weight table
+    by the current position and past key-value length."""
     def __init__(
         self, num_positions: int, embedding_dim: int, padding_idx: int | None = None
     ):
@@ -308,6 +322,8 @@ class WhisperAttention(nn.Module):
 
 # Copied from transformers.models.mbart.modeling_mbart.MBartEncoderLayer with MBart->Whisper
 class WhisperEncoderLayer(nn.Module):
+    """Single Whisper encoder layer combining self-attention, pre-norm
+    residual, and SwiGLU feed-forward with gradient checkpointing support."""
     def __init__(self, config: WhisperConfig):
         super().__init__()
         self.embed_dim = config.d_model

@@ -65,6 +65,9 @@ _EXPERT_SCALE_RE = re.compile(r"\.experts\.\d+\.w[123]\.scale$")
 
 
 class DeepSeekV4MultiTokenPredictorLayer(nn.Module):
+    """Single MTP layer for DeepSeek V4 with separate e/h
+    projections, fused RMSNorm, and hyper-connection support.
+    """
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -171,6 +174,9 @@ class DeepSeekV4MultiTokenPredictorLayer(nn.Module):
 
 
 class DeepSeekV4MultiTokenPredictor(nn.Module):
+    """Multi-token predictor for DeepSeek V4, managing MTP
+    layers and computing logits via hc_head.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -263,6 +269,8 @@ class DeepSeekV4MultiTokenPredictor(nn.Module):
 
 
 class DeepSeekV4MTP(nn.Module):
+    """Top-level MTP draft model wrapper for DeepSeek V4 on XPU.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config

@@ -96,6 +96,8 @@ LFM2VLImageInputs = Lfm2VLImagePixelInputs
 
 
 class Lfm2VLProcessingInfo(BaseProcessingInfo):
+    """Image processing configuration and smart-resize logic for LFM2-VL."""
+
     def get_hf_config(self):
         return self.ctx.get_hf_config(Lfm2VlConfig)
 
@@ -130,6 +132,7 @@ class Lfm2VLProcessingInfo(BaseProcessingInfo):
         max_pixels_tolerance: float,
     ) -> bool:
         """Check if the image is too large to be processed as one tile."""
+        # total_factor combines encoder patch size and downsample factor
         total_factor = encoder_patch_size * downsample_factor
 
         h_bar = max(encoder_patch_size, round_by_factor(height, total_factor))
@@ -365,6 +368,8 @@ class Lfm2VLProcessingInfo(BaseProcessingInfo):
 
 
 class Lfm2VLDummyInputsBuilder(BaseDummyInputsBuilder[Lfm2VLProcessingInfo]):
+    """Builds dummy image inputs for LFM2-VL graph capture and testing."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
         processor = self.info.get_hf_processor()
@@ -394,6 +399,8 @@ class Lfm2VLDummyInputsBuilder(BaseDummyInputsBuilder[Lfm2VLProcessingInfo]):
 
 
 class Lfm2VLMultiModalProcessor(BaseMultiModalProcessor[Lfm2VLProcessingInfo]):
+    """Processes and packs LFM2-VL image inputs for the vision encoder."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -483,6 +490,8 @@ class Lfm2VLMultiModalProcessor(BaseMultiModalProcessor[Lfm2VLProcessingInfo]):
 
 
 class Lfm2VLMultiModalProjector(nn.Module):
+    """Downsamples and projects LFM2-VL vision features into text space."""
+
     def __init__(
         self,
         config: Lfm2VlConfig,
@@ -612,6 +621,8 @@ class Lfm2VLForConditionalGeneration(
     SupportsPP,
     IsHybrid,
 ):
+    """LFM2-VL multimodal model combining SigLIP2 vision encoder with LFM2 text model."""
+
     supports_tower_connector_lora = True
     merge_by_field_config = True
 

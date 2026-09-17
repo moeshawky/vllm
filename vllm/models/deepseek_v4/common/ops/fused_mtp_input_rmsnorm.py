@@ -62,11 +62,11 @@ def _fused_mtp_input_rmsnorm_kernel(
     block = tl.arange(0, BLOCK_SIZE)
     mask = block < HIDDEN
 
-    if pid_task == 0:
+    if pid_task == 0:  # pid_task == 0 is the enorm path; pid_task > 0 are hnorm paths for each slot. Grid shape is (num_tokens, hc_mult + 1).
         # enorm path: load inputs_embeds[token, :] then zero-mask at pos==0.
         # Math is preserved: pos==0 → x=0 → variance=0 → RMSNorm output is 0
         # regardless of weight, matching torch.where(pos==0, 0, x) + RMSNorm.
-        pos = tl.load(positions_ptr + token_idx)
+        pos = tl.load(positions_ptr + token_idx)  # pos != 0 mask-zero: positions==0 means x=0, variance=0, RMSNorm output is 0 regardless of weight.
         keep = pos != 0
         x = tl.load(
             inputs_embeds_ptr + token_idx * HIDDEN + block, mask=mask, other=0.0
@@ -83,7 +83,7 @@ def _fused_mtp_input_rmsnorm_kernel(
         )
     else:
         # hnorm path: load prev_hidden[token, slot, :].
-        slot = pid_task - 1
+        slot = pid_task - 1  # maps task index back to the hidden-state slot index for the hnorm path
         row_offset = (token_idx * HC_MULT + slot) * HIDDEN
         x = tl.load(prev_hidden_ptr + row_offset + block, mask=mask, other=0.0)
         _rmsnorm_row(
@@ -138,7 +138,7 @@ def mtp_shared_head_rmsnorm(
     out = torch.empty_like(hidden_states)
     if num_tokens == 0:
         return out
-    block_size = triton.next_power_of_2(hidden)
+    block_size = triton.next_power_of_2(hidden)  # ensures each row fits in a single warp for the Triton kernel
     _mtp_shared_head_rmsnorm_kernel[(num_tokens,)](
         hidden_states,
         weight,

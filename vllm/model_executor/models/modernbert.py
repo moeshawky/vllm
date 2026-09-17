@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""ModernBERT model implementations for sequence classification and token
+classification tasks.
+"""
+
 from collections.abc import Iterable
 
 import torch

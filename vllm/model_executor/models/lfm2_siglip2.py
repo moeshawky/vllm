@@ -33,6 +33,8 @@ from .vision import (
 
 
 class Siglip2VisionEmbeddings(nn.Module):
+    """Patch and positional embeddings for SigLIP2 vision encoder."""
+
     def __init__(self, config: Siglip2VisionConfig):
         super().__init__()
         self.config = config
@@ -239,6 +241,8 @@ class Siglip2Attention(nn.Module):
 
 
 class Siglip2MLP(nn.Module):
+    """Two-layer FFN with activation for SigLIP2 vision encoder."""
+
     def __init__(
         self,
         config: Siglip2VisionConfig,
@@ -277,6 +281,8 @@ class Siglip2MLP(nn.Module):
     is_encoder=True,
 )
 class Siglip2EncoderLayer(nn.Module):
+    """Self-attention and FFN block with residual connections for SigLIP2."""
+
     def __init__(
         self,
         config: Siglip2VisionConfig,
@@ -386,6 +392,8 @@ class Siglip2Encoder(nn.Module):
 
 
 class Siglip2VisionTransformer(nn.Module):
+    """SigLIP2 vision transformer with embeddings, encoder, and post-norm."""
+
     def __init__(
         self,
         config: Siglip2VisionConfig,
@@ -459,6 +467,8 @@ class Siglip2VisionTransformer(nn.Module):
 
 
 class Siglip2Model(torch.nn.Module):
+    """SigLIP2 vision model wrapper for vLLM multimodal pipelines."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),

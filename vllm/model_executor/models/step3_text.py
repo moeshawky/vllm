@@ -53,12 +53,17 @@ logger = init_logger(__name__)
 
 
 class FusedMoEBlock(nn.Module):
+    """Fused MoE layer with gate routing and expert computation
+    using FusedMoEFactory."""
     def __init__(
         self,
         config: ModelConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize FusedMoEBlock with FusedMoEFactory experts and a
+        ReplicatedLinear gate; validates tensor parallel size against
+        expert count."""
         super().__init__()
         self.tp_size = get_tensor_model_parallel_world_size()
 
@@ -86,6 +91,8 @@ class FusedMoEBlock(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply gate routing and expert computation to produce final
+        hidden states."""
         orig_shape = hidden_states.shape
         hidden_dim = hidden_states.shape[-1]
         hidden_states = hidden_states.view(-1, hidden_dim)
@@ -100,6 +107,8 @@ class FusedMoEBlock(nn.Module):
 
 
 class Step3TextMLP(nn.Module):
+    """Gate-up and down projection linear layers with SiluAndMul
+    activation for Step3 text decoder."""
     def __init__(
         self,
         hidden_size: int,
@@ -108,6 +117,8 @@ class Step3TextMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize Step3TextMLP with MergedColumnParallelLinear and
+        RowParallelLinear; validates silu activation."""
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
@@ -131,6 +142,8 @@ class Step3TextMLP(nn.Module):
         self.hidden_size = hidden_size
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply gate_up_proj, activation, and down_proj to produce
+        output."""
         gate_up, _ = self.gate_up_proj(hidden_states)
         intermediate_act = self.act_fn(gate_up)
         output, _ = self.down_proj(intermediate_act)
@@ -138,6 +151,8 @@ class Step3TextMLP(nn.Module):
 
 
 class Step3TextAttention(nn.Module):
+    """Attention with ReplicatedLinear QKV projection, inter_norm,
+    wq projection, and rotary embeddings."""
     def __init__(
         self,
         hidden_size: int,
@@ -152,6 +167,8 @@ class Step3TextAttention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize Step3TextAttention with ReplicatedLinear QKV,
+        RowParallelLinear output, inter_norm, and wq projection layers."""
         super().__init__()
         self.hidden_size = hidden_size
         tp_size = get_tensor_model_parallel_world_size()
@@ -211,6 +228,8 @@ class Step3TextAttention(nn.Module):
     def forward(
         self, positions: torch.Tensor, hidden_states: torch.Tensor
     ) -> torch.Tensor:
+        """Compute QKV, apply inter_norm and wq, rotary embeddings,
+        and run attention."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q = self.inter_norm(q)
@@ -222,6 +241,8 @@ class Step3TextAttention(nn.Module):
 
 
 class Step3TextDecoderLayer(nn.Module):
+    """Single decoder layer with attention, optional MoE, and two
+    RMSNorm residual connections."""
     def __init__(
         self,
         config: Step3TextConfig,
@@ -229,6 +250,9 @@ class Step3TextDecoderLayer(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize Step3TextDecoderLayer with Step3TextAttention,
+        optional FusedMoEBlock, and two RMSNorm layers; detects MoE
+        layers from config."""
         super().__init__()
         self.hidden_size = config.hidden_size
 
@@ -286,6 +310,8 @@ class Step3TextDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply attention, then optionally MoE with share expert,
+        and MLP with residual connections."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -311,7 +337,12 @@ class Step3TextDecoderLayer(nn.Module):
 
 @support_torch_compile
 class Step3TextModel(nn.Module):
+    """Full text transformer with embedding, decoder layers, and
+    final norm; supports pipeline parallelism and MoE layers."""
     def __init__(self, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initialize Step3TextModel with embedding tokens, decoder layers
+        via make_layers, and final norm; creates empty intermediate tensors
+        factory."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         cache_config = vllm_config.cache_config
@@ -349,6 +380,8 @@ class Step3TextModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Map input IDs to embeddings using the vocabulary parallel
+        embedding layer."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -358,6 +391,8 @@ class Step3TextModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Process hidden states through decoder layers with pipeline
+        parallelism support."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -384,6 +419,8 @@ class Step3TextModel(nn.Module):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load HF weights with complex mapping for QKV split, MoE stacked
+        params, and expert params."""
         qkv_params_mapping = [
             # (param_name, shard_name, relative_start_idx, relative_end_idx)
             (
@@ -520,12 +557,16 @@ class Step3TextModel(nn.Module):
 
 
 class Step3TextForCausalLM(nn.Module, SupportsPP):
+    """Causal language model head with PP support; delegates to
+    Step3TextModel for hidden states."""
     def __init__(
         self,
         *,
         vllm_config: VllmConfig,
         prefix: str = "",
     ):
+        """Initialize Step3TextForCausalLM with Step3TextModel, ParallelLMHead,
+        and LogitsProcessor."""
         super().__init__()
         config = vllm_config.model_config.hf_config
 
@@ -549,6 +590,7 @@ class Step3TextForCausalLM(nn.Module, SupportsPP):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegate to the inner model's embed_input_ids method."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -558,15 +600,18 @@ class Step3TextForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ):
+        """Pass inputs through the inner model and return hidden states."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Compute logits from hidden states using the logits processor."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load HF weights using AutoWeightsLoader."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

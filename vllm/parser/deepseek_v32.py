@@ -49,6 +49,10 @@ DSML_FUNC_END = f"</{_DSML}function_calls>"
 
 @functools.cache
 def deepseek_v32_config() -> ParserEngineConfig:
+    """Return a ParserEngineConfig for DeepSeek V3.2 DSML tool calls.
+    Identical to DeepSeek V4 except for the outer wrapper and no
+    reasoning tags.
+    """
     return ParserEngineConfig(
         name="deepseek_v32",
         initial_state=ParserState.CONTENT,
@@ -108,12 +112,19 @@ def deepseek_v32_config() -> ParserEngineConfig:
 
 
 class DeepSeekV32Parser(ParserEngine):
+    """DeepSeek V3.2 parser for DSML tool calls with function_calls
+    wrapper. No reasoning tags.
+    """
+
     def __init__(
         self,
         tokenizer: TokenizerLike,
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the DeepSeekV32Parser. Pops chat_template_kwargs
+        and sets up the parser engine config.
+        """
         kwargs.pop("chat_template_kwargs", None)
         super().__init__(
             tokenizer,
@@ -124,6 +135,9 @@ class DeepSeekV32Parser(ParserEngine):
         self._arg_converter = self._convert_args
 
     def _convert_args(self, raw_args: str, partial: bool) -> str:
+        """Convert args using _dsml_arg_converter and unwrap wrapper
+        args.
+        """
         result = _dsml_arg_converter(raw_args, partial)
         if not self._tools:
             return result

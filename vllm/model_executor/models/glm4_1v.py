@@ -215,6 +215,8 @@ Glm4vVideoInputs: TypeAlias = Glm4vVideoPixelInputs | Glm4vVideoEmbeddingInputs
 
 
 class Glm4vVisionMLP(nn.Module):
+    """Two-layer vision MLP with MergedColumnParallelLinear and RowParallelLinear."""
+
     def __init__(
         self,
         in_features: int,
@@ -272,6 +274,8 @@ def all_gather_interleave(local_tensor, hidden_size: int, tp_size: int):
 
 
 class Glm4vVisionAttention(nn.Module):
+    """Vision attention with QKV projection, rotary embeddings, and MMEncoderAttention."""
+
     def __init__(
         self,
         embed_dim: int,
@@ -352,6 +356,7 @@ class Glm4vVisionAttention(nn.Module):
         rotary_pos_emb_sin: torch.Tensor,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
     ) -> torch.Tensor:
+        """Compute vision attention with QKV projection and rotary embeddings."""
         # [s, b, c] --> [s, b, head * 3 * head_dim]
         x, _ = self.qkv(x)
 
@@ -607,6 +612,8 @@ class Glm4vVisionEmbeddings(nn.Module):
 
 
 class Glm4vVisionTransformer(nn.Module):
+    """Vision transformer with patch embedding, transformer blocks, and merger."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".attn.q.": (".attn.qkv.", "q"),
@@ -965,6 +972,8 @@ class Glm4vVisionTransformer(nn.Module):
 
 
 class Glm4vProcessingInfo(BaseProcessingInfo):
+    """ProcessingInfo for GLM-4V multimodal models with image and video limits."""
+
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"image": None, "video": 1}
 

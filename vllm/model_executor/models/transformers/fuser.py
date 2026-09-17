@@ -78,10 +78,13 @@ class Fusers(UserDict):
     """Mapping from module class and shape to fuser, for all fusable modules."""
 
     def __init__(self, model: nn.Module, vllm_config: "VllmConfig"):
+        """Initializes the Fusers mapping by calling get_fuser
+        on each module in the model."""
         self.vllm_config = vllm_config
         super().__init__({key(m): get_fuser(m) for m in model.modules()})
 
     def __getitem__(self, m: nn.Module) -> BaseFuser | None:
+        """Returns the fuser for module m if validated, else None."""
         fuser = self.data.get(key(m))
         if fuser is not None and fuser.validate(m, self.vllm_config):
             return fuser

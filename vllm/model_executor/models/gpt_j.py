@@ -56,6 +56,8 @@ from .utils import (
 
 
 class GPTJAttention(nn.Module):
+    """Multi-head attention with fused QKV and rotary embeddings."""
+
     def __init__(
         self,
         config: GPTJConfig,
@@ -114,6 +116,7 @@ class GPTJAttention(nn.Module):
         position_ids: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Project to QKV, apply rotary embeddings, compute attention."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
         q, k = self.rotary_emb(position_ids, q, k)
@@ -123,6 +126,8 @@ class GPTJAttention(nn.Module):
 
 
 class GPTJMLP(nn.Module):
+    """Two-layer feedforward network with activation."""
+
     def __init__(
         self,
         intermediate_size: int,
@@ -147,6 +152,7 @@ class GPTJMLP(nn.Module):
         self.act = get_act_fn(config.activation_function)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply fc_in, activation, then fc_out."""
         hidden_states, _ = self.fc_in(hidden_states)
         hidden_states = self.act(hidden_states)
         hidden_states, _ = self.fc_out(hidden_states)
@@ -154,6 +160,8 @@ class GPTJMLP(nn.Module):
 
 
 class GPTJBlock(nn.Module):
+    """Pre-norm transformer block with parallel attention and MLP."""
+
     def __init__(
         self,
         config: GPTJConfig,
@@ -174,6 +182,7 @@ class GPTJBlock(nn.Module):
         position_ids: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply layer norm, parallel attention and MLP with single residual."""
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
         attn_output = self.attn(
@@ -187,6 +196,8 @@ class GPTJBlock(nn.Module):
 
 @support_torch_compile
 class GPTJModel(nn.Module):
+    """GPT-J backbone with token embedding and stack of blocks."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -221,6 +232,7 @@ class GPTJModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Embed tokens, apply transformer blocks, return hidden states."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -238,6 +250,8 @@ class GPTJModel(nn.Module):
 
 
 class GPTJForCausalLM(nn.Module, SupportsPP):
+    """Causal LM head on top of GPT-J backbone."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -283,6 +297,7 @@ class GPTJForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Delegate to the underlying GPT-J transformer."""
         hidden_states = self.transformer(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -292,9 +307,11 @@ class GPTJForCausalLM(nn.Module, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Apply logits processor with LM head and bias."""
         logits = self.logits_processor(self.lm_head, hidden_states, self.lm_head.bias)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights with HF-to-vLLM weight mapping."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

@@ -26,6 +26,13 @@ ISO639_1_SUPPORTED_LANGS = {
 
 
 class GraniteSpeechPlusCTCEncoder(GraniteSpeechCTCEncoder):
+    """Conformer encoder that concatenates intermediate hidden states.
+
+    cat_hidden_layers selects layer indices whose outputs are concatenated
+    along the feature dimension with the final hidden states, providing
+    the downstream model access to multi-level representations.
+    """
+
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = self.input_linear(hidden_states)
         # cat_hidden_layers selects non-negative layer indices (0 = encoder
@@ -64,6 +71,8 @@ class GraniteSpeechPlusCTCEncoder(GraniteSpeechCTCEncoder):
     dummy_inputs=GraniteSpeechDummyInputsBuilder,
 )
 class GraniteSpeechPlusForConditionalGeneration(GraniteSpeechForConditionalGeneration):
+    """Granite Speech Plus with concatenated hidden layer encoder."""
+
     supported_languages = ISO639_1_SUPPORTED_LANGS
 
     def _build_encoder(

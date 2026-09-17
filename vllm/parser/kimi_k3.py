@@ -31,6 +31,9 @@ class KimiK3Parser(DelegatingParser):
         request: ChatCompletionRequest | ResponsesRequest,
         enable_auto_tools: bool = False,
     ) -> tuple[list[FunctionCall] | None, str | None]:
+        """Extract tool calls. When enable_auto_tools is True,
+        uses the tool parser's extract_tool_calls for auto
+        tool choice."""
         if self._tool_parser is None or not enable_auto_tools:
             return super()._extract_tool_calls(content, request, enable_auto_tools)
 
@@ -66,6 +69,8 @@ class KimiK3Parser(DelegatingParser):
         tool_call_id_type: str = "random",
         function_name_returned: bool = False,
     ) -> tuple[DeltaMessage | None, bool]:
+        """Extract tool calls from streaming. When tool_choice
+        != 'none', delegates to super(); otherwise extracts directly."""
         if request.tool_choice != "none":
             return super()._extract_tool_calls_streaming(
                 previous_text,
@@ -102,6 +107,8 @@ class KimiK3Parser(DelegatingParser):
         *,
         finished: bool,
     ) -> DeltaMessage | None:
+        """Parse a single streaming delta. Handles Kimi
+        K3-specific content stripping after reasoning ends."""
         state = self._stream_state
         previous_content = state.previous_text if state.reasoning_ended else ""
         delta_message = super().parse_delta(
@@ -120,6 +127,8 @@ class KimiK3Parser(DelegatingParser):
         ):
             return delta_message
 
+        # After reasoning ends, strip content streaming
+        # to remove reasoning artifacts from the output.
         stripped = self._reasoning_parser.strip_content_streaming(
             previous_text=previous_content,
             current_text=state.previous_text,

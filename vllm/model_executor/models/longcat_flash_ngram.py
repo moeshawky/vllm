@@ -35,6 +35,7 @@ from .utils import AutoWeightsLoader, PPMissingLayer, WeightsMapper, maybe_prefi
 
 
 def uses_ngram_embedding(config: FlashConfig) -> bool:
+    """Check if the FlashConfig has n-gram embedding enabled."""
     return getattr(config, "ngram_vocab_size_ratio", None) is not None
 
 
@@ -55,6 +56,7 @@ class NgramEmbedding(nn.Module):
     """
 
     def __init__(self, config: FlashConfig, base_embeddings: nn.Module) -> None:
+        """Initialize n-gram embedding tables from the FlashConfig dimensions."""
         super().__init__()
         self.config = config
         self.word_embeddings = base_embeddings
@@ -69,6 +71,7 @@ class NgramEmbedding(nn.Module):
         self._init_ngram_embeddings()
 
     def _init_ngram_embeddings(self) -> None:
+        """Build the concatenated embedding table, projection, and CUDA hash tables."""
         self.num_embedders = self.k * (self.n - 1)
         oe_dim = self.config.hidden_size // self.num_embedders
         self.oe_dim = oe_dim
@@ -169,6 +172,7 @@ class FlashNgramModel(FlashModel):
     """FlashModel whose input embedding is an :class:`NgramEmbedding`."""
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Build the model, adjusting layer count and attaching n-gram embeddings."""
         # Each FlashDecoderLayer is a *dual* layer (2 attentions), so the number
         # of decoder layers is ``num_layers``. The ngram HF config sets
         # ``num_hidden_layers`` to a multiple of that (attention-module count),
@@ -184,6 +188,7 @@ class FlashNgramModel(FlashModel):
             self.ngram_embeddings = None
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights, splitting n-gram tables and delegating the rest."""
         # Names arrive with the ``model.`` prefix already stripped (routed here
         # by AutoWeightsLoader). Split the concatenated/sharded ngram tables and
         # stacked projections; delegate everything else to FlashModel.
@@ -213,6 +218,7 @@ class LongcatFlashNgramForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Build the n-gram LongCat model, requiring the V2 model runner."""
         super().__init__()
         if not vllm_config.use_v2_model_runner:
             raise NotImplementedError(
@@ -246,9 +252,11 @@ class LongcatFlashNgramForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
 
     @staticmethod
     def get_model_state_cls() -> type["LongcatNgramModelState"]:
+        """Return the MRV2-only state class for n-gram embedding handling."""
         return LongcatNgramModelState
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegate token embedding to the n-gram model."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -258,16 +266,20 @@ class LongcatFlashNgramForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors=None,
         inputs_embeds: torch.Tensor | None = None,
     ):
+        """Run the model forward pass using n-gram-prepared input embeddings."""
         # inputs_embeds is produced by LongcatNgramModelState.prepare_inputs.
         return self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
+        """Compute and process output logits."""
         return self.logits_processor(self.lm_head, hidden_states)
 
     def get_expert_mapping(self):
+        """Delegate expert mapping to the underlying model."""
         return self.model.get_expert_mapping()
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights via AutoWeightsLoader with the HF-to-vLLM mapper."""
         # AutoWeightsLoader routes ``model.*`` to FlashNgramModel.load_weights
         # (which handles the ngram split) and ``lm_head.*`` to the head.
         loader = AutoWeightsLoader(self)
@@ -287,6 +299,7 @@ class LongcatNgramModelState(DefaultModelState):
     """
 
     def __init__(self, vllm_config, model, encoder_cache, device) -> None:
+        """Initialize per-slot token contexts and the persistent embeddings buffer."""
         super().__init__(vllm_config, model, encoder_cache, device)
         config = model.config
         self.ngram = model.model.ngram_embeddings
@@ -312,6 +325,7 @@ class LongcatNgramModelState(DefaultModelState):
         return [-t if t == self.eos_id else t for t in toks]
 
     def add_request(self, req_index: int, new_req_data: NewRequestData) -> None:
+        """Initialize or resume the n-gram context for a new or resumed request."""
         super().add_request(req_index, new_req_data)  # rope positions
         # Fresh request -> no left-context (-1 fill). On resume, seed from the
         # already-processed token tail. Use prefill_token_ids (full processed
@@ -331,6 +345,7 @@ class LongcatNgramModelState(DefaultModelState):
     def prepare_inputs(
         self, input_batch: InputBatch, req_states: RequestState
     ) -> dict[str, Any]:
+        """Compute fused n-gram embeddings for all requests and prepare model inputs."""
         model_inputs = super().prepare_inputs(input_batch, req_states)  # positions
         num_tokens = input_batch.num_tokens
         num_padded = input_batch.num_tokens_after_padding
@@ -343,6 +358,7 @@ class LongcatNgramModelState(DefaultModelState):
         return model_inputs
 
     def prepare_dummy_inputs(self, num_reqs: int, num_tokens: int) -> dict[str, Any]:
+        """Return dummy inputs referencing the persistent embeddings buffer."""
         # FULL cudagraph replay reads only the captured buffers, so capture must
         # reference the same persistent ``inputs_embeds`` buffer prepare_inputs
         # re-fills (the base class wires this for multimodal models only).

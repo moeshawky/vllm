@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Inference-only FunASR model compatible with HuggingFace weights."""
 
 import math
 from collections.abc import Iterable, Mapping, Sequence

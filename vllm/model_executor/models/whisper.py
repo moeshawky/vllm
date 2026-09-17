@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""SPDX-licensed Whisper speech-to-text model implementing encoder-decoder
+design with sinusoidal/ROPE positional embeddings and cross-attention.
+"""
 
 import enum
 import math
@@ -88,6 +91,9 @@ logger = init_logger(__name__)
 
 
 class WhisperPosEmbedType(enum.Enum):
+    """Enumeration of positional embedding types supported by Whisper:
+    sinusoidal, RoPE, and learned.
+    """
     SINUSOIDAL = "sinusoidal"
     ROPE = "rope"
     LEARNED = "learned"
@@ -147,14 +153,19 @@ class WhisperEncoderAttention(MMEncoderAttention):
 
 
 class WhisperPositionalEmbedding(nn.Embedding):
+    """Learned positional embedding layer for Whisper encoder."""
+
     def __init__(self, num_positions: int, embedding_dim: int):
         super().__init__(num_positions, embedding_dim)
 
     def forward(self, position_ids):
+        """Forward pass computing positional embeddings from token positions."""
         return self.weight[position_ids]
 
 
 class WhisperAttention(nn.Module):
+    """Scaled dot-product attention module for the Whisper encoder."""
+
     def __init__(
         self,
         embed_dim: int,
@@ -257,6 +268,9 @@ class WhisperAttention(nn.Module):
         # Only used for FlashInfer CuDNN backend.
         sequence_lengths: torch.Tensor | None = None,
     ):
+        """Forward pass computing scaled dot-product attention with
+        optional mask.
+        """
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
 
@@ -282,6 +296,8 @@ class WhisperAttention(nn.Module):
 
 
 class WhisperCrossAttention(WhisperAttention):
+    """Cross-attention module combining encoder and decoder features in Whisper."""
+
     def __init__(
         self,
         embed_dim: int,
@@ -331,6 +347,9 @@ class WhisperCrossAttention(WhisperAttention):
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor | None,
     ):
+        """Forward pass computing cross-attention between encoder and decoder
+        states.
+        """
         q, _ = self.q_proj(hidden_states)
 
         # Encoder hidden states are only computed once during prefill phase.
@@ -349,6 +368,8 @@ class WhisperCrossAttention(WhisperAttention):
 
 
 class WhisperMLP(nn.Module):
+    """Feed-forward multi-layer perceptron for Whisper encoder and decoder."""
+
     def __init__(
         self,
         embed_dim: int,
@@ -374,6 +395,7 @@ class WhisperMLP(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor):
+        """Forward pass through the MLP layer."""
         hidden_states, _ = self.fc1(hidden_states)
         hidden_states = self.activation_fn(hidden_states)
         hidden_states, _ = self.fc2(hidden_states)
@@ -381,6 +403,8 @@ class WhisperMLP(nn.Module):
 
 
 class WhisperEncoderLayer(nn.Module):
+    """Single encoder layer with self-attention and feed-forward network."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -416,6 +440,7 @@ class WhisperEncoderLayer(nn.Module):
         # Only used for FlashInfer CuDNN backend.
         sequence_lengths: torch.Tensor | None = None,
     ):
+        """Forward pass through the encoder layer."""
         residual = hidden_states
         hidden_states = self.self_attn_layer_norm(hidden_states)
         hidden_states = self.self_attn(
@@ -436,6 +461,10 @@ class WhisperEncoderLayer(nn.Module):
 
 
 class WhisperDecoderLayer(nn.Module):
+    """Single decoder layer combining self-attention, cross-attention, and
+    feed-forward networks.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -473,6 +502,7 @@ class WhisperDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor | None,
     ):
+        """Forward pass through the decoder layer."""
         residual = hidden_states
         hidden_states = self.self_attn_layer_norm(hidden_states)
         hidden_states = self.self_attn(hidden_states=hidden_states)
@@ -495,6 +525,8 @@ class WhisperDecoderLayer(nn.Module):
 
 
 class WhisperEncoder(nn.Module):
+    """Encoder stack of Whisper consisting of multiple encoder layers."""
+
     def __init__(
         self,
         *,
@@ -566,6 +598,7 @@ class WhisperEncoder(nn.Module):
     def forward(
         self, input_features: torch.Tensor | list[torch.Tensor]
     ) -> torch.Tensor:
+        """Forward pass through the encoder stack."""
         hidden_states = []
         input_is_batched = False
         for features in input_features:
@@ -595,6 +628,10 @@ class WhisperEncoder(nn.Module):
 
 @support_torch_compile(dynamic_arg_dims={"input_ids": 0, "positions": -1})
 class WhisperDecoder(nn.Module):
+    """Decoder block for the Whisper model with self-attention and
+    cross-attention.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -625,6 +662,7 @@ class WhisperDecoder(nn.Module):
         positions: torch.Tensor,
         encoder_hidden_states: torch.Tensor | None,
     ):
+        """Forward pass through the decoder block."""
         inputs_embeds = self.embed_input_ids(input_ids)
         positions = self.embed_positions(positions)
         hidden_states = inputs_embeds + positions
@@ -643,6 +681,10 @@ class WhisperDecoder(nn.Module):
 
 
 class WhisperModel(nn.Module):
+    """Full Whisper model combining encoder and decoder with optional
+    cross-attention.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.encoder = WhisperEncoder(
@@ -658,6 +700,7 @@ class WhisperModel(nn.Module):
         positions: torch.Tensor,
         encoder_outputs: list[torch.Tensor],
     ) -> torch.Tensor:
+        """Forward pass through the full Whisper model."""
         enc_states = torch.cat(encoder_outputs, dim=0) if len(encoder_outputs) else None
         decoder_outputs = self.decoder(
             input_ids=input_ids,
@@ -676,6 +719,10 @@ class WhisperModel(nn.Module):
 
 
 class WhisperProcessingInfo(BaseProcessingInfo):
+    """Processing info for Whisper providing tokenizer and feature extractor
+    configuration.
+    """
+
     def get_hf_config(self) -> WhisperConfig:
         return self.ctx.get_hf_config(WhisperConfig)
 
@@ -716,6 +763,10 @@ class WhisperProcessingInfo(BaseProcessingInfo):
 
 
 class WhisperDummyInputsBuilder(BaseDummyInputsBuilder[WhisperProcessingInfo]):
+    """Dummy inputs builder for Whisper generating synthetic multimodal
+    inputs.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_audios = mm_counts.get("audio", 0)
 
@@ -745,6 +796,8 @@ class WhisperDummyInputsBuilder(BaseDummyInputsBuilder[WhisperProcessingInfo]):
 
 
 class WhisperMultiModalProcessor(EncDecMultiModalProcessor[WhisperProcessingInfo]):
+    """Multi-modal processor for Whisper handling audio and text inputs."""
+
     def create_encoder_prompt(
         self,
         prompt: list[int],
@@ -821,6 +874,10 @@ class WhisperForConditionalGeneration(
     SupportsMultiModal,
     SupportsLoRA,
 ):
+    """Whisper model with a language modeling head for speech-to-text
+    generation.
+    """
+
     # LoRA-specific attributes
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
@@ -1007,6 +1064,7 @@ class WhisperForConditionalGeneration(
         encoder_outputs: list[torch.Tensor] | None = None,
         **kwargs,
     ) -> torch.Tensor:
+        """Forward pass through the Whisper model."""
         if encoder_outputs is None:
             encoder_outputs = []
         decoder_outputs = self.model(
@@ -1031,6 +1089,9 @@ class WhisperForConditionalGeneration(
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Converts input token IDs to hidden state embeddings through the
+        language model head.
+        """
         # This method just returns the decoder sequence embeddings since
         # Whisper does not have encoder text tokens.
         return self.model.decoder.embed_input_ids(input_ids)

@@ -62,6 +62,8 @@ from .utils import (
 
 
 class Lfm2MoeMlp(nn.Module):
+    """Dense FFN block with fused gate-up projection for LFM2-MoE."""
+
     def __init__(
         self,
         dim: int,
@@ -94,6 +96,8 @@ class Lfm2MoeMlp(nn.Module):
 
 
 class Lfm2MoeSparseMoeBlock(nn.Module):
+    """Sparse MoE block with sigmoid routing and sigmoid score normalization."""
+
     def __init__(
         self,
         config: Lfm2MoeConfig,
@@ -173,6 +177,8 @@ class Lfm2MoeSparseMoeBlock(nn.Module):
 
 
 class Lfm2MoeAttention(nn.Module):
+    """RoPE attention with QK normalization for LFM2-MoE."""
+
     def __init__(
         self,
         config: Lfm2MoeConfig,
@@ -264,6 +270,8 @@ class Lfm2MoeAttention(nn.Module):
 
 
 class Lfm2MoeAttentionDecoderLayer(nn.Module):
+    """Attention-based decoder layer for LFM2-MoE with pre-norm structure."""
+
     def __init__(
         self,
         config: Lfm2MoeConfig,
@@ -329,6 +337,8 @@ class Lfm2MoeAttentionDecoderLayer(nn.Module):
 
 
 class Lfm2MoeShortConvDecoderLayer(nn.Module):
+    """Short-convolution based decoder layer for LFM2-MoE with pre-norm structure."""
+
     def __init__(
         self,
         config: Lfm2MoeConfig,
@@ -392,6 +402,8 @@ class Lfm2MoeShortConvDecoderLayer(nn.Module):
 
 @support_torch_compile
 class Lfm2MoeModel(nn.Module):
+    """LFM2-MoE hybrid backbone alternating attention and short-conv layers."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={
             ".conv.": ".short_conv.",
@@ -507,6 +519,8 @@ class Lfm2MoeForCausalLM(
     SupportsQuant,
     MixtureOfExperts,
 ):
+    """LFM2-MoE causal language model with hybrid layers and mixture-of-experts FFNs."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Inference-only GPT-OSS MoE model with per-layer sliding window attention
+and streaming expert weight loading."""
+
 import typing
 from collections.abc import Callable, Iterable
 
@@ -69,6 +72,8 @@ from .utils import (
     maybe_prefix,
 )
 
+# Maps checkpoint weight suffix names to shard identifiers for streaming
+# expert loading.
 _GPT_OSS_STREAMED_EXPERT_SUFFIX_TO_SHARD = {
     "w13_weight": "gpt_oss_w13",
     "w2_weight": "gpt_oss_w2",
@@ -87,6 +92,13 @@ def _get_weight_loader(param: torch.Tensor) -> Callable[..., object]:
 
 
 class OAIAttention(nn.Module):
+    """Multi-head attention with NeoX-style RoPE and per-layer sliding window.
+
+    Applies sliding window attention only on even-indexed layers. Uses
+    GPT-J interleaved rotary embeddings by default; set rope_is_neox_style
+    to switch to NeoX chunked-half convention.
+    """
+
     # Override to switch RoPE convention. gpt-oss uses NeoX (chunk halves);
     # privacy-filter and similar derivatives use GPT-J (interleaved pairs).
     rope_is_neox_style: bool = True
@@ -355,6 +367,14 @@ class GptOssRoutedExperts(RoutedExperts):
 
 
 class MLPBlock(torch.nn.Module):
+    """Mixture-of-experts MLP with router and fused expert kernels.
+
+    Computes router logits via a replicated linear layer, then dispatches
+    tokens to experts through a fused MoE kernel. Uses sequence parallelism
+    when configured. Handles both unquantized and MXFP4 packed expert
+    weights, with ROCm-specific fallback.
+    """
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -421,6 +441,13 @@ class MLPBlock(torch.nn.Module):
 
 
 class TransformerBlock(torch.nn.Module):
+    """Transformer layer with pre-normalization and residual connections.
+
+    Composes an attention module and an MLP module with RMSNorm
+    pre-normalization. Residual is threaded through both sub-layers.
+    Subclasses can override attention_cls and mlp_cls to swap components.
+    """
+
     # Override to swap attention/MLP without re-implementing the block.
     attention_cls: type[nn.Module] = OAIAttention
     mlp_cls: type[nn.Module] = MLPBlock
@@ -469,6 +496,14 @@ class TransformerBlock(torch.nn.Module):
 
 @support_torch_compile
 class GptOssModel(nn.Module, EagleModelMixin):
+    """Transformer backbone with vocab embedding and RMSNorm.
+
+    Stacks TransformerBlock layers between a vocab parallel embedding and a
+    final RMSNorm. Supports pipeline parallelism via make_layers and Eagle
+    speculative decoding hooks. Subclasses override block_cls to use
+    different transformer block implementations.
+    """
+
     # Override to swap in an alternative TransformerBlock subclass.
     block_cls: type[nn.Module] = TransformerBlock
 
@@ -1408,6 +1443,14 @@ class GptOssModel(nn.Module, EagleModelMixin):
 class GptOssForCausalLM(
     nn.Module, SupportsPP, SupportsEagle, SupportsEagle3, SupportsLoRA
 ):
+    """Causal language model with MoE transformer and parallel LM head.
+
+    Wraps GptOssModel with a vocab parallel LM head and logits processor.
+    Supports pipeline parallelism, Eagle/Eagle3 speculative decoding, and
+    LoRA. Remaps HuggingFace checkpoint weight names to vLLM's internal
+    naming via hf_to_vllm_mapper.
+    """
+
     is_3d_moe_weight: typing.ClassVar[bool] = True
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
 

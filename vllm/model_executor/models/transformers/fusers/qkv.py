@@ -84,6 +84,7 @@ class QKVFuser(StackedFuser):
 
     @classmethod
     def match(cls, graph: fx.Graph, module: nn.Module) -> "QKVFuser | None":
+        """Match the QKV pattern in graph and return a QKVFuser."""
         if (qkv_nodes := cls._get_qkv_nodes(graph, module)) is None:
             return None
         q, k, v = qkv_nodes
@@ -174,6 +175,7 @@ class QKVFuser(StackedFuser):
     def update_attrs(
         self, module: nn.Module, prefix: str, vllm_config: "VllmConfig"
     ) -> None:
+        """Replace QKV projections with a merged QKVParallelLinear."""
         quant_config = vllm_config.quant_config
         head_size = fused_head_size(module, vllm_config)
         q = module.get_submodule(self.q_name)

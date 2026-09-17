@@ -87,6 +87,8 @@ class GlmOcrVisionMLP(Glm4vVisionMLP):
 
 
 class GlmOcrVisionAttention(nn.Module):
+    """Multi-head attention with per-head QK RMSNorm and rotary embeddings."""
+
     def __init__(
         self,
         embed_dim: int,
@@ -145,6 +147,7 @@ class GlmOcrVisionAttention(nn.Module):
         self.apply_rotary_emb = ApplyRotaryEmb(enforce_enable=True)
 
     def split_qkv(self, qkv: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        """Chunk fused QKV tensor into separate q, k, v tensors."""
         # [s, b, 3 * head * head_dim]
         seq_len, bs, _ = qkv.shape
 
@@ -169,6 +172,7 @@ class GlmOcrVisionAttention(nn.Module):
         rotary_pos_emb_sin: torch.Tensor,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
     ) -> torch.Tensor:
+        """Compute QKV projection, apply rotary embeddings, and attention."""
         # [s, b, c] --> [s, b, head * 3 * head_dim]
         x, _ = self.qkv(x)
 
@@ -205,6 +209,8 @@ class GlmOcrVisionAttention(nn.Module):
 
 
 class GlmOcrVisionBlock(Glm4vVisionBlock):
+    """Vision transformer block with QK-norm attention and MLP."""
+
     def __init__(
         self,
         dim: int,
@@ -247,6 +253,8 @@ class GlmOcrPatchMerger(Glm4vPatchMerger):
 
 
 class GlmOcrVisionTransformer(Glm4vVisionTransformer):
+    """Vision encoder with patch embedding, rotary attention, and downsampling."""
+
     def __init__(
         self,
         text_config: "GlmOcrTextConfig",
@@ -328,6 +336,7 @@ class GlmOcrVisionTransformer(Glm4vVisionTransformer):
         grid_thw: torch.Tensor | list[list[int]],
         encoder_metadata: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
+        """Patchify, apply rotary attention, downsample, and merge patches."""
         del encoder_metadata
         if isinstance(grid_thw, list):
             grid_thw = torch.tensor(grid_thw, dtype=torch.int32)
@@ -378,6 +387,8 @@ class GlmOcrVisionTransformer(Glm4vVisionTransformer):
     dummy_inputs=Glm4vDummyInputsBuilder,
 )
 class GlmOcrForConditionalGeneration(Glm4vForConditionalGeneration):
+    """GLM-OCR model with vision tower and language generation."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__(vllm_config=vllm_config, prefix=prefix)
         config = vllm_config.model_config.hf_config

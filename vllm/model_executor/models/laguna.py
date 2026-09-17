@@ -452,6 +452,8 @@ class LagunaAttention(nn.Module):
 
 
 class LagunaDecoderLayer(nn.Module):
+    """Single transformer layer with attention and MoE or dense MLP."""
+
     def __init__(
         self,
         config,
@@ -563,6 +565,8 @@ class LagunaDecoderLayer(nn.Module):
 
 @support_torch_compile
 class LagunaModel(nn.Module, EagleModelMixin):
+    """Laguna transformer backbone with stacked decoder layers."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -688,6 +692,7 @@ class LagunaModel(nn.Module, EagleModelMixin):
             yield name, loaded_weight
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        # Ignores scale and bias suffixes not present in vLLM's weight format.
         loader = AutoWeightsLoader(
             self,
             ignore_unexpected_suffixes=[
@@ -709,6 +714,8 @@ class LagunaModel(nn.Module, EagleModelMixin):
 
 
 class LagunaForCausalLM(nn.Module, SupportsPP, SupportsLoRA, SupportsEagle3):
+    """Laguna causal language model for text generation."""
+
     fall_back_to_pt_during_load = False
 
     packed_modules_mapping = {

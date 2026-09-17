@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 
 @functools.cache
 def nemotron_v3_config(thinking: bool = True) -> ParserEngineConfig:
+    """Return a ParserEngineConfig for Nemotron V3 using Qwen3 format
+    with Nemotron-specific settings.
+    """
     return dataclasses.replace(
         qwen3_config(thinking=thinking),
         name="nemotron_v3",
@@ -52,6 +55,9 @@ class NemotronV3Parser(Qwen3Parser):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the NemotronV3Parser with tokenizer and tools.
+        Set up the streamed reasoning buffer.
+        """
         chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
         thinking = chat_kwargs.get("enable_thinking", True)
         super().__init__(
@@ -63,6 +69,7 @@ class NemotronV3Parser(Qwen3Parser):
         self._streamed_reasoning: list[str] = []
 
     def _reset(self, initial_state=None) -> None:
+        """Reset the parser state and clear the streamed reasoning buffer."""
         super()._reset(initial_state=initial_state)
         self._streamed_reasoning = []
 
@@ -71,6 +78,7 @@ class NemotronV3Parser(Qwen3Parser):
         events: list[SemanticEvent],
         finished: bool = False,
     ) -> DeltaMessage | None:
+        """Accumulate reasoning text from streaming delta events."""
         delta = super()._events_to_delta(events, finished=finished)
         if delta is not None and delta.reasoning is not None:
             self._streamed_reasoning.append(delta.reasoning)
@@ -80,6 +88,9 @@ class NemotronV3Parser(Qwen3Parser):
     def _should_force_content(
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> bool:
+        """Return True when thinking is disabled or force_nonempty_content
+        is requested.
+        """
         chat_template_kwargs = getattr(request, "chat_template_kwargs", None)
         return bool(
             chat_template_kwargs
@@ -94,6 +105,9 @@ class NemotronV3Parser(Qwen3Parser):
         text: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> str | None:
+        """Return accumulated reasoning as fallback content when content
+        forcing is enabled.
+        """
         if not self._should_force_content(request):
             return None
         return "".join(self._streamed_reasoning) or None
@@ -103,6 +117,9 @@ class NemotronV3Parser(Qwen3Parser):
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning and content, swapping them when force content
+        is requested.
+        """
         reasoning, content = super().extract_reasoning(model_output, request)
 
         if self._should_force_content(request) and (

@@ -95,6 +95,7 @@ class TPAwareNormMixin(nn.Module):
     def forward(
         self, x: torch.Tensor, residual: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass with TP-aware norm reconstruction."""
         if self.tp_size > 1 and x.shape[-1] < (full := self.weight.shape[0]):
             if x.shape[-1] * self.tp_size != full:
                 raise ValueError(
@@ -244,6 +245,7 @@ class RMSNormFuser(BaseFuser):
         return None
 
     def validate(self, module: nn.Module, vllm_config: "VllmConfig") -> bool:
+        """Always returns true since RMSNorm is always valid."""
         return True
 
     def fuse(

@@ -77,6 +77,8 @@ class FP32ReplicatedLinear(ReplicatedLinear):
 
 
 class Step3p5MLP(nn.Module):
+    """Feed-forward MLP block with merged gate-up projection and row-parallel
+    down projection."""
     def __init__(
         self,
         config: ModelConfig,
@@ -122,6 +124,8 @@ class Step3p5MLP(nn.Module):
             self.act_fn = SwigluStepAndMul(limit=self.limit)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply gate_up_proj, activation function, then down_proj to
+        hidden_states."""
         gate_up, _ = self.gate_up_proj(hidden_states)
         intermediate_act = self.act_fn(gate_up)
         output, _ = self.down_proj(intermediate_act)
@@ -129,6 +133,8 @@ class Step3p5MLP(nn.Module):
 
 
 class Step3p5Attention(nn.Module):
+    """Multi-head attention with qkv projection, rotary embedding, q/k norm,
+    and optional head-wise attention gating."""
     def __init__(
         self,
         hidden_size: int,
@@ -267,6 +273,8 @@ class Step3p5Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Split qkv into q, k, v, apply q_norm/k_norm, optional rotary
+        embedding, attention, and optional head-wise gating."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         # Add qk-norm inline similar to Qwen3 MOE attention
@@ -292,6 +300,8 @@ class Step3p5Attention(nn.Module):
 
 
 class FusedMoEBlock(nn.Module):
+    """Fused MoE block with gate projection, expert routing via
+    FusedMoEFactory, and optional share expert MLP."""
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -390,6 +400,8 @@ class FusedMoEBlock(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Reshape hidden_states to 2D, pass through FusedMoEFactory
+        experts, and reshape back."""
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -401,6 +413,8 @@ class FusedMoEBlock(nn.Module):
 
 
 class Step3p5DecoderLayer(nn.Module):
+    """Single decoder layer with self-attention, optional MoE or MLP
+    FFN, and layernorm with optional fused all-reduce."""
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -513,6 +527,8 @@ class Step3p5DecoderLayer(nn.Module):
     def forward(
         self, positions: torch.Tensor, hidden_states: torch.Tensor
     ) -> torch.Tensor:
+        """Apply input layernorm, self-attention, residual connection,
+        post-attention layernorm, and FFN with residual connection."""
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
 
@@ -534,6 +550,8 @@ class Step3p5DecoderLayer(nn.Module):
 
 @support_torch_compile
 class Step3p5Model(nn.Module):
+    """Full transformer model with embedding, decoder layers, and
+    final norm, supporting pipeline parallelism."""
     def __init__(self, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
 
@@ -581,6 +599,9 @@ class Step3p5Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Embed input_ids or use intermediate_tensors, iterate
+        through decoder layers, return hidden_states or IntermediateTensors
+        based on pipeline parallel rank."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -870,6 +891,8 @@ class Step3p5Model(nn.Module):
 
 
 class Step3p5ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
+    """Causal LM head with Step3p5Model encoder, ParallelLMHead,
+    and LogitsProcessor, implementing MoE metadata tracking."""
     # Required so quantization exclude lists match fused module prefixes.
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
@@ -886,6 +909,8 @@ class Step3p5ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
         vllm_config: VllmConfig,
         prefix: str = "",
     ):
+        """Initialize Step3p5ForCausalLM with Step3p5Model, ParallelLMHead,
+        and LogitsProcessor; handles tied word embeddings."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         self.model = Step3p5Model(
@@ -934,12 +959,16 @@ class Step3p5ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ):
+        """Pass input_ids, positions, and optional intermediate_tensors
+        through Step3p5Model and return hidden_states."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Compute logits from normalized hidden_states via model.norm
+        and logits_processor."""
         hidden_states = self.model.norm(hidden_states)
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
@@ -952,6 +981,8 @@ class Step3p5ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
         num_physical_experts: int,
         num_local_physical_experts: int,
     ) -> None:
+        """Update physical expert counts on all MoE layers and their
+        expert runners."""
         assert self.num_local_physical_experts == num_local_physical_experts
         self.num_physical_experts = num_physical_experts
         self.num_local_physical_experts = num_local_physical_experts
@@ -964,5 +995,6 @@ class Step3p5ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts):
             layer.experts.update_expert_map()
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Delegate weight loading to AutoWeightsLoader with hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

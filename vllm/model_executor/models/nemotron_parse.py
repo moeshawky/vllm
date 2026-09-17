@@ -7,6 +7,8 @@
 # Bart classes based on old vLLM codebase:
 # https://github.com/vllm-project/vllm/blob/v0.10.2/vllm/model_executor/models/bart.py
 
+"""Inference-only Nemotron Parse model with vision encoder and BART decoder."""
+
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal

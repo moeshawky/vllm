@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Conv length math, chunk counting, and audio feature flattening."""
 
 from collections.abc import Sequence
 from typing import cast
@@ -25,6 +26,7 @@ def _calculate_conv_output_length(
 def _as_list_chunk_counts(
     chunk_counts: torch.Tensor | list[int] | list[torch.Tensor],
 ) -> list[int]:
+    """Convert chunk counts tensor or list of tensors to a flat int list."""
     if isinstance(chunk_counts, torch.Tensor):
         return chunk_counts.tolist()
     if chunk_counts and isinstance(chunk_counts[0], torch.Tensor):
@@ -37,6 +39,7 @@ def _normalize_chunk_counts(
     chunk_counts: torch.Tensor | list[int] | list[torch.Tensor] | None,
     num_chunks: int,
 ) -> list[int]:
+    """Return uniform chunk counts when input is None."""
     if chunk_counts is None:
         return [1] * num_chunks
     return _as_list_chunk_counts(chunk_counts)
@@ -47,6 +50,7 @@ def _get_audio_output_lengths_from_lengths(
     merge_factor: int,
     conv_params: list[tuple[int, int, int]],
 ) -> torch.Tensor:
+    """Apply convolution length formula and merge factor to audio lengths."""
     for padding, kernel_size, stride in conv_params:
         audio_lengths = _calculate_conv_output_length(
             audio_lengths, padding, kernel_size, stride
@@ -59,6 +63,7 @@ def _get_audio_output_lengths_from_mask(
     merge_factor: int,
     conv_params: list[tuple[int, int, int]],
 ) -> torch.Tensor:
+    """Compute output lengths from attention mask and convolution parameters."""
     audio_lengths = mask.sum(-1)
     return _get_audio_output_lengths_from_lengths(
         audio_lengths, merge_factor, conv_params
@@ -108,6 +113,7 @@ def _flatten_audio_features_by_length(
     audio_features: torch.Tensor,
     audio_output_lengths: torch.Tensor,
 ) -> torch.Tensor:
+    """Mask and flatten audio features to a contiguous 2D tensor."""
     num_chunks, max_audio_tokens, embed_dim = audio_features.shape
     audio_output_lengths = audio_output_lengths.unsqueeze(1)
     audio_features_mask = (
@@ -123,6 +129,7 @@ def _group_audio_embeddings(
     chunk_embeddings: Sequence[torch.Tensor],
     chunk_counts: Sequence[int],
 ) -> tuple[torch.Tensor, ...]:
+    """Concatenate chunk embeddings into per-audio grouped tensors."""
     grouped_embeddings = []
     current_idx = 0
     for count in chunk_counts:

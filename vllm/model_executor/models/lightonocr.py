@@ -39,6 +39,8 @@ _I = TypeVar("_I", bound=Mistral3ProcessingInfo)
 
 
 class LightOnOCRProcessingInfo(Mistral3ProcessingInfo):
+    """Vision encoder info for LightOnOCR using Pixtral image sizing."""
+
     def get_vision_encoder_info(
         self,
         mm_processor_kwargs: Mapping[str, object] | None = None,
@@ -50,6 +52,8 @@ class LightOnOCRProcessingInfo(Mistral3ProcessingInfo):
 
 
 class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[LightOnOCRProcessingInfo]):
+    """Processes LightOnOCR inputs by removing image break/end tokens and unpadding pixels."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -68,6 +72,7 @@ class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[LightOnOCRProcessing
             tokenizer = self.info.get_tokenizer()
             vocab = tokenizer.get_vocab()
 
+            # break_id and end_id from processor are removed for LightOnOCR
             break_id = vocab.get(processor.image_break_token)
             end_id = vocab.get(processor.image_end_token)
 
@@ -139,6 +144,8 @@ class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[LightOnOCRProcessing
     dummy_inputs=Mistral3DummyInputsBuilder,
 )
 class LightOnOCRForConditionalGeneration(Mistral3ForConditionalGeneration):
+    """LightOnOCR multimodal model built on the Mistral3 vision-text architecture."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.vision_encoder.": "vision_tower.",

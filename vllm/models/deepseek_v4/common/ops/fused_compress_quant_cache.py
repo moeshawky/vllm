@@ -67,7 +67,7 @@ def compress_norm_rope_store_triton(
     if head_dim == 512:
         kernel = _fused_kv_compress_norm_rope_insert_sparse_attn
         num_warps = 4
-        kernel_kwargs = {"SANITIZE_CACHE_NANS": _ON_GFX950}
+        kernel_kwargs = {"SANITIZE_CACHE_NANS": _ON_GFX950}  # SANITIZE_CACHE_NANS = True on gfx950 (ROCm) to clamp NaN scales; disabled elsewhere to preserve max encoded scale at 255.
     elif use_fp4_cache:
         kernel = _fused_kv_compress_norm_rope_insert_indexer_mxfp4_attn
         num_warps = 1
@@ -540,6 +540,12 @@ def _launch_two_stage_sparse_attn_compressor(
     num_actual: int,
     compress_scratch: torch.Tensor,
 ) -> None:
+    """Two-stage split compressor dispatch for head=512 cr>=128 (no-overlap)
+
+    Run the occupancy-fanned two-stage split for prefill [num_decodee_tokens:]
+    to fill the CUs, and use the original single-pass launcher
+    for decode [0, num_decode_tokens)
+    """
     num_splits = _pick_compress_num_splits(num_actual, compress_ratio, head_dim)
     head_tile = head_dim // num_splits
     scratch = compress_scratch[:num_actual]
@@ -633,7 +639,8 @@ def compress_norm_rope_store_two_stage_triton(
             cos_sin_cache=cos_sin_cache,
             kv_cache=kv_cache,
             kv_slot_mapping=k_cache_metadata.slot_mapping[num_decodes:],
-            rms_norm_weight=rms_norm_weight,
+            rms_norm_weight=rms_norm_weight,  # decode path uses the single-pass launcher;
+            # prefill path uses the two-stage split for occupancy.
             rms_norm_eps=rms_norm_eps,
             quant_block=quant_block,
             token_stride=token_stride,
@@ -822,7 +829,8 @@ def _fused_kv_compress_norm_rope_insert_indexer_attn(
     result = tl.interleave(new_even, new_odd)  # fp32
 
     # ── FP8 UE8M0 quant: single block, flat reduction ────────────────
-    tl.static_assert(
+    tl.static_assert(  # tl.static_assert enforces one quant block per token
+        # for the indexer path — QUANT_BLOCK == TRITON_BLOCK_SIZE.
         TRITON_BLOCK_SIZE == QUANT_BLOCK,
         "Indexer expects one quant block (QUANT_BLOCK == TRITON_BLOCK_SIZE)",
     )
@@ -1008,7 +1016,9 @@ def _fused_kv_compress_norm_rope_insert_indexer_mxfp4_attn(
     # ── MXFP4 quant: tile even/odd halves into (N_BLOCKS, HALF_BLOCK) ──
     # Each MXFP4 block of QUANT_BLOCK elements = HALF_BLOCK consecutive pairs,
     # so (N_BLOCKS, HALF_BLOCK) rows of even/odd each land exactly one block.
-    N_QUANT_BLOCKS: tl.constexpr = HEAD_SIZE // QUANT_BLOCK
+    N_QUANT_BLOCKS: tl.constexpr = HEAD_SIZE // QUANT_BLOCK  # Static assertions enforce MXFP4 layout invariants:
+    # head_dim divisible by QUANT_BLOCK, TOKEN_STRIDE = head_dim // 2,
+    # SCALE_DIM = num_quant_blocks.
     HALF_BLOCK: tl.constexpr = QUANT_BLOCK // 2
     tl.static_assert(TRITON_BLOCK_SIZE == HEAD_SIZE)
     tl.static_assert(HEAD_SIZE % QUANT_BLOCK == 0)

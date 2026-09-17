@@ -77,6 +77,8 @@ from .utils import (
 
 
 class Glm4MoeMLP(nn.Module):
+    """Two-layer MLP with MergedColumnParallelLinear and RowParallelLinear."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -116,6 +118,8 @@ class Glm4MoeMLP(nn.Module):
 
 
 class Glm4MoE(nn.Module):
+    """Mixture-of-Experts block with routed and shared experts."""
+
     def __init__(
         self,
         config: Glm4MoeConfig,
@@ -208,6 +212,7 @@ class Glm4MoE(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Route tokens through experts using the gate's top-K selection."""
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -221,6 +226,8 @@ class Glm4MoE(nn.Module):
 
 
 class Glm4MoeAttention(nn.Module):
+    """Attention with QKV projection, rotary embeddings, and optional Q/K norms."""
+
     def __init__(
         self,
         config: Glm4MoeConfig,
@@ -319,6 +326,8 @@ class Glm4MoeAttention(nn.Module):
 
 
 class Glm4MoeDecoderLayer(nn.Module):
+    """Decoder layer with attention, MLP or MoE block, and RMS norms."""
+
     def __init__(
         self,
         config: Glm4MoeConfig,
@@ -401,6 +410,8 @@ class Glm4MoeDecoderLayer(nn.Module):
     }
 )
 class Glm4MoeModel(nn.Module):
+    """GLM-4 MoE backbone with embed_tokens, decoder layers, and final norm."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -502,6 +513,8 @@ class Glm4MoeModel(nn.Module):
 
 
 class Glm4MixtureOfExperts(MixtureOfExperts):
+    """Extracts and manages MoE expert parameters from the model."""
+
     moe_mlp_layers: list[Glm4MoE]
 
     def extract_moe_parameters(self, example_moe: Glm4MoE | None) -> None:
@@ -532,6 +545,8 @@ class Glm4MixtureOfExperts(MixtureOfExperts):
 
 
 class Glm4MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, Glm4MixtureOfExperts):
+    """GLM-4 MoE causal language model with PP, LoRA, and MoE support."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

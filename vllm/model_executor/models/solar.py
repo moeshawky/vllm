@@ -62,6 +62,8 @@ from .utils import (
 
 
 class SolarMLP(nn.Module):
+    """Implements gate_up_proj and down_proj linear layers with
+    SiluAndMul activation for the Solar decoder."""
     def __init__(
         self,
         hidden_size: int,
@@ -71,6 +73,9 @@ class SolarMLP(nn.Module):
         bias: bool = False,
         prefix: str = "",
     ) -> None:
+        """Initializes SolarMLP with MergedColumnParallelLinear
+        for gate_up_proj and RowParallelLinear for
+        down_proj; validates silu activation."""
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             input_size=hidden_size,
@@ -93,6 +98,8 @@ class SolarMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Applies gate_up_proj, SiluAndMul activation,
+        and down_proj to produce output."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -100,6 +107,9 @@ class SolarMLP(nn.Module):
 
 
 class SolarAttention(nn.Module):
+    """Implements multi-head attention with QKVParallelLinear,
+    RowParallelLinear, and rotary embeddings
+    supporting tensor parallelism."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -112,6 +122,10 @@ class SolarAttention(nn.Module):
         cache_config: CacheConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initializes SolarAttention with QKVParallelLinear
+        and RowParallelLinear; computes num_heads
+        and num_kv_heads based on tensor parallel
+        world size."""
         super().__init__()
         self.hidden_size = hidden_size
         tp_size = get_tensor_model_parallel_world_size()
@@ -174,6 +188,9 @@ class SolarAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Computes QKV projections, applies rotary
+        embeddings, runs attention, and projects
+        output."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -183,6 +200,9 @@ class SolarAttention(nn.Module):
 
 
 class SolarDecoderLayer(nn.Module):
+    """Implements a single decoder layer with
+    self-attention, MLP, and two RMSNorm
+    residual connections."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -190,6 +210,9 @@ class SolarDecoderLayer(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initializes SolarDecoderLayer with SolarAttention,
+        SolarMLP, and two RMSNorm layers; handles
+        attention_bias from config."""
         super().__init__()
         self.hidden_size = config.hidden_size
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
@@ -229,6 +252,9 @@ class SolarDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Applies self-attention then MLP with
+        residual connections and RMSNorm
+        normalization."""
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -248,7 +274,15 @@ class SolarDecoderLayer(nn.Module):
 
 @support_torch_compile
 class SolarModel(nn.Module):
+    """Implements the full transformer model with
+    embedding, decoder layers, and final norm;
+    supports pipeline parallelism and BSKCN
+    gating."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes SolarModel with embedding tokens,
+        decoder layers via make_layers, and final
+        norm; creates empty intermediate tensors
+        factory."""
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -289,6 +323,8 @@ class SolarModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Maps input IDs to embeddings using the
+        vocabulary parallel embedding layer."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -298,6 +334,9 @@ class SolarModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Processes hidden states through decoder
+        layers with BSKCN gating and pipeline
+        parallelism support."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -345,6 +384,9 @@ class SolarModel(nn.Module):
 
 
 class SolarForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """Implements the causal language model head with
+    LoRA and pipeline parallelism support; maps
+    HF weights to vLLM format."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -366,6 +408,9 @@ class SolarForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes SolarForCausalLM with SolarModel,
+        ParallelLMHead, and LogitsProcessor; handles
+        tied word embeddings and logit_scale."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -400,6 +445,8 @@ class SolarForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegates to the inner model's embed_input_ids
+        method."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -409,15 +456,21 @@ class SolarForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Passes inputs through the inner model and
+        returns hidden states."""
         model_output = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
         return model_output
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Computes logits from hidden states
+        using the logits processor and language model head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads HF weights using AutoWeightsLoader
+        with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

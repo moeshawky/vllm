@@ -79,6 +79,8 @@ def _get_step_alibi_slopes(total_num_heads: int) -> torch.Tensor:
 
 
 class StepAttention(nn.Module):
+    """Multi-head attention with QKVParallelLinear, ALiBi slopes,
+    and Attention module for Step decoder layers."""
     def __init__(
         self,
         config,
@@ -86,6 +88,8 @@ class StepAttention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize StepAttention with QKVParallelLinear, RowParallelLinear,
+        and ALiBi slopes computed from tensor parallel rank."""
         super().__init__()
         self.hidden_size = config.hidden_size
         tp_size = get_tensor_model_parallel_world_size()
@@ -150,6 +154,8 @@ class StepAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute QKV projections and run attention with ALiBi slopes
+        through the Attention module."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         attn_output = self.attn(q, k, v)
@@ -158,6 +164,8 @@ class StepAttention(nn.Module):
 
 
 class StepMLP(nn.Module):
+    """Gate-up and down projection linear layers with SiluAndMul activation
+    for the Step decoder."""
     def __init__(
         self,
         hidden_size: int,
@@ -166,6 +174,8 @@ class StepMLP(nn.Module):
         prefix: str = "",
         bias: bool = False,
     ):
+        """Initialize StepMLP with MergedColumnParallelLinear for gate_up_proj
+        and RowParallelLinear for down_proj."""
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             input_size=hidden_size,
@@ -184,6 +194,8 @@ class StepMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply gate_up_proj, SiluAndMul activation, and down_proj
+        to produce output."""
         x, _ = self.gate_up_proj(x)
         x = self.act_fn(x)
         x, _ = self.down_proj(x)
@@ -191,7 +203,11 @@ class StepMLP(nn.Module):
 
 
 class StepDecoderLayer(nn.Module):
+    """Single decoder layer with StepAttention, StepMLP, and two RMSNorm
+    residual connections."""
     def __init__(self, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize StepDecoderLayer with StepAttention, StepMLP, and two
+        RMSNorm layers from the vllm config."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         cache_config = vllm_config.cache_config
@@ -226,6 +242,8 @@ class StepDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply self-attention then MLP with residual connections and
+        RMSNorm normalization."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -238,7 +256,12 @@ class StepDecoderLayer(nn.Module):
 
 
 class StepDecoderModel(nn.Module, EagleModelMixin):
+    """Full Step decoder with embedding, decoder layers, and optional
+    auxiliary hidden states for Eagle/MoE."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize StepDecoderModel with embedding tokens, decoder layers
+        via make_layers, and final norm; creates empty intermediate tensors
+        factory."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -272,6 +295,8 @@ class StepDecoderModel(nn.Module, EagleModelMixin):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Map input IDs to embeddings using the vocabulary parallel
+        embedding layer."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -281,6 +306,8 @@ class StepDecoderModel(nn.Module, EagleModelMixin):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Process hidden states through decoder layers with auxiliary
+        hidden states for Eagle model support."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -312,6 +339,8 @@ class StepDecoderModel(nn.Module, EagleModelMixin):
 
 
 class Step1ForCausalLM(nn.Module, SupportsPP, SupportsEagle, SupportsEagle3):
+    """Causal language model head with PP, Eagle, and Eagle3 support
+    for speculative decoding."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -328,6 +357,8 @@ class Step1ForCausalLM(nn.Module, SupportsPP, SupportsEagle, SupportsEagle3):
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize Step1ForCausalLM with StepDecoderModel, ParallelLMHead,
+        and LogitsProcessor; handles tied word embeddings."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -358,6 +389,7 @@ class Step1ForCausalLM(nn.Module, SupportsPP, SupportsEagle, SupportsEagle3):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegate to the inner model's embed_input_ids method."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -367,6 +399,8 @@ class Step1ForCausalLM(nn.Module, SupportsPP, SupportsEagle, SupportsEagle3):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Pass inputs through the inner model and return hidden states
+        or auxiliary states."""
         return self.model(
             input_ids,
             positions,
@@ -378,10 +412,13 @@ class Step1ForCausalLM(nn.Module, SupportsPP, SupportsEagle, SupportsEagle3):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states; return None on non-last
+        PP ranks."""
         if not get_pp_group().is_last_rank:
             return None
         return self.logits_processor(self.lm_head, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load HF weights using AutoWeightsLoader with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

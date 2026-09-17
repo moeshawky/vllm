@@ -65,6 +65,8 @@ from .utils import (
 
 
 class HyperCLOVAXMLP(nn.Module):
+    """SwiGLU feed-forward layer with separate gate and up projections."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -101,6 +103,7 @@ class HyperCLOVAXMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Apply gate-up projection, SwiGLU activation, and down projection."""
         x, _ = self.gate_up_proj(x)
         x = self.act_fn(x)
         x, _ = self.down_proj(x)
@@ -108,6 +111,9 @@ class HyperCLOVAXMLP(nn.Module):
 
 
 class HyperCLOVAXAttention(nn.Module):
+    """Multi-head attention layer with fused QKV projection and RoPE.
+    Supports dual-chunk attention configuration."""
+
     def __init__(
         self,
         config: HyperCLOVAXConfig,
@@ -185,6 +191,8 @@ class HyperCLOVAXAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute attention with RoPE positional encoding and return projected
+        output."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -194,6 +202,9 @@ class HyperCLOVAXAttention(nn.Module):
 
 
 class HyperCLOVAXDecoderLayer(nn.Module):
+    """HyperCLOVAX decoder layer with pre-norm attention and FFN. Supports
+    dual-norm (post-norm after each sub-layer) and muP residual scaling."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -258,6 +269,8 @@ class HyperCLOVAXDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply pre-norm attention and FFN sub-layers with muP-scaled
+        residual connections, returning updated hidden states and residual."""
         # Unlike models that use a fused add-norm kernel (e.g. Llama), HyperCLOVAX
         # applies the residual connection explicitly with a muP scaling factor
         # (residual + hidden * residual_multiplier). As a result, each layer's
@@ -295,6 +308,9 @@ class HyperCLOVAXDecoderLayer(nn.Module):
 
 @support_torch_compile
 class HyperCLOVAXModel(nn.Module):
+    """HyperCLOVAX transformer model with embedding, decoder layers, and final
+    RMS norm. Supports pipeline parallelism and muP embedding scaling."""
+
     def __init__(
         self,
         *,
@@ -346,6 +362,8 @@ class HyperCLOVAXModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the decoder stack with muP embedding scaling and return final
+        hidden states or intermediate tensors for pipeline parallel ranks."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -375,6 +393,9 @@ class HyperCLOVAXModel(nn.Module):
 
 
 class HyperCLOVAXForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """Causal language model wrapper over HyperCLOVAXModel with an LM head and
+    logits processor. Supports LoRA and pipeline parallelism."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -462,6 +483,7 @@ class HyperCLOVAXForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Delegate to the underlying HyperCLOVAXModel and return its output."""
         model_output = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -471,6 +493,7 @@ class HyperCLOVAXForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Apply the LM head and logits processor to obtain per-token logits."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
@@ -478,5 +501,6 @@ class HyperCLOVAXForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self,
         weights: Iterable[tuple[str, torch.Tensor]],
     ) -> set[str]:
+        """Load checkpoint weights using the HF-to-vLLM weight mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

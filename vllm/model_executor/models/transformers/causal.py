@@ -34,7 +34,12 @@ if TYPE_CHECKING:
 
 
 class CausalMixin(VllmModelForTextGeneration):
+    """Causal language model mixin implementing lm_head, logits_processor,
+    and load_weights for transformers backend."""
+
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
+        """Initializes VllmModelForTextGeneration base, creates ParallelLMHead
+        and LogitsProcessor on last PP rank with optional tied embeddings."""
         # Skip VllmModelForTextGeneration.__init__ and call the next class in MRO
         super(VllmModelForTextGeneration, self).__init__(
             vllm_config=vllm_config, prefix=prefix
@@ -80,5 +85,7 @@ class CausalMixin(VllmModelForTextGeneration):
         return super().load_weights(auto_load_lm_head_bias(weights)) | lm_head_bias
 
     def compute_logits(self, hidden_states: "torch.Tensor") -> "torch.Tensor | None":
+        """Computes logits from hidden_states using logits_processor
+        and lm_head with optional bias."""
         logits = self.logits_processor(self.lm_head, hidden_states, self.lm_head.bias)
         return logits

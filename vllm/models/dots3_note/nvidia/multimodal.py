@@ -67,6 +67,9 @@ class Dots3NoteForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
     supports_encoder_tp_data = True
 
+    # Weight mapper that translates HuggingFace weight prefixes
+    # to vLLM prefixes, redirecting model, lm_head, mtp, vision_encoder,
+    # and audio_encoder.
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.": "language_model.model.",
@@ -79,6 +82,9 @@ class Dots3NoteForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Returns the placeholder string for a given modality type,
+        mapping image, audio, and video to their respective
+        token sequences."""
         if modality.startswith("image"):
             return f"{IMAGE_START}{IMAGE_PAD}{IMAGE_END}"
         if modality.startswith("audio"):
@@ -88,6 +94,8 @@ class Dots3NoteForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         raise ValueError(f"Unsupported modality: {modality}")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Constructs the Dots3Note model with vision, audio, and language
+        submodules, loading tokenizer padding tokens and config sections."""
         super().__init__()
         model_config = vllm_config.model_config
         self.config = model_config.hf_config
@@ -175,6 +183,8 @@ class Dots3NoteForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         pixel_values: torch.Tensor,
         image_grid_thw: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
+        """Processes image inputs by passing pixel values and grid
+        dimensions through the vision encoder to produce image embeddings."""
         if self.visual is None:
             return ()
         merge_size = self.visual.spatial_merge_size
@@ -188,6 +198,8 @@ class Dots3NoteForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         audio_values: torch.Tensor,
         audio_lengths: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
+        """Processes audio inputs by validating the dtype, reshaping
+        waveforms, and passing them through the audio tower."""
         if self.audio_tower is None:
             return ()
         if audio_values.dtype != torch.int32:
@@ -253,6 +265,9 @@ class Dots3NoteForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         return tuple(outputs)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embeds multimodal inputs by processing pixel values, audio
+        values, and video inputs sequentially, returning the
+        concatenated embeddings."""
         multimodal_embeddings: list[torch.Tensor] = []
         handled: set[str] = set()
         for input_key in kwargs:

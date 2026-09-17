@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Parameters for pooling (embeddings/classification) models.
+
+PoolingParams is a msgspec Struct of user-facing settings
+(use_activation, dimensions, step-pooling fields) plus internal
+flags; verify() merges model defaults and validates the combination
+for the active pooling task.
+"""
+
 from copy import deepcopy
 from typing import Any
 
@@ -72,10 +80,16 @@ class PoolingParams(
 
     @property
     def all_parameters(self) -> list[str]:
+        """Return the user-facing fields that
+        _verify_valid_parameters checks against the allowed set.
+        """
         return ["dimensions", "use_activation"]
 
     @property
     def valid_parameters(self):
+        """Map each pooling task to its valid user-facing
+        parameters.
+        """
         return {
             "embed": ["dimensions", "use_activation"],
             "classify": ["use_activation"],
@@ -88,6 +102,12 @@ class PoolingParams(
         return deepcopy(self)
 
     def verify(self, model_config: ModelConfig) -> None:
+        """Validate and complete the params for the active task.
+        Plugin tasks skip validation; tasks absent from
+        valid_parameters return early. Otherwise merge pooler_config
+        defaults, apply task defaults, and reject parameters
+        the task does not accept.
+        """
         # plugin task uses io_processor.parse_data to verify inputs,
         # skipping PoolingParams verify
         if self.task == "plugin":
@@ -107,6 +127,11 @@ class PoolingParams(
         self._verify_valid_parameters()
 
     def _merge_default_parameters(self, model_config: ModelConfig) -> None:
+        """Copy values from model_config.pooler_config into self
+        for each parameter the task accepts, but only where self
+        is still None. Default skip_reading_prefix_cache and run
+        the step-pooling check.
+        """
         pooler_config = model_config.pooler_config
         if pooler_config is None:
             return
@@ -138,6 +163,11 @@ class PoolingParams(
         pooler_config: PoolerConfig,
         valid_parameters: list[str],
     ):
+        """For non-STEP tok_pooling_type, raise VLLMValidationError
+        if step_tag_id or returned_token_ids were set. For STEP
+        models, fill those fields from pooler_config where self
+        is still None.
+        """
         step_pooling_parameters = ["step_tag_id", "returned_token_ids"]
         if pooler_config.tok_pooling_type != "STEP":
             invalid_parameters = []
@@ -160,6 +190,13 @@ class PoolingParams(
                     setattr(self, k, getattr(pooler_config, k))
 
     def _set_default_parameters(self, model_config: ModelConfig):
+        """Apply task defaults: use_activation=True for
+        embed/token_embed and classify/token_classify when
+        unset. For embedding tasks with dimensions set, raise
+        unless the model is Matryoshka and dimensions lies in
+        [1, embedding_size] and, when configured, in the
+        matryoshka_dimensions list.
+        """
         if self.task in ["embed", "token_embed"]:
             if self.use_activation is None:
                 self.use_activation = True
@@ -197,6 +234,10 @@ class PoolingParams(
             raise ValueError(f"Unknown pooling task: {self.task!r}")
 
     def _verify_valid_parameters(self):
+        """Raise VLLMValidationError listing any field from
+        all_parameters that is set but not in the allowed set
+        for the active task.
+        """
         if self.task is None:
             raise ValueError("task must be set before verifying parameters")
         valid_parameters = self.valid_parameters[self.task]
@@ -230,6 +271,9 @@ class PoolingParams(
         )
 
     def __post_init__(self) -> None:
+        """Run check_removed_pooling_task and reject pooling
+        output_kind values other than FINAL_ONLY.
+        """
         check_removed_pooling_task(self.task)
         if self.output_kind != RequestOutputKind.FINAL_ONLY:
             raise VLLMValidationError(

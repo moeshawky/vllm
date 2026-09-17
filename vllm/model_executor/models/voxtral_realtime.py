@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Voxtral real-time speech-to-text model for vLLM with streaming audio processing."""
+
 import asyncio
 import math
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
@@ -47,6 +49,8 @@ logger = init_logger(__name__)
 
 
 class VoxtralRealtimeMultiModalProcessor(VoxtralMultiModalProcessor):
+    """Multi-modal processor for Voxtral real-time streaming."""
+
     def __init__(
         self,
         info: _I,
@@ -125,6 +129,8 @@ def _expand_tensor(input_tensor: torch.Tensor, scaling: int) -> torch.Tensor:
 
 
 class VoxtralRealtimeBuffer:
+    """Buffer for managing real-time audio stream state."""
+
     def __init__(self, config: AudioConfig, prompt_tokens: list[int]) -> None:
         self._config = config
 
@@ -209,6 +215,8 @@ class VoxtralRealtimeBuffer:
 )
 @support_torch_compile
 class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtime):
+    """Voxtral real-time generation model combining Whisper encoder with streaming audio processing."""
+
     requires_raw_input_tokens = True
     # transformers' currently has limited support for MistralCommon backend
     # and cached_get_processor. Let's skip until fixed
@@ -236,6 +244,8 @@ class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtim
         input_stream: asyncio.Queue[list[int]],
         model_config: ModelConfig,
     ) -> AsyncGenerator[PromptType, None]:
+        """Buffers real-time audio stream and generates prompt tokens for streaming transcription."""
+
         tokenizer = cached_tokenizer_from_config(model_config)
         audio_encoder = tokenizer.instruct.audio_encoder
         config = audio_encoder.audio_config
@@ -326,6 +336,8 @@ class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtim
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass through the Voxtral real-time generation model."""
+
         assert inputs_embeds is not None
         assert input_ids is not None
 
@@ -446,6 +458,8 @@ class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtim
     def get_speech_to_text_config(
         cls, model_config: ModelConfig, task_type: str
     ) -> SpeechToTextConfig:
+        """Returns the speech-to-text configuration from the model configuration."""
+
         tokenizer = cached_tokenizer_from_config(model_config)
         audio_config = tokenizer.instruct.audio_encoder.audio_config
         sample_rate = audio_config.sampling_rate
@@ -461,6 +475,8 @@ class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtim
         cls,
         stt_params: SpeechToTextParams,
     ) -> PromptType:
+        """Returns the generation prompt for real-time transcription."""
+
         audio = stt_params.audio
         model_config = stt_params.model_config
         stt_config = stt_params.stt_config

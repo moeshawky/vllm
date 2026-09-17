@@ -56,6 +56,8 @@ from .utils import (
 
 
 class GPTNeoXAttention(nn.Module):
+    """Multi-head attention with fused QKV and rotary embeddings."""
+
     def __init__(
         self,
         config: GPTNeoXConfig,
@@ -109,6 +111,7 @@ class GPTNeoXAttention(nn.Module):
         position_ids: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Project to QKV, apply rotary embeddings, compute attention."""
         qkv, _ = self.query_key_value(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
         q, k = self.rotary_emb(position_ids, q, k)
@@ -118,6 +121,8 @@ class GPTNeoXAttention(nn.Module):
 
 
 class GPTNeoXMLP(nn.Module):
+    """Two-layer feedforward network with activation."""
+
     def __init__(
         self,
         config: GPTNeoXConfig,
@@ -140,6 +145,7 @@ class GPTNeoXMLP(nn.Module):
         self.act = get_act_fn(config.hidden_act)
 
     def forward(self, hidden_states):
+        """Apply dense_h_to_4h, activation, then dense_4h_to_h."""
         hidden_states, _ = self.dense_h_to_4h(hidden_states)
         hidden_states = self.act(hidden_states)
         hidden_states, _ = self.dense_4h_to_h(hidden_states)
@@ -147,6 +153,8 @@ class GPTNeoXMLP(nn.Module):
 
 
 class GPTNeoXLayer(nn.Module):
+    """Pre-norm transformer layer with optional parallel residual."""
+
     def __init__(
         self,
         config: GPTNeoXConfig,
@@ -172,6 +180,7 @@ class GPTNeoXLayer(nn.Module):
         position_ids: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply layer norm, attention, and MLP with serial or parallel residual."""
         attn_input = self.input_layernorm(hidden_states)
         attn_output = self.attention(
             position_ids=position_ids,
@@ -197,6 +206,8 @@ class GPTNeoXLayer(nn.Module):
 
 @support_torch_compile
 class GPTNeoXModel(nn.Module):
+    """GPT-NeoX backbone with token embedding and stack of layers."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={"attention.bias": None, "attention.masked_bias": None}
     )
@@ -238,6 +249,7 @@ class GPTNeoXModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Embed tokens, apply transformer layers, return hidden states."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -256,6 +268,7 @@ class GPTNeoXModel(nn.Module):
     def _repack_qkv(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[tuple[str, torch.Tensor]]:
+        """Reshape fused QKV weights from NeoX layout to vLLM layout."""
         # GPT-NeoX's fused QKV is laid out as (num_heads * 3 * head_size) on
         # its output dim (0), while vLLM expects (3 * num_heads * head_size).
         num_heads = self.config.num_attention_heads
@@ -275,6 +288,8 @@ class GPTNeoXModel(nn.Module):
 
 
 class GPTNeoXForCausalLM(nn.Module, SupportsPP):
+    """Causal LM head on top of GPT-NeoX backbone."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -307,6 +322,7 @@ class GPTNeoXForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Delegate to the underlying GPT-NeoX model."""
         hidden_states = self.gpt_neox(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -316,9 +332,11 @@ class GPTNeoXForCausalLM(nn.Module, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Apply logits processor to the output embedding."""
         logits = self.logits_processor(self.embed_out, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights with QKV repacking and HF-to-vLLM mapping."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

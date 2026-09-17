@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Inference-only Gemma3 multimodal model compatible with HuggingFace weights."""
+
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Any, Literal
@@ -78,13 +80,18 @@ Gemma3ImageInputs = Gemma3ImagePixelInputs
 
 
 class Gemma3ProcessingInfo(BaseProcessingInfo):
+    """Processing info for Gemma3 multimodal model, including image crop computation."""
+
     def get_hf_config(self):
+        """Get the HuggingFace config for the model."""
         return self.ctx.get_hf_config(Gemma3Config)
 
     def get_hf_processor(self, **kwargs: object):
+        """Get the HuggingFace processor for the model."""
         return self.ctx.get_hf_processor(Gemma3Processor, **kwargs)
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Return unlimited image count support."""
         return {"image": None}
 
     def get_num_crops(
@@ -95,6 +102,8 @@ class Gemma3ProcessingInfo(BaseProcessingInfo):
         processor: Gemma3Processor,
         mm_kwargs: Mapping[str, object],
     ) -> int:
+        """Compute the number of pan-and-scan crops for an image based on its
+        dimensions."""
         image_processor: Gemma3ImageProcessor = processor.image_processor
 
         images_kwargs = processor._merge_kwargs(
@@ -167,6 +176,8 @@ class Gemma3ProcessingInfo(BaseProcessingInfo):
         processor: Gemma3Processor,
         mm_kwargs: Mapping[str, object],
     ) -> PromptUpdateDetails:
+        """Build the prompt replacement for an image, including crop tokens if
+        needed."""
         boi_token = processor.boi_token
 
         num_crops = self.get_num_crops(
@@ -232,6 +243,8 @@ class Gemma3ProcessingInfo(BaseProcessingInfo):
 
 
 class Gemma3DummyInputsBuilder(BaseDummyInputsBuilder[Gemma3ProcessingInfo]):
+    """Builder for dummy multimodal inputs used in profiling and testing."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
 
@@ -263,6 +276,8 @@ class Gemma3DummyInputsBuilder(BaseDummyInputsBuilder[Gemma3ProcessingInfo]):
 
 
 class Gemma3MultiModalProcessor(BaseMultiModalProcessor[Gemma3ProcessingInfo]):
+    """Processor for Gemma3 multimodal inputs, handling image token replacement."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -504,6 +519,9 @@ class Gemma3MultiModalProjector(nn.Module):
 class Gemma3ForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsEncoderCudaGraph
 ):
+    """Multimodal Gemma3 model combining a SigLIP vision tower with the Gemma3 text
+    model."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -530,12 +548,15 @@ class Gemma3ForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Return the image placeholder string '<start_of_image>'."""
         if modality.startswith("image"):
             return "<start_of_image>"
 
         raise ValueError("Only image modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize the model with vision tower, projector, and language model
+        components."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -621,6 +642,8 @@ class Gemma3ForConditionalGeneration(
         return [e.flatten(0, 1) for e in image_embeds.split(num_patches.tolist())]
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Process image inputs through the vision tower and projector to produce
+        embeddings."""
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -634,6 +657,8 @@ class Gemma3ForConditionalGeneration(
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Embed input tokens, inserting multimodal embeddings at placeholder
+        positions."""
         # Early return for text-only inference (no multimodal data)
         if multimodal_embeddings is None or is_multimodal is None:
             return super().embed_input_ids(input_ids)
@@ -653,6 +678,7 @@ class Gemma3ForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> IntermediateTensors:
+        """Run the language model forward pass on the input embeddings."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -670,9 +696,11 @@ class Gemma3ForConditionalGeneration(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute output logits from the language model hidden states."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from an iterable of name-value pairs."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 

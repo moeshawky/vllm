@@ -91,6 +91,7 @@ class DeepseekV4SparseMLABackend(AttentionBackend):
 
 @dataclass
 class DeepseekV4FlashMLAMetadata(AttentionMetadata):
+    """Metadata container for FlashMLA sparse-attention with C128A compression."""
     num_reqs: int
     max_query_len: int
     max_seq_len: int
@@ -115,6 +116,7 @@ class DeepseekV4FlashMLAMetadata(AttentionMetadata):
 class DeepseekV4SparseMLAMetadataBuilder(
     AttentionMetadataBuilder[DeepseekV4FlashMLAMetadata]
 ):
+    """Metadata builder pre-allocating C128A topk buffers for CUDA graph stability."""
     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
 
     def __init__(
@@ -278,10 +280,12 @@ class DeepseekV4SparseMLAMetadataBuilder(
 
 
 class DeepseekV4FlashMLAMetadataBuilder(DeepseekV4SparseMLAMetadataBuilder):
+    """FlashMLA metadata builder with ALWAYS cudagraph support."""
     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.ALWAYS
 
 
 class DeepseekV4FlashMLABackend(DeepseekV4SparseMLABackend):
+    """FlashMLA sparse-MLA backend returning FLASHMLA_SPARSE_DSV4."""
     @staticmethod
     def get_name() -> str:
         return "FLASHMLA_SPARSE_DSV4"
@@ -372,6 +376,7 @@ def _build_c128a_topk_metadata_kernel(
     slot_mapping_ptr,
     BLOCK_SIZE: tl.constexpr,
 ):
+    """Triton kernel computing C128A topk metadata for decode and prefill tokens."""
     token_idx = tl.program_id(0)
     position = tl.load(positions_ptr + token_idx)
     num_compressed = (position + 1) // compress_ratio

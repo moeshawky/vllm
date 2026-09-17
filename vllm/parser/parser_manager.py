@@ -27,7 +27,11 @@ class ParserManager:
         enable_auto_tools: bool = False,
         model_name: str | None = None,
     ) -> type[ToolParser] | None:
-        """Get the tool parser based on the name."""
+        """Get the tool parser class by name.
+
+        Logs a warning for Llama-3.2 models with pythonic tool choice.
+        Raises TypeError if the parser is not registered.
+        """
         from vllm.tool_parsers import ToolParserManager
 
         parser: type[ToolParser] | None = None
@@ -58,7 +62,10 @@ class ParserManager:
         cls,
         reasoning_parser_name: str | None,
     ) -> type[ReasoningParser] | None:
-        """Get the reasoning parser based on the name."""
+        """Get the reasoning parser class by name.
+
+        Raises TypeError if the parser is not registered.
+        """
         from vllm.reasoning import ReasoningParserManager
 
         parser: type[ReasoningParser] | None = None
@@ -120,6 +127,9 @@ class ParserManager:
             r_cls = reasoning_parser_cls
             t_cls = tool_parser_cls
 
+            # Create a dynamic subclass of KimiK3Parser with
+            # class-level parser_cls attributes set. This pattern
+            # allows runtime composition of parser classes.
             class _KimiK3Parser(KimiK3Parser):
                 reasoning_parser_cls = r_cls
                 tool_parser_cls = t_cls
@@ -131,6 +141,9 @@ class ParserManager:
         r_cls = reasoning_parser_cls
         t_cls = tool_parser_cls
 
+        # Create a dynamic subclass of DelegatingParser with
+        # class-level parser_cls attributes. This is the default
+        # composition path for most models.
         class _Parser(DelegatingParser):
             reasoning_parser_cls = r_cls
             tool_parser_cls = t_cls

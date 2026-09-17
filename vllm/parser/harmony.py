@@ -59,8 +59,10 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-
 class _SegmentType(Enum):
+    """Enum classifying Harmony message segments into TOOL,
+    REASONING, CONTENT, or IGNORE based on channel and recipient."""
+
     TOOL = auto()
     REASONING = auto()
     CONTENT = auto()
@@ -80,6 +82,9 @@ class _SegmentType(Enum):
 
 
 class Segment(NamedTuple):
+    """Represents a segment of a Harmony message with channel,
+    recipient, delta, and optional completed_message."""
+
     channel: str | None
     recipient: str | None
     delta: str
@@ -88,11 +93,17 @@ class Segment(NamedTuple):
 
 @dataclass
 class ChunkResult:
+    """Result of processing a chunk of Harmony output: segments
+    and reasoning token count."""
+
     segments: list[Segment]
     reasoning_token_count: int
 
 
 class HarmonyParser(DelegatingParser):
+    """Parser for Harmony-format model output. Requires
+    GptOssReasoningParser and GptOssToolParser."""
+
     def __init__(self, tokenizer, tools=None, *args, **kwargs):
         super().__init__(tokenizer, tools, *args, **kwargs)
 
@@ -125,6 +136,8 @@ class HarmonyParser(DelegatingParser):
         return self._parser
 
     def _poll_completed_message(self) -> Message | None:
+        """Poll the next completed message from the Harmony
+        parser. Normalizes the recipient."""
         messages = self._harmony_parser.messages
         if len(messages) <= self._num_processed_messages:
             return None
@@ -134,6 +147,9 @@ class HarmonyParser(DelegatingParser):
         return msg
 
     def flush(self) -> list[Segment]:
+        """Flush the Harmony parser at end of turn.
+        Processes EOS, handles HarmonyError, resets state
+        for the next turn."""
         segments: list[Segment] = []
         try:
             self._harmony_parser.process_eos()
@@ -243,6 +259,8 @@ class HarmonyParser(DelegatingParser):
         *,
         finished: bool,
     ) -> DeltaMessage | None:
+        """Parse a single Harmony streaming delta into
+        DeltaMessage with content, reasoning, and tool_calls."""
         prev_recipient = self._normalize_recipient(
             self._harmony_parser.current_recipient
         )
@@ -329,6 +347,9 @@ class HarmonyParser(DelegatingParser):
         return delta_message
 
     def process_chunk(self, token_ids: Sequence[int]) -> ChunkResult:
+        """Process a chunk of token IDs through the Harmony
+        parser. Returns ChunkResult with segments and reasoning
+        token count."""
         if not token_ids:
             return ChunkResult(segments=[], reasoning_token_count=0)
 
@@ -372,6 +393,8 @@ class HarmonyParser(DelegatingParser):
     def adjust_request(
         self, request: ChatCompletionRequest | ResponsesRequest
     ) -> ChatCompletionRequest | ResponsesRequest:
+        """Adjust request by canonicalizing output format
+        and delegating to parent."""
         request = _adjust_output_format(request)
         return super().adjust_request(request)
 
@@ -453,6 +476,9 @@ def get_harmony_structural_tag(
     tool_choice: SimplifiedToolChoice,
     reasoning: bool,
 ) -> StructuralTag:
+    """Create a StructuralTag for the Harmony format.
+    Reasoning is always enabled. Configures tags for
+    channels and tool choices."""
     # reasoning always enabled for Harmony
     del reasoning
 

@@ -238,6 +238,7 @@ class Gemma4MTPAttention(nn.Module):
         hidden_states: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        """Compute Q-only attention, reading K/V from the target model's cache."""
         q, _ = self.q_proj(hidden_states)
 
         q = q.unflatten(-1, (self.num_heads, self.head_dim))
@@ -342,6 +343,8 @@ class Gemma4MTPDecoderLayer(nn.Module):
 
 
 class Gemma4MultiTokenPredictor(nn.Module):
+    """MTP predictor with pre/post projections and MTP decoder layers."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 

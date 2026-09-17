@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+"""Multi-token prediction model with shared head and transformer decoder
+layers."""
 from collections.abc import Iterable
 
 import torch
@@ -28,6 +31,8 @@ logger = init_logger(__name__)
 
 
 class SharedHead(nn.Module):
+    """Normalized head module that applies LayerNorm before producing
+    logits."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -47,10 +52,13 @@ class SharedHead(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply GemmaRMSNorm to hidden_states and return the result."""
         return self.norm(hidden_states)
 
 
 class Step3p5AMultiTokenPredictorLayer(nn.Module):
+    """Multi-token prediction decoder layer combining encoder and hidden
+    state projections with a Step3p5DecoderLayer block."""
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -78,6 +86,8 @@ class Step3p5AMultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Project input_embeds and previous_hidden_states through norm and
+        eh_proj, then pass through mtp_block."""
         assert inputs_embeds is not None
         inputs_embeds = self.enorm(inputs_embeds)
         previous_hidden_states = self.hnorm(previous_hidden_states)
@@ -91,6 +101,8 @@ class Step3p5AMultiTokenPredictorLayer(nn.Module):
 
 
 class Step3p5AMultiTokenPredictor(nn.Module):
+    """Multi-token predictor with embedding, ModuleDict of prediction layers,
+    and logits processor."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -124,6 +136,8 @@ class Step3p5AMultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Embed input_ids if needed, select the appropriate MTP layer
+        by spec_step_idx, and return hidden_states."""
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         current_step_idx = spec_step_idx % self.num_mtp_layers
@@ -140,6 +154,8 @@ class Step3p5AMultiTokenPredictor(nn.Module):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Compute logits from the shared head's hidden_states
+        representation."""
         current_step_idx = spec_step_idx % self.num_mtp_layers
         mtp_layer = self.layers[str(self.mtp_start_layer_idx + current_step_idx)]
         logits = self.logits_processor(
@@ -148,10 +164,13 @@ class Step3p5AMultiTokenPredictor(nn.Module):
         return logits
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Look up token embeddings from input_ids via embed_tokens."""
         return self.embed_tokens(input_ids)
 
 
 class Step3p5MTP(nn.Module):
+    """Wrapper module that holds the multi-token predictor model and
+    provides embed_input_ids, forward, and compute_logits."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config
@@ -172,6 +191,8 @@ class Step3p5MTP(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Pass input_ids, positions, hidden_states, and optional
+        inputs_embeds through the multi-token predictor model."""
         hidden_states = self.model(
             input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
         )
@@ -182,9 +203,12 @@ class Step3p5MTP(nn.Module):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor | None:
+        """Delegate to the model's compute_logits method."""
         return self.model.compute_logits(hidden_states, spec_step_idx)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load stacked params and expert params weights with spec-layer
+        rewriting and optional MTP completeness checking."""
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),

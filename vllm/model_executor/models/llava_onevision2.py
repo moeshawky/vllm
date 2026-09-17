@@ -123,13 +123,13 @@ def _load_ov2_processor(
     trust_remote_code: bool,
     **kwargs: Any,
 ):
-    # OV2's trust_remote_code processor is a bare class (not a ProcessorMixin),
-    # so the shared type-checked get_hf_processor rejects it. We also can't use
-    # AutoProcessor.from_pretrained: OV2's remote from_pretrained drops
-    # trust_remote_code before building its nested tokenizer, which makes that
-    # nested load fall back to an interactive stdin prompt that hangs in
-    # non-interactive CI. Instead, assemble the processor here with
-    # trust_remote_code threaded through every component explicitly.
+    """Load the OV2 HuggingFace processor with trust_remote_code threaded through.
+
+    OV2's processor is a bare class (not a ProcessorMixin) and its remote
+    from_pretrained drops trust_remote_code for the nested tokenizer, causing
+    an interactive prompt hang. This loader assembles the processor manually
+    with explicit trust_remote_code on all components.
+    """
     path = convert_model_repo_to_path(model)
     revision = revision or "main"
 
@@ -204,22 +204,7 @@ def _pack_timestamps(per_video: list[list[float]]) -> torch.Tensor:
 
 
 def _validate_video_source(path: str, model_config) -> str:
-    """Confine a codec video path to ``--allowed-local-media-path``.
-
-    The codec backend keeps the raw path string alive past vLLM's
-    ``MultiModalDataParser`` and hands it to the trust-remote-code codec
-    module, which opens it directly via ``cv2.VideoCapture`` / ffmpeg. That
-    bypasses both ``MediaConnector``'s access controls and its redirect
-    handling (``VLLM_MEDIA_URL_ALLOW_REDIRECTS``), so we restrict the codec
-    backend to **local files only**: remote ``http(s)`` / ``data`` URLs are
-    rejected here and must instead go through the frame backend (a registered
-    ``VIDEO_LOADER_REGISTRY`` loader), which rides vLLM's connector and its
-    domain/redirect gates.
-
-    Returns the *resolved* absolute path so the codec module opens exactly the
-    file that was validated, closing the validate-vs-open (symlink-retarget)
-    window. Mirrors the confinement in ``MediaConnector._load_file_url``.
-    """
+    """Validate video source path or URL, resolving to a local file path."""
     from pathlib import Path
     from urllib.request import url2pathname
 
@@ -475,7 +460,7 @@ def _create_field_factory(
 # The default video pathway materialises each video as a series of PIL frames
 # (decoded + sampled by the registered ``LlavaOnevision2VideoBackend``) and
 # feeds them to the HF processor through the *image* branch (per-frame timestamp
-# marker + ``<|image_pad|>``). This mirrors the validated lmms-eval
+# marker + ``iệng``). This mirrors the validated lmms-eval
 # ``vllm_hf_chat`` adapter, and empirically scores higher on Video-MME than
 # OV2's native VideoProcessor frame extractor.
 _DEFAULT_TIMESTAMP_DECIMALS = 1
@@ -488,8 +473,9 @@ _TEMPORAL_MERGE_SIZE = 2
 # Token sequence emitted by the OV2 vLLM dummy inputs builder for each video
 # item. The frame backend expands each marker into per-frame image markers
 # (timestamp + image_pad block).
-_VIDEO_MARKER = "<|vision_start|><|video_pad|><|vision_end|>"
-_IMAGE_MARKER = "<|vision_start|><|image_pad|><|vision_end|>"
+_VIDEO_MARKER = "
+"
+_IMAGE_MARKER = "iệng"
 
 
 def _frame_video_to_pil_and_timestamps(
@@ -559,8 +545,9 @@ def _expand_video_markers_in_prompt(
     *,
     timestamp_decimals: int,
 ) -> str:
-    """Replace each ``<|vision_start|><|video_pad|><|vision_end|>`` with a
-    sequence of ``<{t:.Nf} seconds><|vision_start|><|image_pad|><|vision_end|>``
+    """Replace each ``
+`` with a
+    sequence of ``<{t:.Nf} seconds>iệng``
     blocks -- one per frame -- matching ``vllm_hf_chat._build_prompt``.
 
     Replacement is positional: the *i*-th marker consumes
@@ -731,16 +718,10 @@ LlavaOnevision2ImageInputs = (
 
 
 class LlavaOnevision2VisionRotaryEmbedding(nn.Module):
-    """3-D rotary frequency constructor with 4:6:6 (T:H:W) split.
+    """3D rotary position embedding with 4:6:6 head dimension split.
 
-    Mirrors ``VisionRotaryEmbedding`` in the HF reference
-    (``modeling_llava_onevision2.py`` L79-L210). The three ``inv_freq_*``
-    buffers are non-persistent — they are *not* in the checkpoint and must
-    be reconstructed at module init time (which we do here).
-
-    Public entry points used by the vision tower:
-      * ``forward_from_positions(patch_positions)`` — per-patch (t,h,w)
-        positions → per-token freqs [N, half].
+    Computes separate temporal, height, and width rotary embeddings for video
+    frame tokens, using patch_positions for per-token frequency computation.
     """
 
     def __init__(self, head_dim: int, theta: float = 10000.0) -> None:
@@ -866,11 +847,10 @@ class LlavaOnevision2VisionMLP(nn.Module):
 
 
 class LlavaOnevision2VisionAttn(nn.Module):
-    """Vision self-attention with windowed cu_seqlens.
+    """Vision self-attention with windowed cu_seqlens for temporal attention.
 
-    The HF checkpoint ships a *fused* qkv linear (``self_attn.qkv``), so
-    we load directly into ``QKVParallelLinear`` with no stacked_params
-    mapping. (Compare OV1.5, whose checkpoint had separate q/k/v.)
+    Implements windowed attention over video frames using cu_seqlens for the
+    temporal dimension, supporting both SDPA and flash_attn varlen backends.
     """
 
     def __init__(
@@ -1002,6 +982,12 @@ class LlavaOnevision2VisionAttn(nn.Module):
     is_encoder=True,
 )
 class LlavaOnevision2VisionTowerBlock(nn.Module):
+    """Single transformer block in the OV2 vision tower.
+
+    Contains attention and MLP sub-layers with pre-norm residual connections,
+    compiled with torch.compile for inference efficiency.
+    """
+
     def __init__(
         self,
         dim: int,
@@ -1052,6 +1038,12 @@ class LlavaOnevision2VisionTowerBlock(nn.Module):
 
 
 class LlavaOnevision2PatchMerger(nn.Module):
+    """Merges adjacent vision patches into a single token representation.
+
+    Applies a learned linear projection to concatenated 2x2 patch features
+    for spatial downsampling of the vision encoder output.
+    """
+
     def __init__(
         self,
         d_model: int,
@@ -1106,18 +1098,10 @@ class LlavaOnevision2PatchMerger(nn.Module):
 
 
 class LlavaOnevision2VisionTower(nn.Module):
-    """OV2 vision tower (no CLS token, 3-D RoPE, windowed attention).
+    """OV2 vision tower for image and video encoding.
 
-    Module attribute names mirror HF checkpoint names verbatim so the
-    WeightsMapper only needs prefix rewrites (no substring rules, which would
-    otherwise collide with the Qwen3 text-path ``self_attn`` modules):
-      visual.embeddings.patch_embedding
-      visual.layernorm_pre
-      visual.encoder.layers.{i}.self_attn.{qkv,proj}
-      visual.encoder.layers.{i}.layer_norm{1,2}
-      visual.encoder.layers.{i}.mlp.fc{1,2}
-      visual.merger.{ln_q, mlp.{0,2}}
-      visual.rotary_pos_emb (non-persistent inv_freq buffers)
+    Encodes input pixel values through a transformer backbone without CLS token,
+    producing per-patch visual features for the language model.
     """
 
     def __init__(
@@ -1277,6 +1261,12 @@ class LlavaOnevision2VisionTower(nn.Module):
 
 
 class LlavaOnevision2ProcessingInfo(BaseProcessingInfo):
+    """Multimodal processing metadata for LLaVA-OneVision-2 models.
+
+    Handles patch position computation, video frame token counting, and
+    HuggingFace processor access for OV2.
+    """
+
     def get_hf_config(self):
         return self.ctx.get_hf_config()
 
@@ -1455,8 +1445,9 @@ class LlavaOnevision2DummyInputsBuilder(
         n_img = mm_counts.get("image", 0)
         n_vid = mm_counts.get("video", 0)
         return (
-            "<|vision_start|><|image_pad|><|vision_end|>" * n_img
-            + "<|vision_start|><|video_pad|><|vision_end|>" * n_vid
+            "iệng" * n_img
+            + "
+" * n_vid
         )
 
     def get_dummy_mm_data(
@@ -1661,7 +1652,7 @@ class LlavaOnevision2MultiModalProcessor(
         # profiling. We materialise the frames as PIL images + per-frame
         # timestamp markers and feed them through the HF processor's *image*
         # branch (smart_resize + patchify), then re-tag the image-series outputs
-        # as video-series so vLLM's ``<|video_pad|>`` placeholder replacement
+        # as video-series so vLLM's ``placeholder`` replacement
         # finds them. Sampling parity with the original qwen_vl_utils policy is
         # provided by the backend's ``compute_frames_index_to_sample``; SSRF /
         # local-file gating is enforced by the connector before decoding.
@@ -1680,7 +1671,7 @@ class LlavaOnevision2MultiModalProcessor(
                 per_video_timestamps.append(timestamps)
 
             # Rewrite the prompt so each video marker becomes a sequence of
-            # ``<{t} seconds><|vision_start|><|image_pad|><|vision_end|>``
+            # ``<{t} seconds>iệng``
             # blocks (matches the OV2 hf-chat reference exactly).
             new_prompt = _expand_video_markers_in_prompt(
                 prompt_text,
@@ -1690,7 +1681,7 @@ class LlavaOnevision2MultiModalProcessor(
 
             # Build the merged ``images`` list the wrapped HF processor will
             # consume. The processor binds the merged list *positionally* to the
-            # ``<|image_pad|>`` slots in prompt order, so it must follow the
+            # ``iệng`` slots in prompt order, so it must follow the
             # interleaved marker order of the prompt (not a fixed "videos first"
             # order) -- otherwise mixed image+video requests bind frames to the
             # wrong placeholder. ``row_is_video`` labels each grid row so outputs
@@ -1891,10 +1882,13 @@ class LlavaOnevision2MultiModalProcessor(
         image_processor = self.info.get_image_processor(**hf_processor_mm_kwargs)
         tokenizer = self.info.get_tokenizer()
         vocab = tokenizer.get_vocab()
-        image_pad_id = vocab["<|image_pad|>"]
-        video_pad_id = vocab["<|video_pad|>"]
-        vision_start_id = vocab["<|vision_start|>"]
-        vision_end_id = vocab["<|vision_end|>"]
+        image_pad_id = vocab["iệng"]
+        video_pad_id = vocab["
+"]
+        vision_start_id = vocab["
+"]
+        vision_end_id = vocab["
+"]
         newline_ids = cached_encode(tokenizer, "\n", add_special_tokens=False)
         merge_length = image_processor.merge_size**2
         decimals = int(hf_processor_mm_kwargs.get("timestamp_decimals", 1))
@@ -1921,7 +1915,9 @@ class LlavaOnevision2MultiModalProcessor(
                 # so timestamps are per-run (consecutive patches sharing the
                 # same source-frame t), not per-canvas. Mirrors HF's
                 # rewrite_text_with_codec_positions: group patch_positions by
-                # run, emit ``<sec seconds><|vision_start|><pad*N><|vision_end|>\n``.
+                # run, emit ``<sec seconds>
+<pad*N>
+\n``.
                 patch_positions = out_item["patch_positions_videos"].data
                 fps_t = out_item["codec_fps"].data
                 fps = float(int(fps_t.item())) / 1_000_000_000.0
@@ -1984,17 +1980,11 @@ class LlavaOnevision2MultiModalProcessor(
 class LlavaOnevision2ForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP
 ):
-    """vLLM-side OV2 top-level model.
+    """Inference-only LLaVA-OneVision-2 (OV2) model for vLLM.
 
-    Weight name rewriting (HF checkpoint → vLLM module tree):
-      Prefix rewrites only (longest match wins). Vision tower attribute names
-      mirror HF names verbatim, so no substring rules are needed. Substring
-      rules would otherwise collide with the Qwen3 text-path ``self_attn``
-      modules and break the language-model loader.
-        ``model.language_model.``        → ``language_model.model.``
-        ``model.visual.``                → ``visual.``
-        ``lm_head.``                     → ``language_model.lm_head.``
-        ``model.`` (fallback)            → ``language_model.model.``
+    Uses Qwen3-8B as the LLM backbone with a transformer vision tower without
+    CLS token, supporting 3D rotary embeddings for video and windowed temporal
+    attention.
     """
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -2009,9 +1999,10 @@ class LlavaOnevision2ForConditionalGeneration(
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
         if modality.startswith("image"):
-            return "<|vision_start|><|image_pad|><|vision_end|>"
+            return "iệng"
         if modality.startswith("video"):
-            return "<|vision_start|><|video_pad|><|vision_end|>"
+            return "
+"
         raise ValueError("Only image or video modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:

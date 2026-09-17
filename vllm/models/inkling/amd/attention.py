@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Inkling attention module with QKV projection, RMSNorm, short conv,
+and FA4 attention."""
 from __future__ import annotations
 
 from typing import cast
@@ -48,6 +50,8 @@ from .short_conv import InklingShortConv
 def compute_log_scaling_tau(
     positions: torch.Tensor, n_floor: int, alpha: float
 ) -> torch.Tensor:
+    """Computes log-scaling tau for positions using a floor and
+    alpha parameter."""
     effective_n = (positions + 1).to(torch.float32)
     return 1.0 + alpha * torch.log(torch.clamp(effective_n / float(n_floor), min=1.0))
 
@@ -56,17 +60,22 @@ class RelLogitsProj(nn.Module):
     """Project the per-head relative branch ``r`` to per-distance logits."""
 
     def __init__(self, d_rel: int, rel_extent: int) -> None:
+        """Initializes the relative-to-logits projection parameter."""
         super().__init__()
         self.d_rel = d_rel
         self.rel_extent = rel_extent
         self.proj = nn.Parameter(torch.empty(d_rel, rel_extent), requires_grad=False)
 
     def forward(self, r_out: torch.Tensor) -> torch.Tensor:
+        """Projects relative branch output to per-distance logits
+        via einsum."""
         # r_out: (T, num_heads, d_rel) -> (T, num_heads, rel_extent)
         return torch.einsum("thd,de->the", r_out, self.proj)
 
 
 class InklingAttention(nn.Module, AttentionLayerBase):
+    """Inkling attention module with QKV projection, RMSNorm, short conv,
+    and FA4 attention."""
     def __init__(
         self,
         config: InklingModelConfig,
@@ -81,6 +90,8 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         quant_config: QuantizationConfig | None = None,
         conv_owner: InklingConvState,
     ) -> None:
+        """Initializes QKV projection, output projection, RMSNorms, short convs,
+        and FA4 wiring."""
         super().__init__()
         self.prefix = prefix
         self.is_local = is_local
@@ -195,9 +206,12 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         )
 
     def get_attn_backend(self) -> type[AttentionBackend]:
+        """Returns FlashAttentionBackend as the attention backend class."""
         return FlashAttentionBackend
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
+        """Returns SlidingWindowSpec for local layers or FullAttentionSpec
+        for non-local layers."""
         block_size = vllm_config.cache_config.block_size
         if self.is_local:
             assert self.local_extent is not None
@@ -216,6 +230,8 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         )
 
     def _split_kv_cache(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Splits the KV cache tensor into key and value components and
+        canonicalizes strides."""
         key_cache, value_cache = self.kv_cache.transpose(1, 2).split(
             self.head_dim, dim=-1
         )
@@ -230,6 +246,8 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         hidden_states: torch.Tensor,
         log_scaling: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass applying QKV projection, short conv, FA4 attention,
+        and output projection."""
         num_tokens = hidden_states.shape[0]
         qkvr, _ = self.qkvr(hidden_states)
 
@@ -294,6 +312,8 @@ class InklingAttention(nn.Module, AttentionLayerBase):
         rel_logits: torch.Tensor,
         output: torch.Tensor,
     ) -> None:
+        """Applies FA4 relative attention using bucketed splits and
+        causal window."""
         attn_metadata = get_forward_context().attn_metadata
         assert isinstance(attn_metadata, dict)
         md = cast(FlashAttentionMetadata, attn_metadata[self.prefix])

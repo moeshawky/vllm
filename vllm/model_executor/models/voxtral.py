@@ -82,6 +82,8 @@ ISO639_1_SUPPORTED_LANGS = {
 
 
 class VoxtralProcessingInfo(BaseProcessingInfo):
+    """Processing info for Voxtral providing tokenizer and feature extractor configuration for Mistral Common backend."""
+
     def get_tokenizer(self) -> MistralTokenizer:
         tokenizer = cached_tokenizer_from_config(self.ctx.model_config)
         if not isinstance(tokenizer, MistralTokenizer):
@@ -206,6 +208,8 @@ class VoxtralDummyInputsBuilder(BaseDummyInputsBuilder[VoxtralProcessingInfo]):
 class VoxtralMultiModalProcessor(BaseMultiModalProcessor[VoxtralProcessingInfo]):
     # The tokens are already inserted by the chat template,
     # so we just double check that they exist
+    """Multi-modal processor for Voxtral handling audio and text inputs with Mistral Common tokenizer integration."""
+
     def _maybe_apply_prompt_updates(
         self,
         mm_items: MultiModalDataItems,
@@ -324,6 +328,8 @@ class VoxtralMultiModalProcessor(BaseMultiModalProcessor[VoxtralProcessingInfo])
 class VoxtralForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsTranscription
 ):
+    """Voxtral model with conditional generation combining a Whisper audio encoder with a Mistral language model and audio language adapter."""
+
     supported_languages = ISO639_1_SUPPORTED_LANGS
     # transformers' currently has limited support for MistralCommon backend
     # and cached_get_processor. Let's skip until fixed
@@ -398,6 +404,8 @@ class VoxtralForConditionalGeneration(
     def embed_multimodal(
         self, **kwargs
     ) -> list[torch.Tensor] | torch.Tensor | tuple[torch.Tensor, ...] | None:
+        """Embeds multimodal audio inputs through the Whisper encoder and projects them through the audio language adapter."""
+
         audio_inputs = self._parse_and_validate_audio_arrays(**kwargs)
         if audio_inputs is None:
             return None
@@ -516,6 +524,8 @@ class VoxtralForConditionalGeneration(
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads model weights using remapping rules that convert mistral-specific parameter names to vLLM naming conventions."""
+
         remapping_rules = [
             (r"mm_streams_embeddings.embedding_module\.(.*)", r"\1"),
             (r"mm_whisper_embeddings\.(.*)", r"\1"),
@@ -674,6 +684,8 @@ class VoxtralForConditionalGeneration(
 
 
 class AudioLanguageAdapter(nn.Module):
+    """Linear adapter module projecting Whisper encoder features into the language model hidden space with GELU activation."""
+
     def __init__(self, hidden_size: int, dim: int) -> None:
         super().__init__()
         self.w_in = nn.Linear(hidden_size, dim, bias=False)
@@ -685,6 +697,8 @@ class AudioLanguageAdapter(nn.Module):
 
 
 class VoxtralEncoderModel(nn.Module):
+    """Whisper encoder model wrapper handling mel-spectrogram computation and audio feature processing for Voxtral."""
+
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
 
     mistral_remapping = [
@@ -771,6 +785,8 @@ class VoxtralEncoderModel(nn.Module):
         self,
         audio_waveforms: torch.Tensor,
     ) -> torch.Tensor:
+        """Computes mel-spectrogram features from audio waveforms using Hann window STFT and mel filter bank projection."""
+
         input_dtype = audio_waveforms.dtype
         window = torch.hann_window(
             self.config.window_size, device=audio_waveforms.device
@@ -831,6 +847,8 @@ class VoxtralEncoderModel(nn.Module):
     def forward(
         self, input_features: torch.Tensor | list[torch.Tensor]
     ) -> list[torch.Tensor]:
+        """Forward pass computing Whisper encoder output from audio features by chunking, encoding, and re-concatenating."""
+
         if not isinstance(input_features, list):
             input_features = [input_features]
 

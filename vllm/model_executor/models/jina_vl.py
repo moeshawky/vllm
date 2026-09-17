@@ -32,6 +32,12 @@ logger = init_logger(__name__)
 
 
 class JinaVLScorer(nn.Module):
+    """Two-layer classifier: linear -> ReLU -> linear.
+
+    Maps hidden states to a single scalar score for sequence
+    classification (e.g. relevance scoring).
+    """
+
     def __init__(self, model_config: "ModelConfig", prefix: str = ""):
         super().__init__()
         config = model_config.hf_config.get_text_config()
@@ -59,6 +65,14 @@ class JinaVLScorer(nn.Module):
 
 
 class JinaVLMultiModalProcessor(Qwen2VLMultiModalProcessor):
+    """Reverses per-modality input order to match the document-first prompt.
+
+    Score inputs arrive query-first, but the Jina score template places
+    the document before the query. This processor reverses mm_kwargs,
+    mm_hashes, and prompt_updates so the visual features align with
+    the document tokens.
+    """
+
     def _cached_apply_hf_processor(
         self,
         inputs: ProcessorInputs,
@@ -106,6 +120,13 @@ class JinaVLForSequenceClassification(
     SupportsMultiModal,
     SupportsScoreTemplate,
 ):
+    """Cross-encoder vision model for image-text relevance scoring.
+
+    Uses the Qwen2VL backbone with a JinaVLScorer head and a
+    DispatchPooler for sequence classification. Appends token 100
+    as the score target during post-processing.
+    """
+
     is_pooling_model = True
     weight_mapper = WeightsMapper(
         orig_to_new_prefix={

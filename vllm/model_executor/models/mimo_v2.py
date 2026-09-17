@@ -146,6 +146,7 @@ class MiMoV2MoE(nn.Module):
 
         vllm_config = get_current_vllm_config()
         eplb_config = vllm_config.parallel_config.eplb_config
+        # Flag enabling expert parallel load balancing via EPLB configuration.
         self.enable_eplb = parallel_config.enable_eplb
 
         self.n_logical_experts = self.n_routed_experts

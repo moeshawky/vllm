@@ -102,6 +102,8 @@ class Glm4MoeLiteMLAAttention(DeepseekV2MLAAttention):
 
 
 class Glm4MoeLiteDecoderLayer(nn.Module):
+    """Decoder layer with MLA or standard attention and MLP or MoE block."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -185,6 +187,7 @@ class Glm4MoeLiteDecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         llama_4_scaling: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Run one decoder layer with attention and MLP/MoE."""
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -214,6 +217,8 @@ class Glm4MoeLiteDecoderLayer(nn.Module):
     }
 )
 class Glm4MoeLiteModel(nn.Module):
+    """GLM-4.7 Flash backbone with MoE layers and optional shared experts."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -523,6 +528,8 @@ class Glm4MoeLiteModel(nn.Module):
 class Glm4MoeLiteForCausalLM(
     nn.Module, SupportsPP, SupportsLoRA, Glm4LiteMixtureOfExperts
 ):
+    """GLM-4.7 Flash causal LM with PP, LoRA, and MoE expert management."""
+
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
     }
@@ -632,5 +639,6 @@ class Glm4MoeLiteForCausalLM(
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights using AutoWeightsLoader with expert mapping."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

@@ -84,7 +84,7 @@ def _save_partial_states_kernel(
     )
 
     block = tl.arange(0, TRITON_BLOCK_SIZE)
-    mask = block < HEAD_SIZE
+    mask = block < HEAD_SIZE  # guards against out-of-bounds access in the Triton block loop
 
     kv = tl.load(kv_ptr + token_idx * kv_stride + block, mask=mask)
     tl.store(base_ptr + block, kv, mask=mask)

@@ -115,6 +115,8 @@ UltravoxAudioInputs: TypeAlias = (
 
 
 class UltravoxProcessingInfo(BaseProcessingInfo):
+    """ProcessingInfo for Ultravox audio models; configures the audio token replacement, retrieves the Whisper feature extractor, and provides data parser configuration."""
+
     def get_hf_processor(self, **kwargs: object) -> ProcessorMixin:
         config = self.ctx.model_config.hf_config
         hf_processor = self.ctx.get_hf_processor(**kwargs)
@@ -160,6 +162,8 @@ class UltravoxProcessingInfo(BaseProcessingInfo):
 
 
 class UltravoxDummyInputsBuilder(BaseDummyInputsBuilder[UltravoxProcessingInfo]):
+    """Dummy input builder for Ultravox; generates audio placeholder tokens and dummy audio data for testing."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_audios = mm_counts.get("audio", 0)
 
@@ -191,6 +195,8 @@ class UltravoxDummyInputsBuilder(BaseDummyInputsBuilder[UltravoxProcessingInfo])
 
 
 class UltravoxMultiModalProcessor(BaseMultiModalProcessor[UltravoxProcessingInfo]):
+    """Multi-modal processor for Ultravox; handles HF processor calls with patched truncation, audio feature post-processing, and field configuration for chunked audio."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -429,6 +435,8 @@ def _load_whisper_layer_weights(
 
 
 class UltravoxFeedForwardProjector(nn.Module):
+    """Feed-forward projector for Ultravox; applies StackAudioFrames, RMSNorm, and two ReplicatedLinear layers with optional MulAndSilu activation."""
+
     def __init__(
         self,
         config: UltravoxConfig,
@@ -490,6 +498,8 @@ class UltravoxFeedForwardProjector(nn.Module):
 
 
 class UltravoxTransformerProjector(nn.Module):
+    """Transformer-based projector for Ultravox; applies stacked audio frames, linear projection, positional embeddings, and WhisperEncoder layers with chunk attention metadata."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -648,6 +658,8 @@ class UltravoxWhisperEncoder(WhisperEncoder):
     dummy_inputs=UltravoxDummyInputsBuilder,
 )
 class UltravoxModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA):
+    """Ultravox model class combining WhisperEncoder tower, multi-modal projector, and language model; supports audio modality with LoRA on the tower/connector."""
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],

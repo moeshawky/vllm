@@ -32,6 +32,7 @@ from vllm.parser.engine.token_id_scanner import (
 
 @dataclass(slots=True)
 class _DropInfo:
+    """Stores lexer shape and extra token IDs for dropped terminals."""
     lexer_shape: LexerShape
     extra_token_ids: dict[int, str]
 
@@ -40,6 +41,8 @@ def _build_drop_info(
     config: ParserEngineConfig,
     tokenizer,
 ) -> _DropInfo | None:
+    """Build _DropInfo from the tokenizer's special tokens. Returns None
+    if the tokenizer does not support all_special_tokens."""
     try:
         special_tokens: list[str] = list(tokenizer.all_special_tokens)
         special_ids: list[int] = list(tokenizer.all_special_ids)

@@ -40,6 +40,12 @@ from .utils import AutoWeightsLoader, make_layers, maybe_prefix
 
 
 class GraniteMoeSharedMLP(nn.Module):
+    """SwiGLU feed-forward network for shared expert paths.
+
+    Uses tensor-parallel linear layers for input and output projections
+    with SiLU activation.
+    """
+
     def __init__(
         self,
         config: GraniteMoeSharedConfig,
@@ -79,6 +85,14 @@ class GraniteMoeSharedMLP(nn.Module):
 
 
 class GraniteMoeSharedDecoderLayer(nn.Module):
+    """Transformer decoder layer combining sparse MoE and shared MLP.
+
+    Routes tokens through a sparse MoE and, when shared_intermediate_size
+    is set, adds the output of a shared SwiGLU MLP. Uses in-place clone
+    guard for MoE computation when shared MLP is present. Residual
+    connections are scaled by residual_multiplier.
+    """
+
     def __init__(
         self,
         config: GraniteMoeSharedConfig,
@@ -152,6 +166,8 @@ class GraniteMoeSharedDecoderLayer(nn.Module):
 
 @support_torch_compile
 class GraniteMoeSharedModel(nn.Module):
+    """Transformer backbone with shared MoE decoder layers."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -216,6 +232,8 @@ class GraniteMoeSharedModel(nn.Module):
 
 
 class GraniteMoeSharedForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """Causal language model with shared MoE transformer backbone."""
+
     fall_back_to_pt_during_load = False
 
     packed_modules_mapping = {

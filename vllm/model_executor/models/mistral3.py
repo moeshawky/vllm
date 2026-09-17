@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Mistral3 model implementations for multimodal conditional generation with
+vision tower, multi-modal projector, and language model backbone."""
 
 import math
 from collections.abc import Iterable, Mapping, Sequence

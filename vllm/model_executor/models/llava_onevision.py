@@ -53,7 +53,8 @@ _MAX_FRAMES_PER_VIDEO = 16
 
 
 class LlavaOnevisionVideoPixelInputs(TensorSchema):
-    """
+    """Video pixel input tensor schema for LLaVA-OneVision.
+
     Dimensions:
         - bn: Batch size * number of videos
         - f: Number of frames
@@ -61,9 +62,7 @@ class LlavaOnevisionVideoPixelInputs(TensorSchema):
         - h: Height
         - w: Width
 
-        Note that `f` may be different for each batch, and 'num_frames'
-        may be different for each video, in which case the data is passed as a
-        list instead of a batched tensor.
+    Note that `f` may differ per batch, passed as a list when variable.
     """
 
     type: Literal["pixel_values_videos"] = "pixel_values_videos"
@@ -75,7 +74,8 @@ class LlavaOnevisionVideoPixelInputs(TensorSchema):
 
 
 class LlavaOnevisionImagePixelInputs(TensorSchema):
-    """
+    """Image pixel input tensor schema for LLaVA-OneVision.
+
     Dimensions:
         - bn: Batch size * number of images
         - np: Number of patches (1 + num_patches)
@@ -83,8 +83,7 @@ class LlavaOnevisionImagePixelInputs(TensorSchema):
         - h: Height
         - w: Width
 
-        Note that `num_patches` may be different per batch and image,
-        in which case the data is passed as a list instead of a batched tensor.
+    Note that `np` may differ per batch, passed as a list when variable.
     """
 
     type: Literal["pixel_values"] = "pixel_values"
@@ -127,6 +126,12 @@ class LlavaOnevisionLikeConfig(LlavaNextLikeConfig, Protocol):
 
 
 class LlavaOnevisionProcessingInfo(LlavaNextProcessingInfo):
+    """Multimodal processing metadata for LLaVA-OneVision models.
+
+    Extends LLaVA-NeXT processing info with video frame counting,
+    aspect-ratio-adaptive feature computation, and image+video support.
+    """
+
     def get_hf_config(self) -> LlavaOnevisionLikeConfig:
         return self.ctx.get_hf_config(LlavaOnevisionConfig)
 
@@ -204,6 +209,7 @@ class LlavaOnevisionProcessingInfo(LlavaNextProcessingInfo):
         image_height: int,
         num_frames: int,
     ) -> int:
+        """Calculate total video tokens including the trailing newline token."""
         num_frame_tokens = self._get_num_frame_tokens(
             image_width=image_width,
             image_height=image_height,
@@ -262,6 +268,12 @@ class LlavaOnevisionProcessingInfo(LlavaNextProcessingInfo):
 class LlavaOnevisionDummyInputsBuilder(
     LlavaDummyInputsBuilder[LlavaOnevisionProcessingInfo]
 ):
+    """Builds dummy image and video inputs for profiling and memory estimation.
+
+    Generates placeholder tokens for both images and videos, with dummy
+    pixel data at maximum dimensions for worst-case memory profiling.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
         num_videos = mm_counts.get("video", 0)
@@ -309,6 +321,12 @@ class LlavaOnevisionDummyInputsBuilder(
 class LlavaOnevisionMultiModalProcessor(
     BaseLlavaNextMultiModalProcessor[LlavaOnevisionProcessingInfo]
 ):
+    """HuggingFace processor for LLaVA-OneVision multimodal inputs.
+
+    Handles mixed image and video inputs with separate per-item video
+    processing to support variable frame counts and resolutions.
+    """
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -849,12 +867,15 @@ class LlavaOnevisionForConditionalGeneration(nn.Module, SupportsMultiModal, Supp
         return image_feature
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embed multimodal inputs into a tuple of tensors.
+
+        The result is a tuple of tensors, with each tensor corresponding to
+        a multimodal data item (image or video).
+        """
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not mm_input_by_modality:
             return []
 
-        # The result multimodal_embeddings is tuple of tensors, with each
-        # tensor corresponding to a multimodal data item (image or video).
         multimodal_embeddings: tuple[torch.Tensor, ...] = ()
 
         # NOTE: It is important to iterate over the keys in this dictionary

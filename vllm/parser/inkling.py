@@ -96,13 +96,15 @@ def _scan_json_value(raw: str, start: int) -> int | None:
 
 
 def _args_value_span(raw: str) -> str | None:
-    """Extract the raw text span of the top-level ``"args"`` value from a
-    (possibly incomplete) ``{"name":...,"args":{...}}`` wrapper.
+    """Extract the raw text span of the top-level ``args``
+    value from a (possibly incomplete) ``{"name":...,"args":{...}}``
+    wrapper.
 
-    Returns the verbatim substring (prefix-stable across growing input,
-    which the engine's argument-delta diffing relies on), possibly an
-    unterminated object prefix; ``None`` when the value has not started.
-    Raises ``ValueError`` when the value is not a JSON object.
+    Returns the verbatim substring (prefix-stable across growing
+    input, which the engine's argument-delta diffing relies on),
+    possibly an unterminated object prefix; ``None`` when the value
+    has not started. Raises ``ValueError`` when the value is not a
+    JSON object.
     """
     depth = 0
     in_string = False
@@ -173,6 +175,8 @@ def _inkling_arg_converter(raw_args: str, partial: bool) -> str:
 
 @functools.cache
 def inkling_config() -> ParserEngineConfig:
+    """Return a ParserEngineConfig for Inkling's typed content
+    block format."""
     terminals = {
         "MSG_MODEL": MESSAGE_MODEL,
         "TEXT_START": CONTENT_TEXT,
@@ -303,6 +307,9 @@ def inkling_config() -> ParserEngineConfig:
 
 
 class InklingParser(ParserEngine):
+    """Inkling parser for typed content blocks parsed by a
+    single state machine."""
+
     CONFIG_NAME = "inkling"
 
     def __init__(
@@ -311,6 +318,7 @@ class InklingParser(ParserEngine):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the InklingParser."""
         kwargs.setdefault("parser_engine_config", inkling_config())
         super().__init__(tokenizer, tools, **kwargs)
 
@@ -344,6 +352,8 @@ class InklingParser(ParserEngine):
                 break
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        """Check if reasoning has ended by scanning for
+        thinking or text markers."""
         vocab = self.vocab
         thinking_id = vocab.get(CONTENT_THINKING)
         text_id = vocab.get(CONTENT_TEXT)
@@ -357,6 +367,8 @@ class InklingParser(ParserEngine):
         return False
 
     def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
+        """Count reasoning tokens by tracking when thinking_id
+        is seen until an end token."""
         vocab = self.vocab
         thinking_id = vocab.get(CONTENT_THINKING)
         end_ids = {
@@ -386,6 +398,8 @@ class InklingParser(ParserEngine):
         token_ids: Sequence[int],
         initial_state: ParserState | None = None,
     ) -> tuple[str | None, str | None, ExtractedToolCallInformation]:
+        """Single-pass parse that flushes deferred content
+        after tool-call events."""
         reasoning, content, tool_call_info = super()._single_pass_parse(
             text, token_ids, initial_state=initial_state
         )
@@ -408,6 +422,9 @@ class InklingParser(ParserEngine):
 
     @staticmethod
     def _extract_args_value(parsed: dict) -> str | None:
+        """Extract the args value from a parsed dict by
+        looking for 'args', 'arguments', or 'parameters'
+        keys."""
         # Inkling wraps arguments under "args" rather than "arguments".
         for key in ("args", "arguments", "parameters"):
             if key in parsed:

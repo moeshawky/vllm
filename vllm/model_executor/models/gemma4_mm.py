@@ -259,6 +259,7 @@ class Gemma4ProcessingInfo(BaseProcessingInfo):
     def get_mm_max_tokens_per_item(
         self, seq_len: int, mm_counts: Mapping[str, int]
     ) -> Mapping[str, int] | None:
+        """Compute the maximum token budget per multimodal item type."""
         config = self.get_hf_config()
         # Upper bound: the pooler outputs max_soft_tokens slots per image.
         # After padding is stripped the actual count is ≤ this value, but
@@ -572,6 +573,7 @@ class Gemma4MultiModalProcessor(BaseMultiModalProcessor[Gemma4ProcessingInfo]):
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> BatchFeature:
+        """Run the HuggingFace processor on video, audio, and image items."""
         valid_mm_items = mm_items.select(
             {k for k, c in mm_items.get_all_counts().items() if c > 0}
         )

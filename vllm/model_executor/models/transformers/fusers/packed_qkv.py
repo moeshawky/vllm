@@ -65,6 +65,7 @@ class PackedQKVFuser(RewriteFuser):
 
     @classmethod
     def match(cls, graph: fx.Graph, module: nn.Module) -> "PackedQKVFuser | None":
+        """Match the packed QKV pattern in graph and return a PackedQKVFuser."""
         for node in graph.nodes:
             if (sizes := cls._packed_sizes(node)) is None:
                 continue
@@ -137,6 +138,7 @@ class PackedQKVFuser(RewriteFuser):
     def update_attrs(
         self, module: nn.Module, prefix: str, vllm_config: "VllmConfig"
     ) -> None:
+        """Replace the packed QKV projection with a QKVParallelLinear."""
         quant_config = vllm_config.quant_config
         head_size = fused_head_size(module, vllm_config)
         qkv_prefix = maybe_prefix(prefix, self.qkv_name)

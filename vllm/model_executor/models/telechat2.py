@@ -20,6 +20,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""TeleChat2 causal LM model based on Llama structure with modified
+attention and MLP configurations."""
+
 from collections.abc import Iterable
 
 import torch
@@ -33,6 +36,9 @@ from .utils import AutoWeightsLoader, PPMissingLayer, WeightsMapper
 
 
 class TeleChat2Model(LlamaModel):
+    """TeleChat2 transformer model extending LlamaModel with key-value
+    de-interleaving and bias removal for qkv_proj and gate_up_proj."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".query": (".qkv_proj", "q"),
@@ -44,6 +50,9 @@ class TeleChat2Model(LlamaModel):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes LlamaModel with attribute_map remapping, silu
+        activation, and bias settings, then removes biases from qkv_proj
+        and gate_up_proj."""
         hf_config = vllm_config.model_config.hf_config
 
         vllm_config.model_config.hf_config.attribute_map = {
@@ -72,7 +81,9 @@ class TeleChat2Model(LlamaModel):
     def _split_key_value(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[tuple[str, torch.Tensor]]:
-        # TeleChat2 stores k/v as a single per-head-interleaved `key_value`
+        """De-interleaves TeleChat2's single key_value tensor into separate
+        k and v tensors for the qkv_proj mapper."""
+        total_num_heads = self.config.n_head
         # tensor. De-interleave it into separate k/v so the qkv_proj mapper
         # can stack them.
         total_num_heads = self.config.n_head
@@ -100,6 +111,9 @@ class TeleChat2Model(LlamaModel):
 
 
 class TeleChat2ForCausalLM(LlamaForCausalLM):
+    """Causal LM head for TeleChat2 with transformer prefix remapping
+    and _init_model override."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "transformer.": "model.",
@@ -119,8 +133,9 @@ class TeleChat2ForCausalLM(LlamaForCausalLM):
         prefix: str = "",
         layer_type: type[nn.Module] = LlamaDecoderLayer,
     ):
+        """Creates a TeleChat2Model instance for the given vLLM configuration."""
         return TeleChat2Model(vllm_config=vllm_config, prefix=prefix)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads model weights using AutoWeightsLoader with hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

@@ -63,6 +63,10 @@ _PARTIAL_PARAM_RE = re.compile(
 
 
 def _dsml_arg_converter(raw_args: str, partial: bool) -> str:
+    """Convert DeepSeek DSML parameter format to JSON string.
+    Parses <｜DSML｜parameter name=...string=...>...<｜DSML｜parameter>
+    format.
+    """
     params: dict[str, object] = {}
 
     last_end = 0
@@ -95,6 +99,9 @@ def _unwrap_wrapper_args(
     tools: list[Tool] | None,
     func_name: str | None,
 ) -> str:
+    """Unwrap DSML wrapper arguments. If the model wraps arguments
+    in ``arguments`` or ``input``, extracts the inner dict.
+    """
     if not tools or not func_name:
         return args_json
     try:
@@ -123,6 +130,9 @@ def _unwrap_wrapper_args(
 
 @functools.cache
 def deepseek_v4_config(thinking: bool = False) -> ParserEngineConfig:
+    """Return a cached ParserEngineConfig for DeepSeek V4 DSML
+    tool calls with optional reasoning support.
+    """
     return ParserEngineConfig(
         name="deepseek_v4",
         initial_state=ParserState.REASONING if thinking else ParserState.CONTENT,
@@ -210,12 +220,20 @@ def deepseek_v4_config(thinking: bool = False) -> ParserEngineConfig:
 
 
 class DeepSeekV4Parser(ParserEngine):
+    """DeepSeek V4 parser with DSML tool calls and optional
+    reasoning. Thinking is enabled by default unless
+    reasoning_effort is 'none'.
+    """
+
     def __init__(
         self,
         tokenizer: TokenizerLike,
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the DeepSeekV4Parser. Auto-detects thinking
+        from chat_kwargs and reasoning_effort.
+        """
         chat_kwargs = kwargs.pop("chat_template_kwargs", None) or {}
         thinking = bool(
             chat_kwargs.get("thinking") or chat_kwargs.get("enable_thinking")
@@ -232,6 +250,9 @@ class DeepSeekV4Parser(ParserEngine):
         self._arg_converter = self._convert_args
 
     def _convert_args(self, raw_args: str, partial: bool) -> str:
+        """Convert args using _dsml_arg_converter and unwrap
+        wrapper args if tools are available.
+        """
         result = _dsml_arg_converter(raw_args, partial)
         if not self._tools:
             return result

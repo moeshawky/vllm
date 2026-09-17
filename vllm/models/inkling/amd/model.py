@@ -57,6 +57,7 @@ from .short_conv import InklingShortConv
 
 
 def _layer_id(name: str) -> int | None:
+    """Extracts layer index from a parameter name string."""
     m = re.search(r"\.layers\.(\d+)\.", name)
     return int(m.group(1)) if m else None
 
@@ -86,6 +87,8 @@ def _sconv_add_norm(
 
 
 class InklingDecoderLayer(nn.Module):
+    """Single decoder layer with attention, MLP, short convs, and rmsnorms."""
+
     def __init__(
         self,
         config: InklingModelConfig,
@@ -95,6 +98,8 @@ class InklingDecoderLayer(nn.Module):
         prefix: str,
         force_dense_mlp: bool = False,
     ) -> None:
+        """Initializes attention, MLP, short convs, and rmsnorms
+        for a single decoder layer."""
         super().__init__()
         # Per-layer owner of the conv state as a paged SWA cache. The 4 sconv
         # streams (K/V/attn/mlp) are packed head-major into one block and share
@@ -175,6 +180,8 @@ class InklingDecoderLayer(nn.Module):
     ) -> (
         torch.Tensor | tuple[torch.Tensor, tuple[torch.Tensor | None, InklingShortConv]]
     ):
+        """Forward pass with sconv-add-norm fusion, attention, MLP,
+        and optional deferred add."""
         # The previous sublayer's (pre-reduce, pre-sconv) delta is folded in
         # fused with its RS/sconv/AG and this layer's pre-attention rmsnorm.
         # A None delta means the partials sit in the NVLS symm buffer.
@@ -215,6 +222,7 @@ class InklingReplicatedEmbedding(nn.Module):
     """
 
     def __init__(self, num_embeddings: int, embedding_dim: int) -> None:
+        """Initializes the full-vocab embedding table as a non-learnable parameter."""
         super().__init__()
         self.weight = nn.Parameter(
             torch.empty(num_embeddings, embedding_dim, dtype=torch.get_default_dtype()),
@@ -222,10 +230,13 @@ class InklingReplicatedEmbedding(nn.Module):
         )
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Forward pass applying embed_rmsnorm with the replicated embedding table."""
         return embed_rmsnorm(input_ids, self.weight, None, 0.0)
 
 
 class InklingModel(nn.Module):
+    """Full Inkling model with embedding, decoder layers, and output norm."""
+
     def __init__(
         self,
         *,
@@ -233,6 +244,7 @@ class InklingModel(nn.Module):
         quant_config: QuantizationConfig | None,
         prefix: str,
     ) -> None:
+        """Initializes embedding, embedding norm, decoder layers, and output norm."""
         super().__init__()
         self.config = config
         self.embed_tokens = InklingReplicatedEmbedding(
@@ -260,6 +272,7 @@ class InklingModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embeds input IDs with row gather and embedding norm in one launch."""
         # Row gather + embed_norm in one launch.
         norm = self.embed_norm
         return embed_rmsnorm(
@@ -276,6 +289,8 @@ class InklingModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass through embedding, decoder layers, and output
+        norm with PP support."""
         attn_in0: torch.Tensor | None = None
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
@@ -378,6 +393,8 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
         text_config: InklingModelConfig,
         prefix: str,
     ) -> None:
+        """Builds the model, lm_head, logits_processor, and
+        intermediate tensors factory."""
         quant_config = vllm_config.quant_config
         self.config = text_config
         # ROCm checkpoints use Quark OCP MXFP4. The global Quark config is
@@ -409,6 +426,7 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegates to InklingModel.embed_input_ids."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -419,6 +437,7 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass delegating to InklingModel.forward."""
         return self.model(
             input_ids,
             positions,
@@ -427,9 +446,11 @@ class _TmlForCausalLMBase(nn.Module, SupportsPP, SupportsLoRA):
         )
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
+        """Computes logits via InklingLogitsProcessor."""
         return self.logits_processor(self.lm_head, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads weights using the Inkling-specific weight loader."""
         return _load_inkling_weights(self, weights, self.config)
 
 
@@ -437,6 +458,7 @@ class InklingForCausalLM(_TmlForCausalLMBase):
     """Text-only entry point (``inkling_model`` checkpoints)."""
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initializes the text-only entry point with the model config."""
         super().__init__()
         self._build(vllm_config, vllm_config.model_config.hf_config, prefix)
 
@@ -472,6 +494,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
         raise ValueError("Only image or audio modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initializes the multimodal entry point with vision and audio towers."""
         super().__init__()
         config: InklingMMConfig = vllm_config.model_config.hf_config
 
@@ -493,6 +516,8 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
     def _process_image_input(
         self, pixel_values: Any, num_patches: Any
     ) -> tuple[torch.Tensor, ...]:
+        """Processes image pixel values through the vision tower
+        and returns embeddings."""
         assert self.visual is not None
         # pixel_values is a list (per item) of [P_i, 2, P, P, 3] tensors,
         # or a single concatenated tensor. Normalize to a flat batch, run the
@@ -513,6 +538,8 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
     def _process_audio_input(
         self, input_audio_features: Any, num_audio_tokens: Any
     ) -> tuple[torch.Tensor, ...]:
+        """Processes audio input features through the audio tower
+        and returns embeddings."""
         assert self.audio is not None
         if isinstance(input_audio_features, (list, tuple)):
             if not input_audio_features:
@@ -541,6 +568,8 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
         return [int(counts)]
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embeds multimodal inputs (image and/or audio) and returns
+        a tuple of embeddings."""
         # Iterate modalities in a stable order so the returned per-item tensors
         # line up with their appearance order; the positional merge in
         # embed_input_ids handles actual placement.
@@ -565,6 +594,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Embeds input IDs with multimodal embeddings merged in."""
         # Override the base's 1-arg embed_input_ids: the runner calls this 3-arg
         # signature for multimodal models. Text embeddings come from the shared
         # backbone (which applies embed_norm); MM embeddings are scattered in.
@@ -583,6 +613,7 @@ class InklingForConditionalGeneration(_TmlForCausalLMBase, SupportsMultiModal):
         )
 
     def get_language_model(self) -> nn.Module:
+        """Returns self as the language model (towers are side branches)."""
         # This class IS the causal LM (the towers are side branches), so the
         # language model is self — callers expect a module exposing ``.model``
         # / ``.lm_head`` (e.g. the MTP/eagle loader shares embeddings via
@@ -601,6 +632,7 @@ _MOE_EXPERT_WEIGHT_RE = re.compile(
 
 
 def _is_peft_adapter_weight(name: str) -> bool:
+    """Checks if a weight name corresponds to a PEFT adapter weight."""
     return ".lora_A." in name or ".lora_B." in name
 
 
@@ -609,6 +641,7 @@ def _load_inkling_weights(
     weights: Iterable[tuple[str, torch.Tensor]],
     config: InklingModelConfig,
 ) -> set[str]:
+    """Loads Inkling checkpoint weights with MoE expert handling and PEFT filtering."""
     moe_modules = {
         name: mod for name, mod in module.named_modules() if isinstance(mod, InklingMoE)
     }
@@ -667,4 +700,5 @@ def _load_inkling_weights(
     return loaded
 
 
+# Entry point list for the Inkling model registry.
 EntryClass = [InklingForCausalLM, InklingForConditionalGeneration]

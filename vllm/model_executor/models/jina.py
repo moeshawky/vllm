@@ -42,6 +42,14 @@ logger = logging.getLogger(__name__)
 
 
 class JinaForRanking(nn.Module, SupportsLateInteraction):
+    """Re-ranking model using a Qwen3 backbone with a two-stage projector.
+
+    The projector maps hidden states from hidden_size to
+    hidden_size//2 to embedding_size. A DispatchPooler routes token_embed
+    requests to JinaForRankingPool, which extracts embeddings at the
+    positions of the special doc and query tokens.
+    """
+
     is_pooling_model = True
 
     hf_to_vllm_mapper = WeightsMapper(orig_to_new_prefix={"lm_head.": None})
@@ -95,6 +103,13 @@ class JinaForRanking(nn.Module, SupportsLateInteraction):
 
 
 class JinaForRankingPool(StepPool):
+    """Extracts embeddings at doc (151670) and query (151671) token positions.
+
+    For each pooled sequence, finds the indices of the special tokens,
+    concatenates doc indices before query indices, and passes the
+    selected hidden states through the projector.
+    """
+
     def __init__(self, projector: nn.Sequential):
         super().__init__()
 

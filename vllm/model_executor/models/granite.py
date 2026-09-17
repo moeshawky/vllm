@@ -104,6 +104,8 @@ def granite_layer_attn_params(
 
 
 class GraniteMLP(nn.Module):
+    """SwiGLU feed-forward network with tensor-parallel linear layers."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -142,6 +144,13 @@ class GraniteMLP(nn.Module):
 
 
 class GraniteAttention(nn.Module):
+    """Multi-head attention with per-layer sliding window and optional RoPE.
+
+    Queries granite_layer_attn_params for sliding window size, RoPE base
+    theta, and sink presence per layer. Supports NoPE (theta=0) and
+    per-head learnable attention sinks.
+    """
+
     def __init__(
         self,
         config: GraniteConfig,
@@ -242,6 +251,12 @@ class GraniteAttention(nn.Module):
 
 
 class GraniteDecoderLayer(nn.Module):
+    """Transformer decoder layer with pre-norm and residual scaling.
+
+    Applies attention and MLP sub-layers with RMSNorm pre-normalization.
+    Residual connections are scaled by residual_multiplier from config.
+    """
+
     def __init__(
         self,
         config: GraniteConfig,
@@ -307,6 +322,14 @@ class GraniteDecoderLayer(nn.Module):
 
 @support_torch_compile
 class GraniteModel(nn.Module):
+    """Transformer backbone with vocab embedding and RMSNorm.
+
+    Stacks GraniteDecoderLayer instances between a vocab parallel embedding
+    and final RMSNorm. Supports pipeline parallelism via make_layers.
+    """
+
+    # Maps HF checkpoint weight names to vLLM parameter names for stacked
+    # parameters.
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -393,6 +416,12 @@ class GraniteModel(nn.Module):
 
 
 class GraniteForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsQuant):
+    """Causal language model with transformer backbone and parallel LM head.
+
+    Supports pipeline parallelism, LoRA, and quantization. Ties embedding
+    and LM head weights when config specifies tie_word_embeddings.
+    """
+
     hf_to_vllm_mapper = GraniteModel.hf_to_vllm_mapper
     # LoRA specific attributes
     packed_modules_mapping = {

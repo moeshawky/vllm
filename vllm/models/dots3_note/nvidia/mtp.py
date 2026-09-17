@@ -29,6 +29,8 @@ from .model import Dots3NoteDecoderLayer
 
 
 class Dots3NoteMultiTokenPredictorLayer(nn.Module):
+    """Single MTP layer applying error-hidden normalization, a linear
+    projection, and a decoder block to predict the next tokens."""
     def __init__(self, vllm_config: VllmConfig, prefix: str) -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None
@@ -61,6 +63,9 @@ class Dots3NoteMultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Applies fused error-hidden normalization, projects to hidden
+        size, runs through the decoder block, and optionally gathers
+        across tensor parallel ranks."""
         del input_ids, spec_step_index
         assert inputs_embeds is not None
         eh_input = fused_eh_norm(
@@ -86,6 +91,9 @@ class Dots3NoteMultiTokenPredictorLayer(nn.Module):
 
 
 class Dots3NoteMultiTokenPredictor(DeepseekV32MultiTokenPredictor):
+    """Multi-token predictor composed of multiple
+    Dots3NoteMultiTokenPredictorLayer instances with shared embedding
+    and logits processing."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         nn.Module.__init__(self)
         assert vllm_config.speculative_config is not None
@@ -139,6 +147,8 @@ class Dots3NoteMultiTokenPredictor(DeepseekV32MultiTokenPredictor):
 
 
 class Dots3NoteMTP(DeepseekV32MTP):
+    """Multi-token predictor for Dots3Note with its own embedding
+    tokens, wrapping the Dots3NoteMultiTokenPredictor."""
     has_own_embed_tokens = True
     has_own_lm_head = False
 
@@ -175,6 +185,8 @@ class Dots3NoteMTP(DeepseekV32MTP):
     def _adapt_weights(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterator[tuple[str, torch.Tensor]]:
+        """Adapts loaded weights by remapping MTP embed_tokens to the
+        correct layer index and padding dense MLP weights."""
         mtp_layer = self.config.num_hidden_layers
         for name, weight in weights:
             if name.startswith("model.mtp.embed_tokens."):

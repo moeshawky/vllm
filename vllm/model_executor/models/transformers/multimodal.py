@@ -79,8 +79,12 @@ def _get_embed_token_id(replacement_ids: torch.Tensor) -> int:
 
 
 class MultiModalProcessingInfo(BaseProcessingInfo):
+    """ProcessingInfo for Transformers multi-modal models; resolves audio and image processors and provides max token counts per modality."""
+
     def _get_audio_processor(self) -> Any:
         # TODO: drop feature_extractor branch once huggingface/transformers#44394 lands.
+        """Retrieves the audio processor from the HF processor, trying audio_processor then feature_extractor as fallbacks."""
+
         return getattr_iter(
             self.get_hf_processor(), ("audio_processor", "feature_extractor")
         )
@@ -112,6 +116,8 @@ class MultiModalProcessingInfo(BaseProcessingInfo):
         return 16000.0
 
     def get_data_parser(self) -> MultiModalDataParser:
+        """Returns a MultiModalDataParser configured with audio sampling rate for audio models, falling back to the parent class parser."""
+
         if self._is_audio_model():
             return MultiModalDataParser(
                 target_sr=self._get_audio_sampling_rate(),
@@ -120,9 +126,13 @@ class MultiModalProcessingInfo(BaseProcessingInfo):
         return super().get_data_parser()
 
     def get_supported_mm_limits(self):
+        """Returns a dict with keys for each supported modality."""
+
         return dict.fromkeys(self._get_supported_modalities())
 
     def get_mm_max_tokens_per_item(self, seq_len, mm_counts):
+        """Returns max tokens per item per modality from audio and image-specific token count methods."""
+
         modalities = self._get_supported_modalities()
         max_tokens = {}
         if "audio" in modalities:
@@ -160,6 +170,8 @@ class MultiModalProcessingInfo(BaseProcessingInfo):
 
 
 class MultiModalDummyInputsBuilder(BaseDummyInputsBuilder[MultiModalProcessingInfo]):
+    """Generates dummy multi-modal data for Transformers models, creating audio and image placeholder tokens."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         text = ""
         if self.info._is_audio_model() and (num_audios := mm_counts.get("audio", 0)):
@@ -883,6 +895,8 @@ MultiModalProcessor = (
 
 
 class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
+    """Mixin providing multi-modal and MRoPE support for Transformers models; handles encoder decoration, forward position shaping, and language model retrieval."""
+
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
         # Skip SupportsMRoPE.__init__ and call the next class in MRO
         super(SupportsMRoPE, self).__init__(vllm_config=vllm_config, prefix=prefix)

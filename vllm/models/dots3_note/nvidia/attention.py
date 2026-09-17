@@ -45,6 +45,9 @@ from vllm.v1.worker.workspace import (
 from vllm.vllm_flash_attn.flash_attn_interface import flash_attn_varlen_func
 
 
+# SWA gather kernel reads KV cache pages scattered across
+# the block table, concatenating them into a contiguous
+# output for the sliding-window attention.
 @triton.jit
 def _gather_swa_kv_kernel(
     kv_cache_ptr,
@@ -115,6 +118,9 @@ def _gather_swa_kv_kernel(
     )
 
 
+# Apply a sliding-window score mask to attention scores,
+# setting invalid positions to negative infinity so they are
+# ignored by softmax.
 @triton.jit
 def _apply_swa_score_mask_kernel(
     scores_ptr,
@@ -165,11 +171,19 @@ def _apply_swa_score_mask_kernel(
 
 @dataclass
 class Dots3NoteDecodeMetadata(MLACommonDecodeMetadata):
+    """Decoding metadata for NOTE SWA attention, extending
+    MLACommonDecodeMetadata with a per-request query length
+    field.
+    """
     query_len: int
 
 
 @dataclass
 class _SlidingWindowChunk:
+    """Represents a contiguous chunk of requests within a
+    sliding-window prefill batch, with cumulative sequence
+    lengths and workspace tensors.
+    """
     req_start: int
     req_end: int
     query_start: int
@@ -185,6 +199,9 @@ class _SlidingWindowChunk:
 
 @dataclass
 class _SlidingWindowMetadata:
+    """Container for the computed sliding-window metadata:
+    a list of chunks and the pre-allocated workspace tensor.
+    """
     chunks: list[_SlidingWindowChunk]
     workspace: torch.Tensor
 
@@ -198,7 +215,10 @@ def _build_sliding_window_metadata(
     workspace_size: int,
     device: torch.device,
 ) -> _SlidingWindowMetadata:
-    """Plan per-request latent-cache gathers for SWA varlen attention."""
+    """Plans per-request latent-cache gathers for SWA varlen
+    attention by partitioning requests into chunks that fit
+    the workspace budget.
+    """
     query_lens_cpu = (query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]).to(
         dtype=torch.int32
     )
@@ -310,6 +330,9 @@ class Dots3NoteMLAMetadataBuilder(TritonMLAMetadataBuilder):
     query_len_support = QueryLenSupport.UNIFORM
 
     def __init__(self, kv_cache_spec, layer_names, vllm_config, device):
+        """Initializes the metadata builder with the sliding
+        window size and delegates to the parent TritonMLAMetadataBuilder.
+        """
         self.sliding_window = kv_cache_spec.sliding_window
         super().__init__(kv_cache_spec, layer_names, vllm_config, device)
 
@@ -356,6 +379,10 @@ class Dots3NoteMLAMetadataBuilder(TritonMLAMetadataBuilder):
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> MLACommonMetadata:
+        """Builds MLA metadata for NOTE SWA: routes prefill/
+        mixed batches through sliding-window metadata and raises
+        NotImplementedError for decode context parallelism.
+        """
         metadata = super().build(
             common_prefix_len,
             common_attn_metadata,
@@ -474,6 +501,10 @@ class Dots3NoteTritonMLAImpl(TritonMLAImpl):
         decode: Dots3NoteDecodeMetadata,
         k_scale: torch.Tensor,
     ) -> tuple[torch.Tensor, None]:
+        """Execute SWA MQA decode: allocates workspace, gathers
+        KV via the Triton kernel, applies the sliding-window
+        score mask, and computes attention output.
+        """
         query_len = decode.query_len
         num_tokens, num_heads, head_size = q.shape
         assert num_tokens % query_len == 0
@@ -748,6 +779,10 @@ class Dots3NotePaddedSparseImpl(FlashAttnMLASparseImpl):
         attn_metadata: FlashAttnMLASparseMetadata,
         layer: AttentionLayer,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Forward pass for padded sparse MLA: validates split
+        q_nope/q_rope input, converts req indices to global
+        indices, and calls flash_attn_varlen_func.
+        """
         if not isinstance(q, tuple):
             raise NotImplementedError(
                 "Dots3NotePaddedSparseImpl expects split (q_nope, q_rope) input."

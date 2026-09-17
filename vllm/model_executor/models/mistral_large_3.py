@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Mistral Large 3 model implementation with WeightsMapper for HF-to-vLLM
+checkpoint weight remapping.
+"""
+
 from collections.abc import Iterable
 
 import regex

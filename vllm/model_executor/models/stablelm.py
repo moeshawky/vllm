@@ -58,12 +58,18 @@ from .utils import (
 
 
 class StablelmMLP(nn.Module):
+    """Implements gate_up_proj and down_proj linear layers
+    with SiluAndMul activation for the
+    StableLM decoder."""
     def __init__(
         self,
         config: StableLmConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initializes StablelmMLP with MergedColumnParallelLinear
+        for gate_up_proj and RowParallelLinear
+        for down_proj."""
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
@@ -85,6 +91,8 @@ class StablelmMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Applies gate_up_proj, SiluAndMul activation,
+        and down_proj to produce output."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -92,6 +100,9 @@ class StablelmMLP(nn.Module):
 
 
 class StablelmAttention(nn.Module):
+    """Implements multi-head attention with QKVParallelLinear,
+    RowParallelLinear, and rotary embeddings
+    supporting tensor parallelism."""
     def __init__(
         self,
         config: StableLmConfig,
@@ -99,6 +110,10 @@ class StablelmAttention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initializes StablelmAttention with QKVParallelLinear
+        and RowParallelLinear; computes num_heads
+        and num_kv_heads based on tensor parallel
+        world size."""
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
@@ -165,6 +180,9 @@ class StablelmAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Computes QKV projections, applies rotary
+        embeddings, runs attention, and
+        projects output."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -174,6 +192,9 @@ class StablelmAttention(nn.Module):
 
 
 class StablelmDecoderLayer(nn.Module):
+    """Implements a single decoder layer with
+    self-attention, MLP, and two LayerNorm
+    residual connections."""
     def __init__(
         self,
         config: StableLmConfig,
@@ -181,6 +202,10 @@ class StablelmDecoderLayer(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initializes StablelmDecoderLayer with
+        StablelmAttention, StablelmMLP,
+        and two LayerNorm layers; reads
+        norm_eps from config."""
         super().__init__()
         self.self_attn = StablelmAttention(
             config, cache_config, quant_config, prefix=f"{prefix}.self_attn"
@@ -195,6 +220,9 @@ class StablelmDecoderLayer(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Applies self-attention then MLP with
+        residual connections and LayerNorm
+        normalization."""
         # Self Attention
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -214,7 +242,14 @@ class StablelmDecoderLayer(nn.Module):
 
 
 class StableLMEpochModel(nn.Module):
+    """Implements the full transformer model
+    with embedding, decoder layers, and
+    final LayerNorm; supports pipeline
+    parallelism."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes StableLMEpochModel with
+        embedding tokens, decoder layers
+        via make_layers, and final LayerNorm."""
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -241,6 +276,9 @@ class StableLMEpochModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Maps input IDs to embeddings using
+        the vocabulary parallel embedding
+        layer."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -250,6 +288,9 @@ class StableLMEpochModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Processes hidden states through decoder
+        layers with pipeline parallelism
+        support."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -267,6 +308,9 @@ class StableLMEpochModel(nn.Module):
 
 
 class StablelmForCausalLM(nn.Module, SupportsPP):
+    """Implements the causal language model head
+    with pipeline parallelism support; maps
+    HF weights to vLLM format."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -279,6 +323,10 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes StablelmForCausalLM with
+        StableLMEpochModel, ParallelLMHead,
+        and LogitsProcessor; handles tied
+        word embeddings."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -301,6 +349,8 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegates to the inner model's
+        embed_input_ids method."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -310,6 +360,8 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Passes inputs through the inner model
+        and returns hidden states."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -319,9 +371,14 @@ class StablelmForCausalLM(nn.Module, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Computes logits from hidden states
+        using the logits processor and
+        language model head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads HF weights using AutoWeightsLoader
+        with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

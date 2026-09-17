@@ -29,10 +29,14 @@ _C = TypeVar("_C", bound=PretrainedConfig)
 
 
 class _RootConfig(Protocol[_C]):
+    """Protocol defining the root config shape with a vision_config attribute; used as a type constraint for vision encoder info classes."""
+
     vision_config: _C
 
 
 class VisionEncoderInfo(ABC, Generic[_C]):
+    """Abstract base class for vision encoder information; provides HF config access and abstract methods for image token count, size, patch size, and grid length."""
+
     def __init__(self, hf_config: _RootConfig[_C]) -> None:
         super().__init__()
 
@@ -62,11 +66,15 @@ class VisionEncoderInfo(ABC, Generic[_C]):
 
 
 class VisionLanguageConfig(Protocol):
+    """Protocol defining the vision language config shape with a vision_config attribute."""
+
     vision_config: Final[PretrainedConfig]
 
 
 def get_vision_encoder_info(hf_config: VisionLanguageConfig) -> VisionEncoderInfo:
     # Avoid circular imports
+    """Resolves the appropriate VisionEncoderInfo subclass based on the HF vision config type, dispatching to CLIP, Pixtral, or Siglip encoders."""
+
     from .clip import CLIPEncoderInfo, CLIPVisionConfig
     from .pixtral import PixtralHFEncoderInfo, PixtralVisionConfig
     from .siglip import SiglipEncoderInfo, SiglipVisionConfig
@@ -171,6 +179,8 @@ VisionFeatureSelectStrategy: TypeAlias = (
 def _get_vision_feature_selector(
     strategy: VisionFeatureSelectStrategy | str,
 ) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Returns a callable that selects vision features from the encoder output based on the strategy: class, default, full, or a custom callable."""
+
     if callable(strategy):
         return strategy
 
@@ -192,6 +202,8 @@ def get_num_selected_vision_tokens(
     num_vision_tokens: int,
     strategy: VisionFeatureSelectStrategy | str,
 ) -> int:
+    """Returns the number of selected vision tokens based on the feature selection strategy and optional custom callable."""
+
     if callable(strategy):
         dummy_features = torch.empty(1, num_vision_tokens, 64)  # [B, L, D]
         dummy_selected_features = strategy(dummy_features)
@@ -653,6 +665,8 @@ class FusedInputNorm(nn.Module):
 
     @classmethod
     def from_model_config(cls, model_config: "ModelConfig") -> nn.Module:
+        """Constructs a FusedInputNorm from the model config, reading normalization parameters from the processor config or falling back to the image processor."""
+
         if not model_config.multimodal_config.mm_device_do_normalize:
             return cls.identity()
 
@@ -711,6 +725,8 @@ class FusedInputNorm(nn.Module):
         grid_thw: torch.Tensor,
         visual_dtype: torch.dtype,
     ) -> torch.Tensor:
+        """Applies the per-channel affine transform directly to the grid_thw tensor, bypassing batch_norm to avoid CUDA grid limit overflow for large image-heavy requests."""
+
         if self.is_identity:
             return grid_thw.to(visual_dtype)
 

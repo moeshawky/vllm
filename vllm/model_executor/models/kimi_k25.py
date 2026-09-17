@@ -85,6 +85,8 @@ logger = init_logger(__name__)
 # Dummy input dimensions for profiling.
 @dataclass
 class MaxImageTokenMeta:
+    """Dimensions for maximum-resolution dummy image input."""
+
     width: int = 3000
     height: int = 3000
 

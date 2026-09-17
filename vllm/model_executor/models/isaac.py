@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Isaac multimodal model with pixel-shuffle vision.
+
+Provides vision configuration, variable sequence embeddings,
+variable-length attention, pixel shuffle utilities, and
+the main IsaacForConditionalGeneration model.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -88,6 +95,8 @@ def create_cumulative_seq_lengths(
 
 
 class Siglip2VariableSequenceEmbeddings(nn.Module):
+    """Siglip2 embeddings with per-image position encoding interpolation."""
+
     def __init__(self, config: PixelShuffleSiglip2VisionConfig):
         super().__init__()
         self.config = config
@@ -107,6 +116,7 @@ class Siglip2VariableSequenceEmbeddings(nn.Module):
     def positional_embeddings(
         self, packed_seq_patches: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
+        """Interpolate position embeddings to each image's grid size."""
         # Prepare positional embeddings grid: (1, embed_dim, h, w)
         positional_embeddings = (
             self.position_embedding.weight.reshape(
@@ -306,6 +316,8 @@ def pixel_shuffle_varlen(
 
 
 class IsaacProcessingInfo(BaseProcessingInfo):
+    """ProcessingInfo for Isaac models with HF config mapping."""
+
     def get_hf_config(self) -> IsaacConfig:
         if hasattr(self.ctx, "get_hf_config"):
             original_config = self.ctx.get_hf_config()
@@ -344,6 +356,7 @@ class IsaacProcessingInfo(BaseProcessingInfo):
         )
 
     def get_image_size_with_most_features(self) -> ImageSize:
+        """Compute the image size that yields the maximum feature count."""
         hf_config = self.get_hf_config()
         # Get target dimensions
         target_height, target_width = get_image_size_for_max_num_patches(
@@ -428,6 +441,8 @@ class IsaacImagePixelInputs(TensorSchema):
 
 
 class IsaacMultiModalProcessor(BaseMultiModalProcessor):
+    """Multimodal processor for Isaac image inputs with prompt updates."""
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -478,6 +493,8 @@ class IsaacMultiModalProcessor(BaseMultiModalProcessor):
 
 
 class Siglip2VisionAttention(nn.Module):
+    """Vision attention with QKV projection and tensor parallelism."""
+
     def __init__(
         self,
         config: PixelShuffleSiglip2VisionConfig,
@@ -568,6 +585,8 @@ class Siglip2VisionAttention(nn.Module):
 
 
 class Siglip2EncoderLayer(nn.Module):
+    """Transformer encoder layer with attention and MLP blocks."""
+
     def __init__(
         self,
         config: PixelShuffleSiglip2VisionConfig,
@@ -616,6 +635,8 @@ class Siglip2EncoderLayer(nn.Module):
 
 
 class Siglip2Encoder(nn.Module):
+    """Stack of Siglip2 encoder layers."""
+
     def __init__(
         self,
         config: PixelShuffleSiglip2VisionConfig,
@@ -654,6 +675,8 @@ class Siglip2Encoder(nn.Module):
 
 
 class Siglip2VisionTransformer(nn.Module):
+    """Siglip2 vision transformer with pixel shuffle output."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -736,6 +759,8 @@ def _resolve_vision_token_id(model_config: ModelConfig, vision_token: str) -> in
 
 
 class IsaacVisionEmbedding(nn.Module):
+    """Vision embedding pipeline: transformer + MLP layers."""
+
     def __init__(
         self,
         vision_cfg: PixelShuffleSiglip2VisionConfig,
@@ -786,6 +811,8 @@ class IsaacVisionEmbedding(nn.Module):
 class IsaacForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE
 ):
+    """Isaac multimodal model with vision tower and Qwen3 language backbone."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -897,6 +924,7 @@ class IsaacForConditionalGeneration(
     def iter_mm_grid_hw(
         self, input_tokens: list[int], mm_features: list[MultiModalFeatureSpec]
     ) -> Iterator[tuple[int, int, int]]:
+        """Yield (offset, grid_h, grid_w) for each image feature."""
         spatial_merge_size = self.config.vision_config.pixel_shuffle_scale_factor
         for mm_feature in sorted(mm_features, key=lambda f: f.mm_position.offset):
             offset = mm_feature.mm_position.offset
@@ -912,6 +940,7 @@ class IsaacForConditionalGeneration(
         input_tokens: list[int],
         mm_features: list[MultiModalFeatureSpec],
     ) -> tuple[torch.Tensor, int]:
+        """Build mrope position IDs for text and image segments."""
         llm_pos_ids_list = []
         st = 0
         for offset, llm_grid_h, llm_grid_w in self.iter_mm_grid_hw(

@@ -21,6 +21,9 @@ from vllm.model_executor.layers.quantization import QuantizationConfig
 
 
 class InklingDenseMLP(nn.Module):
+    """Dense SwiGLU MLP using interleaved gate/up projection
+    with RowParallelLinear down projection."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -30,6 +33,8 @@ class InklingDenseMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initializes ColumnParallelLinear gate/up projection
+        and RowParallelLinear down projection."""
         super().__init__()
         self.gate_up_proj = ColumnParallelLinear(
             hidden_size,
@@ -52,6 +57,8 @@ class InklingDenseMLP(nn.Module):
             self.global_scale = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass applying interleaved SwiGLU activation
+        and optional global scale."""
         from .ops import silu_and_mul_triton
 
         gate_up, _ = self.gate_up_proj(x)

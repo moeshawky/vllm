@@ -82,6 +82,9 @@ from vllm.transformers_utils.config import set_default_rope_theta
 from vllm.v1.attention.backend import AttentionType
 from vllm.v1.attention.backends.flash_attn_diffkv import FlashAttentionDiffKVBackend
 
+"""Inference-only OpenPangu MoE model with MLA, sink attention, and expert
+parallelism support."""
+
 
 def check_ffn_act_fn(act_fn: str):
     if act_fn != "silu":

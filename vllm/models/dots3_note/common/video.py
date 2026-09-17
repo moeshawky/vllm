@@ -31,6 +31,9 @@ _AUDIO_CHUNK_SECONDS = 30
 
 @dataclass(frozen=True)
 class Dots3NoteVideoPart:
+    """Dataclass representing a single decoded video component:
+    text, image, or audio, with a timestamp and media value.
+    """
     kind: Literal["text", "image", "audio"]
     value: str | Image.Image | np.ndarray
 
@@ -49,6 +52,10 @@ def _compute_target_size(
     min_pixels: int,
     max_pixels: int,
 ) -> tuple[int, int]:
+    """Computes aligned target height and width for video
+    resizing, respecting both min/max pixel budgets by scaling
+    the aspect ratio if needed.
+    """
     height = max(_ALIGN, round(orig_h / _ALIGN) * _ALIGN)
     width = max(_ALIGN, round(orig_w / _ALIGN) * _ALIGN)
     if height * width > max_pixels:
@@ -81,6 +88,10 @@ def _real_patches_at(
 
 
 def _frame_hard_cap(seq_length: int) -> int:
+    """Computes the maximum number of frames allowed for a
+    given sequence length, clamped to powers of two for
+    alignment.
+    """
     need = max(1, (seq_length - _BUDGET_OVERHEAD) // (_PF_FLOOR + 15))
     if need <= 1024:
         return 1024
@@ -98,6 +109,10 @@ def _solve_degrade(
     orig_fps: float,
     seq_length: int,
 ) -> tuple[int, int]:
+    """Binary-search solver that degrades frame count and
+    patch resolution to fit the visual budget while respecting
+    the minimum frame count.
+    """
     aligned_h = max(_ALIGN, round(orig_h / _ALIGN) * _ALIGN)
     aligned_w = max(_ALIGN, round(orig_w / _ALIGN) * _ALIGN)
     orig_max_pf = (aligned_h // _ALIGN) * (aligned_w // _ALIGN)
@@ -348,6 +363,10 @@ def _group_bounds(
     mode: str,
     rng: random.Random,
 ) -> list[int]:
+    """Computes temporal group boundaries for video interleave
+    based on the k_mode strategy (whole, eval30, eval_ek,
+    or logk).
+    """
     if num_frames <= 1 or duration <= 0:
         return [0, num_frames]
     max_groups = min(

@@ -47,6 +47,12 @@ def _prepare_megamoe_inputs_kernel(
     BLOCK_TOPK: tl.constexpr,
     SHARED_BLOCK_M: tl.constexpr,
 ) -> None:
+    """Stage inputs for a single tile of the DeepSeek V4 MegaMoE kernel.
+
+    Quantizes hidden states to fp8 with E8M0 group scales and repacks
+    the routing top-k tensors into the int64/float32 layout consumed by
+    the DeepGEMM MegaMoE kernels.
+    """
     token_id = tl.program_id(0)
     k_block_id = tl.program_id(1)
 
@@ -157,6 +163,12 @@ def prepare_megamoe_inputs(
     shared_x_sf: torch.Tensor | None = None,
     shared_block_m: int | None = None,
 ) -> None:
+    """Stage hidden states and routing tensors for DeepSeek V4 MegaMoE.
+
+    Quantizes hidden states to fp8 with E8M0 group scales and repacks
+    the routing top-k tensors into the int64/float32 layout consumed by
+    the DeepGEMM MegaMoE kernels.
+    """
     num_tokens, hidden_size = hidden_states.shape
     if num_tokens == 0:
         return

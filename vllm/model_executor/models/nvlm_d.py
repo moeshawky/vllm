@@ -39,6 +39,9 @@ from .internvl import (
     InternVLChatModel,
 )
 
+"""Inference-only NVLM-D multimodal model with vision encoder and language
+model."""
+
 
 class NVLMProcessingInfo(BaseInternVLProcessingInfo):
     def get_image_processor(self, **kwargs):

@@ -701,11 +701,13 @@ class MiDashengLMModel(nn.Module, SupportsMultiModal, SupportsPP):
         self.quant_config = quant_config
 
         with self._mark_tower_model(vllm_config, "audio"):
+            # DashengAudioTransformer processes raw waveform into log Mel spectrograms.
             self.audio_encoder = DashengAudioTransformer(
                 config.audio_encoder_config,
                 quant_config=quant_config,
                 prefix=maybe_prefix(prefix, "audio_encoder"),
             )
+            # Project encoder features to the text model's hidden dimension.
             self.audio_projector = AudioProjectorSubsample(
                 in_dim=config.audio_encoder_config.embed_dim,
                 out_dim=config.text_config.hidden_size,

@@ -501,6 +501,7 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Return the placeholder token string for the given modality."""
         if modality.startswith("image"):
             return V2_IMAGE_TOKEN
         if modality.startswith("video"):
@@ -512,6 +513,7 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         **kwargs: object,
     ) -> HCXVisionV2ImageInputs | None:
+        """Parse and validate image input kwargs into a typed input object."""
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -537,6 +539,7 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         **kwargs: object,
     ) -> HCXVisionV2VideoInputs | None:
+        """Parse and validate video input kwargs into a typed input object."""
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_embeds = kwargs.pop("video_embeds", None)
         video_grid_thw = kwargs.pop("video_grid_thw", None)
@@ -562,7 +565,8 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         image_input: HCXVisionV2ImageInputs,
     ) -> tuple[torch.Tensor, ...]:
-        """Process images through Qwen2.5 ViT and projector."""
+        """Run image pixels or precomputed embeddings through the Qwen2.5 ViT,
+        apply the linear projector, and split into per-image embeddings."""
         grid_thw = image_input["image_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -586,7 +590,8 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         video_input: HCXVisionV2VideoInputs,
     ) -> tuple[torch.Tensor, ...]:
-        """Process videos through Qwen2.5 ViT and projector."""
+        """Run video pixels or precomputed embeddings through the Qwen2.5 ViT,
+        apply the linear projector, and split into per-video embeddings."""
         grid_thw = video_input["video_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -627,6 +632,8 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         **kwargs: object,
     ) -> MultiModalEmbeddings:
+        """Parse multimodal inputs, process images and videos, and return
+        concatenated multimodal embeddings."""
         modalities = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not modalities:
             return []
@@ -655,6 +662,8 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the language model backbone and return hidden states or
+        intermediate tensors for pipeline parallel ranks."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -667,11 +676,13 @@ class HCXVisionV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Delegate logits computation to the language model."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(
         self,
         weights: Iterable[tuple[str, torch.Tensor]],
     ) -> set[str]:
+        """Load checkpoint weights using the HF-to-vLLM weight mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

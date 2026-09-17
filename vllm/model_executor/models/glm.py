@@ -10,6 +10,7 @@ from .utils import PPMissingLayer
 
 class GlmForCausalLM(LlamaForCausalLM):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize GLM model with GLM-specific rotary embedding settings."""
         hf_config = vllm_config.model_config.hf_config
         hf_config.rope_parameters["partial_rotary_factor"] = 0.5
         super().__init__(vllm_config=vllm_config, prefix=prefix)

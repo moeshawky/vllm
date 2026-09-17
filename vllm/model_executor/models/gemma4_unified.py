@@ -104,6 +104,7 @@ class Gemma4UnifiedVisionEmbedder(nn.Module):
         self.pos_norm = nn.LayerNorm(mm_embed_dim)
 
     def _factorized_posemb(self, positions_xy: torch.Tensor) -> torch.Tensor:
+        """Compute factorized 2D positional embeddings from patch coordinates."""
         clamped_pos = positions_xy.clamp(min=0).long()
         valid_mask = positions_xy != -1
 

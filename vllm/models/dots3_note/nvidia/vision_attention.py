@@ -31,11 +31,14 @@ _flash_attn3_use_positional_args = False
 
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
+    """Rotates the input tensor by swapping and negating halves
+    for rotary position embedding."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
 
 
+# Type alias for vision RoPE: a tuple of (cos, sin) tensors.
 VisionRotaryPositionEmbedding = tuple[torch.Tensor, torch.Tensor]
 
 
@@ -52,6 +55,8 @@ def apply_rotary_pos_emb_vision(
     tensor: torch.Tensor,
     rotary_pos_emb: torch.Tensor | VisionRotaryPositionEmbedding,
 ) -> torch.Tensor:
+    """Applies rotary position embedding to a tensor by combining cos/sin
+    with rotated input."""
     orig_dtype = tensor.dtype
     tensor = tensor.float()
     if isinstance(rotary_pos_emb, torch.Tensor):
@@ -89,12 +94,16 @@ class VisionRotaryEmbedding(nn.Module):
             )
 
     def _compute_freqs(self, seqlen: int) -> torch.Tensor:
+        """Computes frequency table for rotary positional embedding
+        from inverse frequency buffer."""
         seq = torch.arange(
             seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
         return torch.outer(seq, self.inv_freq)
 
     def forward(self, seqlen: int) -> torch.Tensor:
+        """Returns cached or computed rotary frequencies for the given
+        sequence length."""
         if self._cache_seq_len is None:
             return self._compute_freqs(seqlen)
         if seqlen > self.freqs_cache.shape[0]:
@@ -125,6 +134,8 @@ class _RMSNorm(nn.Module):
 
 @dataclass(frozen=True)
 class VisionAttentionParams:
+    """Dataclass holding vision attention parameters: dim, heads,
+    bias, norm settings."""
     dim: int
     num_heads: int
     bias: bool = True
@@ -134,6 +145,8 @@ class VisionAttentionParams:
 
 
 def vision_attention_params_from_config(config: Any) -> VisionAttentionParams:
+    """Constructs VisionAttentionParams from a config object's vision
+    attributes."""
     return VisionAttentionParams(
         dim=config.embed_dim,
         num_heads=config.num_attention_heads,
@@ -192,6 +205,8 @@ class VisionAttention(_VisionAttentionBase):
         rotary_pos_emb: torch.Tensor | VisionRotaryPositionEmbedding | None = None,
         seqlens: list[int] | None = None,
     ) -> torch.Tensor:
+        """Eager attention with dense block-diagonal mask using
+        cu_seqlens boundaries."""
         seq_length = hidden_states.shape[0]
         q, k, v = self._qkv_with_rope(hidden_states, rotary_pos_emb)
 
@@ -230,6 +245,8 @@ class VisionAttentionV2(_VisionAttentionBase):
         rotary_pos_emb: torch.Tensor | VisionRotaryPositionEmbedding | None = None,
         seqlens: list[int] | None = None,
     ) -> torch.Tensor:
+        """Eager attention per varlen segment using torch.split for
+        lower peak memory."""
         seq_length = hidden_states.shape[0]
         q, k, v = self._qkv_with_rope(hidden_states, rotary_pos_emb)
 
@@ -259,6 +276,7 @@ VisionEagerAttention = VisionAttentionV2
 
 
 class VisionFlashAttention2(_VisionAttentionBase):
+    """Flash Attention v2 backend wrapper for vision attention."""
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -267,6 +285,8 @@ class VisionFlashAttention2(_VisionAttentionBase):
         rotary_pos_emb: torch.Tensor | VisionRotaryPositionEmbedding | None = None,
         seqlens: list[int] | None = None,
     ) -> torch.Tensor:
+        """Forward pass using flash_attn_varlen_func with FA
+        version 2."""
         seq_length = hidden_states.shape[0]
         q, k, v = self._qkv_with_rope(hidden_states, rotary_pos_emb)
         attn_output = flash_attn_varlen_func(
@@ -284,6 +304,8 @@ class VisionFlashAttention2(_VisionAttentionBase):
 
 
 class VisionFlashAttention3(_VisionAttentionBase):
+    """Flash Attention v3 backend wrapper for vision attention with
+    optional positional args."""
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -292,6 +314,8 @@ class VisionFlashAttention3(_VisionAttentionBase):
         rotary_pos_emb: torch.Tensor | VisionRotaryPositionEmbedding | None = None,
         seqlens: list[int] | None = None,
     ) -> torch.Tensor:
+        """Forward pass using flash_attn_varlen_func with FA
+        version 3, handling positional args variant."""
         seq_length = hidden_states.shape[0]
         q, k, v = self._qkv_with_rope(hidden_states, rotary_pos_emb)
         if _flash_attn3_use_positional_args:
@@ -323,6 +347,7 @@ class VisionFlashAttention3(_VisionAttentionBase):
 
 
 class VisionSdpaAttention(_VisionAttentionBase):
+    """SDPA (Scaled Dot Product Attention) backend for vision attention."""
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -331,6 +356,8 @@ class VisionSdpaAttention(_VisionAttentionBase):
         rotary_pos_emb: torch.Tensor | VisionRotaryPositionEmbedding | None = None,
         seqlens: list[int] | None = None,
     ) -> torch.Tensor:
+        """Forward pass using torch.nn.attention.sdpa_kernel for
+        efficient scaled dot product attention."""
         seq_length = hidden_states.shape[0]
         q, k, v = self._qkv_with_rope(hidden_states, rotary_pos_emb)
 
@@ -364,6 +391,8 @@ class VisionSdpaAttention(_VisionAttentionBase):
         return self.proj(attn_output)
 
 
+# Registry mapping attention implementation names to concrete nn.Module
+# classes; resolved by build_vision_attention and resolve_attn_implementation.
 DOTS_VISION_ATTENTION_CLASSES: dict[str, type[nn.Module]] = {
     "eager": VisionAttention,
     "eager_v2": VisionAttentionV2,
@@ -430,6 +459,8 @@ def build_vision_attention(
 
 
 def attn_uses_seqlens(attn_implementation: str) -> bool:
+    """Returns whether the resolved attention implementation requires
+    per-segment seqlens."""
     return attn_implementation == "eager_v2"
 
 

@@ -92,6 +92,13 @@ class LlavaNextLikeConfig(LlavaLikeConfig, Protocol):
 
 
 class LlavaNextProcessingInfo(BaseLlavaProcessingInfo):
+    """Multimodal processing metadata for LLaVA-NeXT with dynamic resolution.
+
+    Computes image token counts using grid pinpoints for any-resolution
+    image processing, handling aspect-ratio-preserving resizing and
+    unpadded feature calculation.
+    """
+
     def get_hf_config(self) -> LlavaNextLikeConfig:
         return self.ctx.get_hf_config(LlavaNextConfig)
 
@@ -154,6 +161,12 @@ class LlavaNextProcessingInfo(BaseLlavaProcessingInfo):
         num_patch_height: int,
         num_patch_width: int,
     ) -> tuple[int, int]:
+        """Calculate unpadded and newline feature counts from grid dimensions.
+
+        Computes the aspect-ratio-preserving crop of the patch grid,
+        returning the number of unpadded patch features and the number of
+        newline separator features (one per row).
+        """
         current_height = npatches * num_patch_height
         current_width = npatches * num_patch_width
 
@@ -211,6 +224,12 @@ class BaseLlavaNextMultiModalProcessor(BaseLlavaMultiModalProcessor[_I]):
 
 
 class LlavaNextMultiModalProcessor(BaseLlavaNextMultiModalProcessor[_I]):
+    """HuggingFace processor for LLaVA-NeXT multimodal inputs.
+
+    Handles pixel_values, image_sizes, and image_embeds fields for
+    LLaVA-NeXT any-resolution image processing.
+    """
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -234,6 +253,15 @@ class LlavaNextMultiModalProcessor(BaseLlavaNextMultiModalProcessor[_I]):
 class LlavaNextForConditionalGeneration(
     nn.Module, SupportsLoRA, SupportsMultiModal, SupportsPP
 ):
+    """Inference-only LLaVA-NeXT model for vLLM.
+
+    LLaVA-NeXT extends LLaVA-1.5 with any-resolution image processing via
+    dynamic-resolution patch grids. Accepts image pixel values or embeddings,
+    processes them through a vision tower and MLP projector, and generates
+    text via the language model backbone. Supports spatial and flat image
+    feature merging strategies.
+    """
+
     supports_tower_connector_lora = True
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
@@ -367,6 +395,12 @@ class LlavaNextForConditionalGeneration(
     def _merge_image_patch_embeddings(
         self, image_size: torch.Tensor, patch_embeddings: torch.Tensor, *, strategy: str
     ) -> torch.Tensor:
+        """Merge patch embeddings from dynamic-resolution grid into a flat sequence.
+
+        For 'flat' strategy, flattens all patch embeddings. For 'spatial'
+        strategy, interleaves base patch embeddings with additional patches
+        using a spatial layout, inserting image_newline tokens between rows.
+        """
         if strategy == "flat":
             return patch_embeddings.flatten(0, 1)
 

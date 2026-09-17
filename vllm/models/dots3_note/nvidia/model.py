@@ -65,6 +65,8 @@ def _padded_mlp_size(
     quant_config: QuantizationConfig | None,
     is_sequence_parallel: bool = False,
 ) -> int:
+    """Computes the block-padded MLP intermediate size for sequence parallel
+    training, aligning blocks to the tensor parallel group size."""
     block_size = getattr(quant_config, "weight_block_size", None)
     if block_size is None or is_sequence_parallel:
         return intermediate_size
@@ -144,6 +146,8 @@ def _forward_note_mla(
     kv_lora_scale: float,
     llama_4_scaling: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    """Forward pass for NOTE MLA attention: splits qkv into q_c, kv_c, k_pe,
+    applies RoPE, runs the MLA attention with optional gating."""
     qkv_lora = attention.fused_qkv_a_proj(hidden_states)[0]
     q_c, kv_lora = qkv_lora.split(
         [
@@ -621,6 +625,8 @@ class Dots3NoteModel(DeepseekV32Model):
     ) -> Iterator[tuple[str, torch.Tensor]]:
         pending_indexer_fp8: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
         for name, weight in weights:
+            # Skips mtp-prefixed weights during loading; they are handled
+            # separately by the MTP module.
             if name.startswith("mtp."):
                 continue
             if ".indexer." in name:
@@ -679,4 +685,6 @@ class Dots3NoteModel(DeepseekV32Model):
 
 
 class Dots3NoteLanguageModelForCausalLM(DeepseekV32ForCausalLM):
+    """Causal language model wrapper for Dots3Note, setting the model class
+    to Dots3NoteModel."""
     model_cls = Dots3NoteModel

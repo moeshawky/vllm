@@ -47,6 +47,8 @@ from vllm.sequence import IntermediateTensors
 
 from .openpangu import OpenPanguDecoderLayer
 
+"""Multi-token predictor for OpenPangu models adapted from DeepSeek MTP."""
+
 
 class OpenPanguMultiTokenPredictorLayer(DeepSeekMultiTokenPredictorLayer):
     def __init__(self, vllm_config: VllmConfig, prefix: str) -> None:

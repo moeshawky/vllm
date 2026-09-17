@@ -60,6 +60,7 @@ from .utils import (
 
 
 def _is_moe(config: PretrainedConfig) -> bool:
+    """Return True if the config specifies a Mixture-of-Experts model."""
     return bool(
         getattr(config, "num_experts", None)
         and (
@@ -70,12 +71,16 @@ def _is_moe(config: PretrainedConfig) -> bool:
 
 
 def _get_cla_factor(config: PretrainedConfig) -> int:
+    """Return the cross-layer attention share factor, or 1 if CLA is not set."""
     if not getattr(config, "use_cla", False):
         return 1
     return getattr(config, "cla_share_factor", 1)
 
 
 class HYV3SharedHead(nn.Module):
+    """Shared LM head used by MTP layers. Passes hidden states through for
+    subsequent logits processing."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -87,10 +92,14 @@ class HYV3SharedHead(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Return hidden states unchanged; the head applies the LM projection."""
         return hidden_states
 
 
 class HYV3MultiTokenPredictorLayer(nn.Module):
+    """A single MTP layer that combines token embeddings and previous hidden
+    states, runs a decoder block, and applies a final layernorm."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -123,6 +132,8 @@ class HYV3MultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Norm and concatenate token embeddings with previous hidden states,
+        pass through the MTP decoder block, and apply final layernorm."""
         assert inputs_embeds is not None
         # masking inputs at position 0, as not needed by MTP
         inputs_embeds[positions == 0] = 0
@@ -143,6 +154,9 @@ class HYV3MultiTokenPredictorLayer(nn.Module):
 
 
 class HYV3MultiTokenPredictor(nn.Module):
+    """Multi-token predictor module containing MTP layers selected by spec step
+    index, with shared token embeddings and logits processing."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -181,6 +195,8 @@ class HYV3MultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Select the MTP layer for the given spec step index and run forward
+        pass through it."""
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         current_step_idx = spec_step_idx % self.num_mtp_layers
@@ -197,6 +213,7 @@ class HYV3MultiTokenPredictor(nn.Module):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Compute logits for the specified MTP step using the shared LM head."""
         current_step_idx = spec_step_idx % self.num_mtp_layers
         mtp_layer = self.layers[str(self.mtp_start_layer_idx + current_step_idx)]
         logits = self.logits_processor(
@@ -206,6 +223,9 @@ class HYV3MultiTokenPredictor(nn.Module):
 
 
 class HYV3MTP(nn.Module):
+    """HYV3 multi-token prediction model that wraps the MTP predictor and
+    provides sampling support."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config
@@ -225,6 +245,7 @@ class HYV3MTP(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Delegate to the MTP predictor and return the next hidden states."""
         hidden_states = self.model(
             input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
         )
@@ -235,6 +256,7 @@ class HYV3MTP(nn.Module):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor | None:
+        """Compute logits for the given spec step index."""
         return self.model.compute_logits(hidden_states, spec_step_idx)
 
     def sample(
@@ -242,10 +264,12 @@ class HYV3MTP(nn.Module):
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> SamplerOutput | None:
+        """Sample next tokens from logits using the provided sampling metadata."""
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
 
     def _split_qkv_weight(self, qkv: torch.Tensor):
+        """Split a fused QKV weight tensor into separate q, k, v components."""
         num_attention_heads = self.config.num_attention_heads
         num_kv_heads = getattr(
             self.config, "num_key_value_heads", self.config.num_attention_heads
@@ -270,6 +294,8 @@ class HYV3MTP(nn.Module):
         return torch.concat((q, k, v))
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        """Load checkpoint weights into the MTP model, handling shared weights,
+        stacked/split projections, and MoE expert parameters."""
         if self.quant_config is not None and (
             cache_scale_mapper := self.quant_config.get_cache_scale_mapper()
         ):

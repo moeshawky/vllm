@@ -46,6 +46,10 @@ logger = init_logger(__name__)
 
 
 class ToolCallSlot:
+    """Slot for tracking a single tool call during streaming. Holds
+    id, name, args parts, and streaming state.
+    """
+
     __slots__ = (
         "id",
         "name",
@@ -67,11 +71,17 @@ class ToolCallSlot:
 
     @property
     def args(self) -> str:
+        """Return the joined args string, lazily concatenating
+        _args_parts on first access.
+        """
         if self._args_joined is None:
             self._args_joined = "".join(self._args_parts)
         return self._args_joined
 
     def append_args(self, value: str) -> None:
+        """Append a chunk to the args parts and invalidate the
+        cached join.
+        """
         self._args_parts.append(value)
         self._args_joined = None
 
@@ -92,6 +102,9 @@ class ParserEngine(Parser):
         model_config=None,
         **kwargs,
     ) -> None:
+        """Initialize the ParserEngine with tokenizer, tools, and
+        parser_engine_config. Sets up StreamingParserEngine and tool slots.
+        """
         self.model_tokenizer = tokenizer
         self._tools = tools
         self._stream_state = StreamState(
@@ -150,17 +163,23 @@ class ParserEngine(Parser):
 
     @property
     def reasoning_start_str(self) -> str | None:
+        """Return the THINK_START terminal string from the parser
+        engine config.
+        """
         return self.parser_engine_config.terminals.get("THINK_START")
 
     @property
     def reasoning_end_str(self) -> str | None:
+        """Return the THINK_END terminal string from the parser
+        engine config.
+        """
         return self.parser_engine_config.terminals.get("THINK_END")
 
     @cached_property
     def vocab(self) -> dict[str, int]:
         return self.model_tokenizer.get_vocab()
 
-    # ── Engine lifecycle ──────────────────────────────────────────────
+    # ── Engine lifecycle ──────────────────────────────────────
 
     @property
     def skip_tool_parsing(self) -> bool:
@@ -178,6 +197,9 @@ class ParserEngine(Parser):
         self,
         initial_state: ParserState | None = None,
     ) -> None:
+        """Initialize streaming state by calling _reset with the
+        initial state. Only initializes once.
+        """
         if not self._streaming_initialized:
             self._streaming_initialized = True
             self._reset(initial_state=initial_state)
@@ -187,12 +209,18 @@ class ParserEngine(Parser):
         return
 
     def finish_streaming(self) -> DeltaMessage | None:
+        """Finish streaming by calling engine.finish() and converting
+        events to a DeltaMessage.
+        """
         events = self._engine.finish()
         if events or self._deferred_content:
             return self._events_to_delta(events, finished=True)
         return None
 
     def _reset(self, initial_state: ParserState | None = None) -> None:
+        """Reset the parser engine state including engine, reasoning
+        flag, tool slots, and deferred content.
+        """
         self._engine.reset(initial_state=initial_state)
         self._reasoning_ended = not self._has_reasoning
         self._tool_slots.clear()
@@ -204,6 +232,9 @@ class ParserEngine(Parser):
     def adjust_request(
         self, request: ChatCompletionRequest | ResponsesRequest
     ) -> ChatCompletionRequest | ResponsesRequest:
+        """Set skip_special_tokens=False on the request and return it.
+        Subclasses override to add grammar/structured output.
+        """
         request.skip_special_tokens = False
         return request
 
@@ -212,6 +243,8 @@ class ParserEngine(Parser):
         delta_text: str,
         delta_token_ids: Sequence[int],
     ) -> tuple[str, Sequence[int]]:
+        # Pre-processes feed input before passing to the engine.
+        # Default is identity. Subclasses override for prefix injection.
         return delta_text, delta_token_ids
 
     def _feed(
@@ -219,10 +252,12 @@ class ParserEngine(Parser):
         delta_text: str,
         delta_token_ids: Sequence[int],
     ) -> list[SemanticEvent]:
+        # Feeds token delta to the engine after preprocessing,
+        # returning semantic events.
         delta_text, delta_token_ids = self._preprocess_feed(delta_text, delta_token_ids)
         return self._engine.feed(delta_text, delta_token_ids)
 
-    # ── Schema-aware type correction ─────────────────────────────────
+    # ── Schema-aware type correction ──────────────────────────
 
     @staticmethod
     def _coerce_value(value: object, schema: dict) -> tuple[object, bool]:
@@ -390,6 +425,9 @@ class ParserEngine(Parser):
         return args_json
 
     def _is_valid_tool_name(self, name: str) -> bool:
+        """Check if a tool name is valid. Returns True if
+        validate_tool_names is disabled or tool not found.
+        """
         if not self.parser_engine_config.validate_tool_names:
             return True
         if not self._tools:
@@ -397,14 +435,18 @@ class ParserEngine(Parser):
         return find_tool_name(self._tools, name)
 
     def _accept_tool_name(self, name: str) -> bool:
+        """Return True if the tool name is non-empty and valid."""
         return bool(name) and self._is_valid_tool_name(name)
 
-    # ── Private helpers ─────────────────────────────────────────────
+    # ── Private helpers ─────────────────────────────────────
 
     def _check_skip_tool_parsing(
         self,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> None:
+        """Check if tool parsing should be skipped. Sets _tools and
+        _suppress_tool_calls when tool_choice is 'none'.
+        """
         tools = getattr(request, "tools", None)
         if tools:
             self._tools = tools
@@ -418,6 +460,9 @@ class ParserEngine(Parser):
         content: str,
         tools_called: bool,
     ) -> str | None:
+        """Strip whitespace from content when tool calls are present.
+        Returns None if content is empty after stripping.
+        """
         if tools_called:
             if self._strip_content_ws_with_tools:
                 content = content.strip()
@@ -425,7 +470,7 @@ class ParserEngine(Parser):
                 content = ""
         return content or None
 
-    # ── Streaming: parse_delta ────────────────────────────────────────
+    # ── Streaming: parse_delta ────────────────────────────────
 
     def parse_delta(
         self,
@@ -436,6 +481,9 @@ class ParserEngine(Parser):
         *,
         finished: bool,
     ) -> DeltaMessage | None:
+        """Parse a single streaming delta. Prepares streaming,
+        feeds to engine, and converts events to DeltaMessage.
+        """
         self._initialize_history_tool_call_cnt(request)
         if not self._prompt_streaming_prepared and prompt_token_ids is not None:
             # NOTE: call the hook BEFORE setting the flag, because the hook
@@ -462,8 +510,8 @@ class ParserEngine(Parser):
         self,
         delta: DeltaMessage | None,
     ) -> DeltaMessage | None:
-        """Strip trailing whitespace from reasoning, deferring it until we
-        know whether more reasoning follows or reasoning has ended.
+        """Strip trailing whitespace from reasoning, deferring it until
+        we know whether more reasoning follows or reasoning has ended.
 
         Runs in ``parse_delta`` *after* ``_events_to_delta`` (and any
         subclass overrides) so that overrides see the raw reasoning text.
@@ -488,13 +536,17 @@ class ParserEngine(Parser):
             self._deferred_reasoning = ""
         return delta
 
-    # ── Non-streaming: extract_reasoning ──────────────────────────────
+    # ── Non-streaming: extract_reasoning ──────────────────────
 
     def extract_reasoning(
         self,
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning and content from a full model output
+        by feeding and collecting REASONING_CHUNK and TEXT_CHUNK
+        events.
+        """
         self._reset()
         events = self._feed(model_output, [])
         events.extend(self._engine.finish())
@@ -517,7 +569,7 @@ class ParserEngine(Parser):
         content = "".join(content_parts) or None
         return reasoning, content
 
-    # ── Non-streaming: extract_reasoning_streaming ────────────────────
+    # ── Non-streaming: extract_reasoning_streaming ────────────
 
     def extract_reasoning_streaming(
         self,
@@ -528,17 +580,23 @@ class ParserEngine(Parser):
         current_token_ids: Sequence[int],
         delta_token_ids: Sequence[int],
     ) -> DeltaMessage | None:
+        """Extract reasoning from a streaming delta. Initializes
+        streaming and converts events to DeltaMessage.
+        """
         self.initialize_streaming()
         events = self._feed(delta_text, delta_token_ids)
         return self._strip_trailing_reasoning(self._events_to_delta(events))
 
-    # ── Non-streaming: extract_tool_calls ─────────────────────────────
+    # ── Non-streaming: extract_tool_calls ─────────────────────
 
     def extract_tool_calls(
         self,
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> ExtractedToolCallInformation:
+        """Extract tool calls from a full model output. Resets,
+        sets streaming, calls extract_tool_calls_streaming, finishes.
+        """
         self._reset()
         self._streaming_initialized = True
         result = self.extract_tool_calls_streaming(
@@ -588,14 +646,20 @@ class ParserEngine(Parser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> DeltaMessage | None:
+        """Extract tool calls from a streaming delta. Initializes
+        streaming, checks skip, feeds, converts to DeltaMessage.
+        """
         self.initialize_streaming()
         self._check_skip_tool_parsing(request)
         events = self._feed(delta_text, delta_token_ids)
         return self._strip_trailing_reasoning(self._events_to_delta(events))
 
-    # ── Reasoning state queries ───────────────────────────────────────
+    # ── Reasoning state queries ───────────────────────────────
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        """Check if reasoning has ended by scanning input_ids for
+        the end token ID.
+        """
         end_id = self._reasoning_end_token_id
         start_id = self._reasoning_start_token_id
         if end_id is not None:
@@ -610,6 +674,7 @@ class ParserEngine(Parser):
         return self._reasoning_ended
 
     def extract_content_ids(self, input_ids: list[int]) -> list[int]:
+        """Extract content token IDs after the last reasoning end token."""
         end_id = self._reasoning_end_token_id
         if end_id is not None:
             for i in range(len(input_ids) - 1, -1, -1):
@@ -625,10 +690,12 @@ class ParserEngine(Parser):
         return None
 
     def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
-        """Return reasoning tokens observed by the parser engine so far."""
+        """Return the number of reasoning tokens observed by the
+        parser engine so far.
+        """
         return self._engine.reasoning_token_count
 
-    # ── Single-pass parse helper ────────────────────────────────────────
+    # ── Single-pass parse helper ────────────────────────────────
 
     def _single_pass_parse(
         self,
@@ -660,7 +727,7 @@ class ParserEngine(Parser):
 
         return reasoning, content, tool_call_info
 
-    # ── Non-streaming: parse ───────────────────────────────────────────
+    # ── Non-streaming: parse ───────────────────────────────────
 
     def parse(
         self,
@@ -669,6 +736,9 @@ class ParserEngine(Parser):
         enable_auto_tools: bool = False,
         model_output_token_ids: Sequence[int] = (),
     ) -> tuple[str | None, str | None, list[FunctionCall] | None]:
+        """Parse a complete model output into reasoning, content,
+        and tool_calls. Uses _single_pass_parse.
+        """
         self._initialize_history_tool_call_cnt(request)
         self._check_skip_tool_parsing(request)
         reasoning, content, tool_call_info = self._single_pass_parse(
@@ -689,7 +759,7 @@ class ParserEngine(Parser):
 
         return reasoning, content, tool_calls
 
-    # ── Event-to-delta conversion ─────────────────────────────────────
+    # ── Event-to-delta conversion ─────────────────────────────
 
     def _events_to_delta(
         self,
@@ -772,10 +842,16 @@ class ParserEngine(Parser):
         return None
 
     def _ensure_slot(self, idx: int) -> None:
+        """Ensure a ToolCallSlot exists at the given index, extending
+        the list if needed.
+        """
         while len(self._tool_slots) <= idx:
             self._tool_slots.append(ToolCallSlot())
 
     def _ensure_tool_id(self, slot: ToolCallSlot, name: str) -> None:
+        """Ensure a ToolCallSlot has a valid tool call ID via
+        make_tool_call_id.
+        """
         if not slot.id:
             state = self._stream_state
             slot.id = make_tool_call_id(
@@ -786,6 +862,9 @@ class ParserEngine(Parser):
             state.history_tool_call_cnt += 1
 
     def _handle_tool_name(self, event: SemanticEvent) -> None:
+        """Handle a TOOL_NAME event by appending the event value
+        to the slot's name.
+        """
         idx = event.tool_index
         self._tool_slots[idx].name += event.value
 
@@ -795,6 +874,9 @@ class ParserEngine(Parser):
         deltas: list[DeltaToolCall],
         name: str | None,
     ) -> None:
+        """Emit a name delta for a tool call slot. Sets slot name,
+        name_sent, string_keys, and ensures tool ID.
+        """
         if name is None or not self._accept_tool_name(name):
             return
         slot = self._tool_slots[idx]
@@ -818,6 +900,9 @@ class ParserEngine(Parser):
         event: SemanticEvent,
         deltas: list[DeltaToolCall],
     ) -> None:
+        """Handle an ARG_VALUE_CHUNK event. Emits name delta if
+        name not yet sent, or arg delta if name already sent.
+        """
         idx = event.tool_index
         slot = self._tool_slots[idx]
         if event.value:
@@ -846,6 +931,10 @@ class ParserEngine(Parser):
         event: SemanticEvent,
         deltas: list[DeltaToolCall],
     ) -> None:
+        """Handle a TOOL_CALL_END event. Flushes remaining args,
+        emits name delta if needed, and appends remaining args as
+        a delta.
+        """
         idx = event.tool_index
         if idx >= len(self._tool_slots):
             return
@@ -883,13 +972,15 @@ class ParserEngine(Parser):
                 )
             )
 
-    # ── Tool-call delta coalescing ──────────────────────────────────────
+    # ── Tool-call delta coalescing ──────────────────────────────
 
     @staticmethod
     def _coalesce_tool_call_deltas(
         deltas: list[DeltaToolCall],
     ) -> list[DeltaToolCall]:
-        """Merge entries that share the same index into one per index."""
+        """Merge tool call deltas that share the same index into
+        a single DeltaToolCall per index.
+        """
         merged: dict[int, DeltaToolCall] = {}
         for tc in deltas:
             existing = merged.get(tc.index)
@@ -915,9 +1006,12 @@ class ParserEngine(Parser):
             return deltas
         return list(merged.values())
 
-    # ── Arg conversion helpers ─────────────────────────────────────────
+    # ── Arg conversion helpers ─────────────────────────────────
 
     def _compute_arg_delta(self, idx: int, raw_delta: str) -> str | None:
+        """Compute the arg delta for streaming by comparing the
+        current JSON prefix to the previous one.
+        """
         converter = self._arg_converter
         if converter is None:
             return raw_delta
@@ -961,6 +1055,9 @@ class ParserEngine(Parser):
         return None
 
     def _flush_arg_converter(self, idx: int) -> str | None:
+        """Flush the arg converter for a tool slot at the end
+        of streaming. Returns the final diff.
+        """
         converter = self._arg_converter
         if converter is None:
             return None
@@ -987,6 +1084,9 @@ class ParserEngine(Parser):
     _NAME_RE = re.compile(r'"name"\s*:\s*"([^"]*)"')
 
     def _try_extract_name(self, idx: int) -> str | None:
+        """Attempt to extract the tool name from the slot's args
+        using a regex pattern matching 'name' field.
+        """
         m = self._NAME_RE.search(self._tool_slots[idx].args)
         if m:
             name = m.group(1)
@@ -994,12 +1094,15 @@ class ParserEngine(Parser):
                 return name
         return None
 
-    # ── Build ExtractedToolCallInformation ─────────────────────────────
+    # ── Build ExtractedToolCallInformation ─────────────────────
 
     def _build_extracted_result(
         self,
         *deltas: DeltaMessage | None,
     ) -> ExtractedToolCallInformation:
+        """Build an ExtractedToolCallInformation from the current
+        tool slots and accumulated content.
+        """
         content_parts: list[str] = []
         for delta in deltas:
             if delta is not None and delta.content:
@@ -1081,6 +1184,9 @@ class ParserEngine(Parser):
         return name, json.dumps(without_name, ensure_ascii=False)
 
     def _extract_args_json(self, raw_args: str, func_name: str) -> str:
+        """Extract arguments JSON from raw args string by calling
+        _extract_name_and_args.
+        """
         if not raw_args.strip():
             return "{}"
         _, args = self._extract_name_and_args(raw_args)

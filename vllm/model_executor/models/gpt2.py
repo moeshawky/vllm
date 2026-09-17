@@ -60,6 +60,8 @@ from .utils import (
 
 
 class GPT2Attention(nn.Module):
+    """Multi-head attention with fused QKV and output projections."""
+
     def __init__(
         self,
         config: GPT2Config,
@@ -104,6 +106,7 @@ class GPT2Attention(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Project to QKV, compute attention, project back."""
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
         attn_output = self.attn(q, k, v)
@@ -112,6 +115,8 @@ class GPT2Attention(nn.Module):
 
 
 class GPT2MLP(nn.Module):
+    """Two-layer feedforward network with activation."""
+
     def __init__(
         self,
         intermediate_size: int,
@@ -138,6 +143,7 @@ class GPT2MLP(nn.Module):
         self.act = get_act_fn(config.activation_function)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply c_fc, activation, then c_proj."""
         hidden_states, _ = self.c_fc(hidden_states)
         hidden_states = self.act(hidden_states)
         hidden_states, _ = self.c_proj(hidden_states)
@@ -145,6 +151,8 @@ class GPT2MLP(nn.Module):
 
 
 class GPT2Block(nn.Module):
+    """Pre-norm transformer block with attention and MLP."""
+
     def __init__(
         self,
         config: GPT2Config,
@@ -167,6 +175,7 @@ class GPT2Block(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply layer norm, attention, and MLP with residuals."""
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
         attn_output = self.attn(hidden_states=hidden_states)
@@ -183,6 +192,8 @@ class GPT2Block(nn.Module):
 
 @support_torch_compile
 class GPT2Model(nn.Module):
+    """GPT-2 backbone with token embedding and stack of blocks."""
+
     # Drop attention mask buffers; NOTE: "c_attn.bias" must not be dropped.
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={".attn.bias": None, ".attn.masked_bias": None}
@@ -227,6 +238,7 @@ class GPT2Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Embed tokens, apply transformer blocks, return hidden states."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is None:
                 inputs_embeds = self.embed_input_ids(input_ids)
@@ -248,6 +260,7 @@ class GPT2Model(nn.Module):
     def _transpose_conv1d(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[tuple[str, torch.Tensor]]:
+        """Transpose Conv1D weights to Linear layout for vLLM."""
         # HF's GPT-2 uses Conv1D instead of Linear, so its 2D weights are
         # stored transposed relative to what vLLM expects.
         # Note(zhuohan): the logic below might break quantized models.
@@ -266,6 +279,8 @@ class GPT2Model(nn.Module):
 
 
 class GPT2LMHeadModel(nn.Module, SupportsPP):
+    """Causal LM head on top of GPT-2 backbone."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -299,6 +314,7 @@ class GPT2LMHeadModel(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Delegate to the underlying GPT-2 transformer."""
         hidden_states = self.transformer(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -308,10 +324,12 @@ class GPT2LMHeadModel(nn.Module, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Apply logits processor to the LM head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights with transformer prefix added."""
         loader = AutoWeightsLoader(self)
         weights = _add_transformer_prefix(weights)
         return loader.load_weights(weights)
@@ -364,6 +382,7 @@ class GPT2ForSequenceClassification(nn.Module, SupportsCrossEncoding):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Delegate to the underlying GPT-2 transformer."""
         hidden_states = self.transformer(
             input_ids=input_ids,
             position_ids=positions,
@@ -376,6 +395,7 @@ class GPT2ForSequenceClassification(nn.Module, SupportsCrossEncoding):
 def _add_transformer_prefix(
     weights: Iterable[tuple[str, torch.Tensor]],
 ) -> Iterable[tuple[str, torch.Tensor]]:
+    """Prepend transformer. to weight names not already prefixed."""
     for name, tensor in weights:
         if (
             not name.startswith("transformer.")

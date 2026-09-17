@@ -106,6 +106,12 @@ def _gemma4_routing_kernel(
     K: tl.constexpr,
     BLOCK_E: tl.constexpr,
 ):
+    """Triton kernel for MoE routing: sort logits, compute top-K weights.
+
+    For each token, loads gating logits, sorts them, computes softmax
+    over the top-K experts, applies per-expert scaling, and writes the
+    selected expert IDs and renormalized weights to output tensors.
+    """
     pid = tl.program_id(0)
     offs_e = tl.arange(0, BLOCK_E)
     valid = offs_e < E
@@ -168,6 +174,17 @@ def gemma4_fused_routing_kernel_triton(
     per_expert_scale: torch.Tensor,
     num_warps: int = 1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Launch the fused Triton routing kernel for MoE expert selection.
+
+    Args:
+        gating_output: Token-by-expert gating logits of shape (T, E).
+        topk: Number of experts to select per token.
+        per_expert_scale: Per-expert scaling factors of shape (E,).
+        num_warps: Number of warps per Triton block.
+
+    Returns:
+        Tuple of (topk_weights, topk_ids) with shapes (T, topk) each.
+    """
     gating_output = gating_output.contiguous()
     per_expert_scale = per_expert_scale.contiguous()
     T, E = gating_output.shape
@@ -192,6 +209,20 @@ def gemma4_routing_function_torch(
     topk: int,
     per_expert_scale: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """PyTorch reference implementation of MoE routing.
+
+    Computes softmax over gating logits, selects top-K experts,
+    renormalizes the dispatch weights, and folds per-expert scaling
+    into the final routing weights.
+
+    Args:
+        gating_output: Token-by-expert gating logits of shape (T, E).
+        topk: Number of experts to select per token.
+        per_expert_scale: Per-expert scaling factors of shape (E,).
+
+    Returns:
+        Tuple of (topk_weights, topk_ids) with shapes (T, topk) each.
+    """
     _, topk_ids = torch.topk(gating_output, k=topk, dim=-1)
     router_probabilities = torch.nn.functional.softmax(gating_output, dim=-1)
     indicator = torch.nn.functional.one_hot(
@@ -223,6 +254,10 @@ def _get_text_config(config):
 
 
 class Gemma4MLP(nn.Module):
+    """Two-layer MLP with MergedColumnParallelLinear gate_up_proj and
+    RowParallelLinear down_proj, using SiLU activation.
+    """
+
     def __init__(
         self,
         hidden_size: int,
@@ -249,6 +284,7 @@ class Gemma4MLP(nn.Module):
         self.act_fn = get_act_and_mul_fn(hidden_activation)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the MLP: gate_up projection, SiLU activation, down projection."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -377,6 +413,10 @@ class Gemma4MoE(nn.Module):
 
 
 class Gemma4Attention(nn.Module):
+    """Attention module with QKV projection, optional Q/K/V norms,
+    rotary embeddings, and sliding window or KV-sharing variants.
+    """
+
     def __init__(
         self,
         config,
@@ -524,6 +564,11 @@ class Gemma4Attention(nn.Module):
         hidden_states: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        """Compute attention with QKV projection, norms, rotary embeddings.
+
+        Applies the unified QKV path, optional Q/K/V norms, rotary
+        positional embeddings, and the attention backend.
+        """
         # Unified QKV path (works for both k_eq_v and standard layers).
         # For k_eq_v, K weights are loaded into both K and V slots of
         # qkv_proj, so V == K automatically.
@@ -556,6 +601,10 @@ class Gemma4Attention(nn.Module):
 
 
 class Gemma4DecoderLayer(nn.Module):
+    """Decoder layer with self-attention, MLP or MoE block, and optional
+    Per-Layer Embedding (PLE) components.
+    """
+
     def __init__(
         self,
         config,
@@ -899,12 +948,16 @@ class Gemma4SelfDecoderLayers(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor | None,
         positions: torch.Tensor,
-        inputs_embeds: torch.Tensor | None = None,
-        per_layer_inputs: torch.Tensor | None = None,
-        **kwargs,
+        hidden_states: torch.Tensor,
+        residual: torch.Tensor | None,
+        per_layer_input: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Run one decoder layer: attention, MLP/MoE, and optional PLE.
+
+        Applies input layernorm, self-attention, post-attention layernorm,
+        MLP or MoE block, and optional Per-Layer Embedding gate/projection.
+        """
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
             per_layer_inputs = self.project_per_layer_inputs(
@@ -967,6 +1020,12 @@ class Gemma4CrossDecoderLayers(nn.Module):
     enable_if=lambda vllm_config: not vllm_config.cache_config.kv_sharing_fast_prefill
 )
 class Gemma4Model(nn.Module, EagleModelMixin):
+    """Gemma4 backbone with embed_tokens, PLE components, and decoder.
+
+    Supports YOCO (Your Own Context Optimization) split into separate
+    self-decoder and cross-decoder halves with KV sharing.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = _get_text_config(vllm_config.model_config.hf_config)
@@ -1298,6 +1357,11 @@ class Gemma4Model(nn.Module, EagleModelMixin):
         per_layer_inputs: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Run the full model forward pass.
+
+        Routes to fast_prefill_forward when enabled, otherwise processes
+        inputs through embed_tokens, decoder layers, and PLE components.
+        """
         if self.fast_prefill_enabled:
             hidden_states = self.fast_prefill_forward(
                 input_ids,

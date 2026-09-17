@@ -26,6 +26,10 @@ from vllm.parser.engine.events import EventType
 
 
 class ParserState(Enum):
+    """Enum of parser states in the state machine: CONTENT, REASONING,
+    MESSAGE_HEADER, TOOL_PREAMBLE, TOOL_NAME, TOOL_ARGS, TOOL_BETWEEN.
+    """
+
     CONTENT = auto()
     REASONING = auto()
     MESSAGE_HEADER = auto()
@@ -37,6 +41,11 @@ class ParserState(Enum):
 
 @dataclass(frozen=True, slots=True)
 class Transition:
+    """Represents a state machine transition: (current_state, terminal)
+    -> (next_state, events_to_emit). Includes optional skip_in_token_id_mode
+    flag.
+    """
+
     next_state: ParserState
     events: tuple[EventType, ...] = field(default_factory=tuple)
     skip_in_token_id_mode: bool = False
@@ -74,6 +83,8 @@ class ParserEngineConfig:
     initial_state: ParserState = ParserState.CONTENT
 
     arg_converter: Callable[[str, bool], str] | None = None
+    # arg_converter defaults to None meaning raw args are passed through;
+    # stream_arg_deltas defaults to True for streaming delta computation.
 
     stream_arg_deltas: bool = True
 
@@ -82,6 +93,9 @@ class ParserEngineConfig:
     arg_structural_chars: frozenset[str] | None = None
 
     # Special tokens exempt from auto-drop but not state-machine terminals.
+    # arg_structural_chars identifies characters that delimit structural
+    # boundaries in args; preserve_tokens lists special tokens exempt
+    # from auto-drop.
     preserve_tokens: frozenset[str] = field(default_factory=frozenset)
 
     # Prevents trailing-whitespace accumulation across multi-turn conversations.
@@ -94,16 +108,24 @@ class ParserEngineConfig:
     strip_content_whitespace_with_tools: bool = True
 
     # Reject tool calls whose names are absent from the request tools.
+    # validate_tool_names defaults to False, meaning tool names are not
+    # validated against the request tools unless explicitly enabled.
     validate_tool_names: bool = False
 
     @cached_property
     def terminal_defs(self):
+        """Return the TerminalDef list derived from the terminals
+        dict via terminals_from_literals.
+        """
         from vllm.parser.engine.incremental_lexer import terminals_from_literals
 
         return terminals_from_literals(self.terminals)
 
     @cached_property
     def lexer_shape(self):
+        """Return the LexerShape derived from terminal definitions
+        for incremental lexing.
+        """
         from vllm.parser.engine.incremental_lexer import LexerShape
 
         return LexerShape(self.terminal_defs)

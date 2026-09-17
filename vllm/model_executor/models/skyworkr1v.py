@@ -7,6 +7,10 @@
 # Copyright (c) 2025 Skywork
 # Licensed under The MIT License [see LICENSE for details]
 # --------------------------------------------------------
+"""SkyworkR1V model implementation for multimodal
+vision-language inference with dynamic patching and
+spatial pixel shuffle."""
+
 from collections.abc import Iterable
 from typing import Annotated, Literal, TypeAlias
 
@@ -85,11 +89,16 @@ class SkyworkR1VImageEmbeddingInputs(TensorSchema):
 
 SkyworkR1VImageInputs: TypeAlias = (
     SkyworkR1VImagePixelInputs | SkyworkR1VImageEmbeddingInputs
-)
+)  # Type alias unions pixel inputs and embedding
+    # inputs for flexible image input handling.
 
 
 class SkyworkR1VProcessingInfo(BaseInternVLProcessingInfo):
+    """Provides image processor and HF processor
+    retrieval for SkyworkR1V models."""
     def get_image_processor(self, **kwargs):
+        """Returns an InternVLImageProcessor configured
+        with merged multimodal kwargs."""
         config = self.get_hf_config()
         vision_config = config.vision_config
 
@@ -103,6 +112,8 @@ class SkyworkR1VProcessingInfo(BaseInternVLProcessingInfo):
         return InternVLImageProcessor(**kwargs)
 
     def get_hf_processor(self, **kwargs: object) -> InternVLProcessor:
+        """Returns an InternVLProcessor with tokenizer
+        and image processor."""
         config = self.get_hf_config()
         vision_config = config.vision_config
 
@@ -125,6 +136,9 @@ class SkyworkR1VProcessingInfo(BaseInternVLProcessingInfo):
     dummy_inputs=BaseInternVLDummyInputsBuilder,
 )
 class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
+    """Implements a vision-language chat model with
+    InternVisionModel tower, MLP projection, and
+    language model backbone."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix=dict.fromkeys(
             [
@@ -146,12 +160,17 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Returns '<image>' for image modality and
+        raises ValueError otherwise."""
         if modality.startswith("image"):
             return "<image>"
 
         raise ValueError("Only image modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initializes SkyworkR1VChatModel with vision
+        model, MLP projection, and language model;
+        patches quant config for AWQ models."""
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -197,6 +216,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
     def _patch_quant_config(
         self, config: PretrainedConfig, quant_config: QuantizationConfig
     ):
+        """Adds vision_model to modules_to_not_convert
+        for AWQ models missing the config field."""
         # the awq models from OpenGVLab missing `modules_to_not_convert`
         # patch the quant_config to add `modules_to_not_convert` back
         if isinstance(quant_config, AutoAWQConfig):
@@ -214,6 +235,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         *,
         prefix: str,
     ):
+        """Creates an InternVisionModel with optional
+        layer override based on vision_feature_layer."""
         vision_feature_layer = config.select_layer
         if vision_feature_layer < 0:
             num_hidden_layers = (
@@ -235,6 +258,9 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         quant_config: QuantizationConfig,
         prefix: str = "",
     ) -> nn.Module:
+        """Creates a two-layer MLP with LayerNorm,
+        ReplicatedLinear, and GELU for
+        vision-to-LLM projection."""
         vit_hidden_size = config.vision_config.hidden_size
         llm_hidden_size = config.text_config.hidden_size
 
@@ -258,6 +284,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         )
 
     def pixel_shuffle(self, x, scale_factor=0.5):
+        """Reshapes spatial dimensions using scale_factor
+        for downsample operations."""
         n, w, h, c = x.size()
         # N, W, H, C --> N, W, H * scale, C // scale
         x = x.view(n, w, int(h * scale_factor), int(c / scale_factor))
@@ -276,6 +304,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         return x
 
     def extract_feature(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """Extracts vision features, applies pixel
+        shuffle, and projects through MLP."""
         vit_embeds = self.vision_model(pixel_values=pixel_values)
         vit_embeds = vit_embeds[:, 1:, :]
 
@@ -289,6 +319,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> SkyworkR1VImageInputs | None:
+        """Extracts pixel_values_flat, image_num_patches,
+        or image_embeds from kwargs."""
         pixel_values_flat = kwargs.pop("pixel_values_flat", None)
         image_num_patches = kwargs.pop("image_num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -326,6 +358,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         image_input: SkyworkR1VImageInputs,
     ) -> torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...]:
+        """Processes image inputs either as embeddings
+        or features with split-by-num_patches handling."""
         if image_input["type"] == "image_embeds":
             return image_input["data"]
 
@@ -349,6 +383,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         return image_embeds.split(image_feature_sizes)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Parses image input and returns processed
+        image features as multimodal embeddings."""
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -362,6 +398,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Delegates to parent class for text embedding
+        with optional multimodal embeddings."""
         # This is to satisfy the type checker for each overload
         if multimodal_embeddings is None or is_multimodal is None:
             return super().embed_input_ids(input_ids)
@@ -380,6 +418,8 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> IntermediateTensors:
+        """Passes inputs through the language model
+        and handles visual token masking."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -402,8 +442,12 @@ class SkyworkR1VChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Delegates to the language model's
+        compute_logits method."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads HF weights using AutoWeightsLoader
+        with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

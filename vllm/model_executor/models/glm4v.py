@@ -78,6 +78,8 @@ class GLMVImagePixelInputs(TensorSchema):
 
 
 class EVA2CLIPPatchEmbedding(nn.Module):
+    """Conv2d patch projection with learnable class and position tokens."""
+
     def __init__(self, config):
         super().__init__()
         self.proj = Conv2dLayer(
@@ -109,6 +111,8 @@ class EVA2CLIPPatchEmbedding(nn.Module):
 
 
 class EVA2CLIPAttention(nn.Module):
+    """Multi-head attention with fused QKV projection and MMEncoderAttention."""
+
     def __init__(
         self,
         config,
@@ -145,6 +149,7 @@ class EVA2CLIPAttention(nn.Module):
         self.output_dropout = torch.nn.Dropout(config.dropout_prob)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Project to QKV, compute attention, project back."""
         qkv, _ = self.query_key_value(x)  # B, L, 3 * H * D
         q, k, v = qkv.chunk(3, dim=-1)
 
@@ -155,6 +160,8 @@ class EVA2CLIPAttention(nn.Module):
 
 
 class EVA2CLIPMLP(nn.Module):
+    """Two-layer MLP with activation in between."""
+
     def __init__(
         self,
         config,
@@ -178,6 +185,7 @@ class EVA2CLIPMLP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply fc1, activation, then fc2."""
         x, _ = self.fc1(x)
         x = self.activation_fn(x)
         x, _ = self.fc2(x)
@@ -185,6 +193,8 @@ class EVA2CLIPMLP(nn.Module):
 
 
 class EVA2CLIPTransformerLayer(nn.Module):
+    """Pre-norm transformer layer with attention and MLP sublayers."""
+
     def __init__(
         self,
         config,
@@ -204,6 +214,7 @@ class EVA2CLIPTransformerLayer(nn.Module):
         )
 
     def forward(self, hidden_states):
+        """Apply attention and MLP sublayers with pre-norm residuals."""
         attention_input = hidden_states
         attention_output = self.input_layernorm(self.attention(attention_input))
         hidden_states = attention_input + attention_output
@@ -214,6 +225,8 @@ class EVA2CLIPTransformerLayer(nn.Module):
 
 
 class EVA2CLIPTransformer(nn.Module):
+    """Stack of EVA2CLIPTransformerLayer blocks."""
+
     def __init__(
         self,
         config,
@@ -233,6 +246,7 @@ class EVA2CLIPTransformer(nn.Module):
         )
 
     def forward(self, hidden_states):
+        """Apply each transformer layer sequentially."""
         for layer_module in self.layers:
             hidden_states = layer_module(hidden_states)
         return hidden_states
@@ -311,6 +325,7 @@ class EVA2CLIPGLU(nn.Module):
         )
 
     def forward(self, x):
+        """Linear projection, normalization, merged gate projection, dense output."""
         x, _ = self.linear_proj(x)
         x = self.act1(self.norm1(x))
         x, _ = self.merged_proj(x)
@@ -320,6 +335,8 @@ class EVA2CLIPGLU(nn.Module):
 
 
 class EVA2CLIPModel(nn.Module):
+    """Vision encoder: patch embedding, transformer, and GLU projection."""
+
     def __init__(
         self,
         config,
@@ -377,6 +394,8 @@ class EVA2CLIPModel(nn.Module):
 
 
 class GLM4VModel(ChatGLMModel):
+    """ChatGLM backbone with EVA2CLIP vision tower."""
+
     hf_to_vllm_mapper = ChatGLMModel.hf_to_vllm_mapper | WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -397,6 +416,8 @@ class GLM4VModel(ChatGLMModel):
 
 
 class GLM4VProcessingInfo(BaseProcessingInfo):
+    """Image size and token count metadata for GLM-4V processing."""
+
     def get_hf_config(self):
         return self.ctx.get_hf_config(ChatGLMConfig)
 
@@ -434,6 +455,8 @@ class GLM4VProcessingInfo(BaseProcessingInfo):
 
 
 class GLM4VDummyInputsBuilder(BaseDummyInputsBuilder[GLM4VProcessingInfo]):
+    """Generate synthetic text and image data for profiling."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
 
@@ -466,6 +489,8 @@ class GLM4VDummyInputsBuilder(BaseDummyInputsBuilder[GLM4VProcessingInfo]):
 
 
 class GLM4VMultiModalProcessor(BaseMultiModalProcessor[GLM4VProcessingInfo]):
+    """Map HuggingFace processor output to vLLM multimodal fields."""
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -508,6 +533,8 @@ class GLM4VMultiModalProcessor(BaseMultiModalProcessor[GLM4VProcessingInfo]):
 class GLM4VForCausalLM(
     ChatGLMBaseModel, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE
 ):
+    """GLM-4V vision-language model for image-grounded generation."""
+
     # NOTE: we must bring this to the surface because GLM4VModel.hf_to_vllm_mapper
     # contains non-stacking related mappings which LoRA/BnB needs to know about
     hf_to_vllm_mapper = GLM4VModel.hf_to_vllm_mapper
@@ -557,6 +584,7 @@ class GLM4VForCausalLM(
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> GLMVImagePixelInputs | None:
+        """Extract and validate pixel values from multimodal kwargs."""
         pixel_values = kwargs.pop("pixel_values", None)
 
         if pixel_values is not None:
@@ -570,6 +598,7 @@ class GLM4VForCausalLM(
         return None
 
     def _process_image_input(self, image_input: GLMVImagePixelInputs) -> torch.Tensor:
+        """Run pixel values through the vision encoder."""
         pixel_values = image_input["data"].to(dtype=self.config.dtype)
 
         return self.transformer.vision(pixel_values)
@@ -577,6 +606,7 @@ class GLM4VForCausalLM(
     def iter_mm_grid_thw(
         self, mm_features: list[MultiModalFeatureSpec]
     ) -> Iterator[tuple[int, int, int, int]]:
+        """Yield (offset, t, h, w) grid dimensions for each image feature."""
         hf_config = self.config
         spatial_merge_size = hf_config.vision_config.spatial_merge_size
         for mm_feature in sorted(mm_features, key=lambda f: f.mm_position.offset):
@@ -600,6 +630,7 @@ class GLM4VForCausalLM(
         input_tokens: list[int],
         mm_features: list[MultiModalFeatureSpec],
     ) -> tuple[torch.Tensor, int]:
+        """Build 3D position ids for text and image grid regions."""
         llm_pos_ids_list: list = []
         st = 0
         for (
@@ -637,6 +668,7 @@ class GLM4VForCausalLM(
         multimodal_embeddings: MultiModalEmbeddings | None = None,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Embed text tokens and interleave multimodal embeddings."""
         return SupportsMultiModal.embed_input_ids(
             self,
             input_ids,
@@ -645,6 +677,7 @@ class GLM4VForCausalLM(
         )
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Parse image input and return vision encoder output."""
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -660,6 +693,7 @@ class GLM4VForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Pass inputs through the transformer encoder."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 

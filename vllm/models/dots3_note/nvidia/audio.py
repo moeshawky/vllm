@@ -25,6 +25,10 @@ _AUDIO_FORWARD_MAX_SEGMENTS = 16
 
 
 class Dots3NoteAudioConfig:
+    """Configuration container for the Dots3Note audio model,
+    holding encoder type, Whisper config, and convolution
+    parameters.
+    """
     def __init__(self, **kwargs):
         self.encoder_type = kwargs.get("encoder_type", "dots")
         self.whisper_config = kwargs.get("whisper_config", {})
@@ -62,15 +66,24 @@ class Dots3NoteAudioConfig:
 
     @classmethod
     def from_json(cls, path):
+        """Loads a JSON config file and constructs a
+        Dots3NoteAudioConfig instance.
+        """
         with open(path) as f:
             return cls(**json.load(f))
 
     @property
     def conv_temporal_stride(self) -> int:
+        """Returns the convolution temporal stride, which is 8
+        if use_conv2d_stem is True, otherwise 2.
+        """
         return 8 if self.use_conv2d_stem else 2
 
     @property
     def token_stride(self) -> int:
+        """Returns the audio token stride: HOP_LENGTH *
+        conv_temporal_stride * merge_factor.
+        """
         return HOP_LENGTH * self.conv_temporal_stride * self.merge_factor
 
     @property
@@ -79,10 +92,16 @@ class Dots3NoteAudioConfig:
 
     @property
     def chunk_mel_frames(self) -> int:
+        """Returns the number of Mel spectrogram frames per
+        audio chunk: chunk_seconds * 100.
+        """
         return int(self.chunk_seconds * 100)
 
 
 def pad_or_trim(array, length=N_SAMPLES, axis=-1):
+    """Pads or trims an array along a given axis to a target
+    length using reflection padding.
+    """
     if array.shape[axis] > length:
         array = array.index_select(
             dim=axis, index=torch.arange(length, device=array.device)
@@ -116,6 +135,10 @@ def _hann_window(device):
 
 
 def log_mel_spectrogram(audio, n_mels=128):
+    """Computes a log Mel spectrogram from raw audio samples,
+    applying Hann window, STFT, Mel filter bank, and log
+    compression.
+    """
     window = _hann_window(audio.device)
     stft = torch.stft(audio, N_FFT, HOP_LENGTH, window=window, return_complex=True)
     magnitudes = stft[..., :-1].abs() ** 2
@@ -160,6 +183,10 @@ def compute_audio_token_length(
 
 
 class DotsEncoderWithMask(nn.Module):
+    """Speech encoder with masking support. Processes mel
+    features through the DotsSpeechEncoder with segment-based
+    forward passes.
+    """
     def __init__(self, config: Dots3NoteAudioConfig):
         super().__init__()
         whisper_config = WhisperConfig(**config.whisper_config)
@@ -314,6 +341,10 @@ class DotsEncoderWithMask(nn.Module):
 
 
 class AudioAdapter(nn.Module):
+    """Linear adapter with LayerNorm, two Linear layers, and
+    GELU activation that projects audio embeddings to the
+    target dimension.
+    """
     def __init__(self, in_dim, out_dim):
         super().__init__()
         self.proj = nn.Sequential(
@@ -328,6 +359,9 @@ class AudioAdapter(nn.Module):
 
 
 class Dots3NoteAudioModel(nn.Module):
+    """Audio model that encodes waveforms through the
+    DotsEncoderWithMask and projects them via AudioAdapter.
+    """
     def __init__(self, config: Dots3NoteAudioConfig):
         super().__init__()
         self.config = config

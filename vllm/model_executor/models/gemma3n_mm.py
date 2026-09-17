@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Inference-only Gemma3n multimodal model with image and audio processing."""
+
 import inspect
 from collections.abc import Iterable, Mapping, Sequence, Sized
 from typing import Annotated, Any, Literal
@@ -155,16 +157,22 @@ Gemma3nImageInputs = Gemma3nImagePixelInputs
 
 
 class Gemma3nProcessingInfo(BaseProcessingInfo):
+    """Processing info for Gemma3n multimodal model, handling image and audio modalities."""
+
     def get_hf_config(self):
+        """Get the HuggingFace config for the model."""
         return self.ctx.get_hf_config(Gemma3nConfig)
 
     def get_hf_processor(self, **kwargs: object):
+        """Get the HuggingFace processor for the model."""
         return self.ctx.get_hf_processor(Gemma3nProcessor, **kwargs)
 
     def get_feature_extractor(self, **kwargs: object) -> Gemma3nAudioFeatureExtractor:
+        """Get the audio feature extractor from the processor."""
         return self.get_hf_processor(**kwargs).feature_extractor
 
     def get_data_parser(self):
+        """Build a multimodal data parser with the configured sample rate."""
         feature_extractor = self.get_feature_extractor()
 
         return MultiModalDataParser(
@@ -173,11 +181,13 @@ class Gemma3nProcessingInfo(BaseProcessingInfo):
         )
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Return unlimited image and audio count support."""
         return {"image": None, "audio": None}
 
     def get_max_tokens_per_item(
         self, seq_len: int, mm_counts: Mapping[str, int]
     ) -> Mapping[str, int] | None:
+        """Return the fixed token count per image and audio item."""
         return {"image": TOKENS_PER_IMAGE, "audio": TOKENS_PER_AUDIO}
 
     def get_image_repl(
@@ -221,7 +231,10 @@ class Gemma3nProcessingInfo(BaseProcessingInfo):
 
 
 class Gemma3nDummyInputsBuilder(BaseDummyInputsBuilder[Gemma3nProcessingInfo]):
+    """Builder for dummy multimodal inputs used in profiling and testing."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Build dummy text with image and audio placeholder tokens."""
         num_images = mm_counts.get("image", 0)
         num_audios = mm_counts.get("audio", 0)
 
@@ -237,6 +250,7 @@ class Gemma3nDummyInputsBuilder(BaseDummyInputsBuilder[Gemma3nProcessingInfo]):
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Generate dummy image and audio data for the given counts."""
         num_images = mm_counts.get("image", 0)
         num_audios = mm_counts.get("audio", 0)
         processor = self.info.get_hf_processor()
@@ -268,6 +282,8 @@ class Gemma3nDummyInputsBuilder(BaseDummyInputsBuilder[Gemma3nProcessingInfo]):
 
 
 class Gemma3nMultiModalProcessor(BaseMultiModalProcessor[Gemma3nProcessingInfo]):
+    """Processor for Gemma3n multimodal inputs, handling image and audio token replacement."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -595,6 +611,9 @@ class Gemma3nMultimodalEmbedder(nn.Module):
 class Gemma3nForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsTranscription
 ):
+    """Multimodal Gemma3n model combining vision and audio towers with the Gemma3n
+    text model."""
+
     supported_languages = ISO639_1_SUPPORTED_LANGS
 
     packed_modules_mapping = {
@@ -624,6 +643,8 @@ class Gemma3nForConditionalGeneration(
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize the model with vision tower, audio tower, embedders, and
+        language model."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -795,6 +816,8 @@ class Gemma3nForConditionalGeneration(
         return audio_features.unbind(0)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Process image and audio inputs through their respective towers to
+        produce embeddings."""
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
         if mm_input_by_modality is None:
             return []
@@ -820,6 +843,8 @@ class Gemma3nForConditionalGeneration(
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Embed input tokens and cache per-layer input embeddings for the
+        decoder."""
         # NOTE (NickLucche) Each pass needs tokens to compute PLE so we cache
         # them here, as the model  forward has only access to the input_embeds.
         if input_ids is not None:
@@ -853,6 +878,8 @@ class Gemma3nForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> IntermediateTensors:
+        """Run the language model forward pass with cached per-layer input
+        embeddings."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -884,9 +911,11 @@ class Gemma3nForConditionalGeneration(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute output logits from the language model hidden states."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from an iterable of name-value pairs."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
@@ -902,6 +931,7 @@ class Gemma3nForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Return the placeholder string for the given modality."""
         if modality == "image":
             return "<image_soft_token>"
         elif modality == "audio":
@@ -957,6 +987,7 @@ class Gemma3nForConditionalGeneration(
     def get_speech_to_text_config(
         cls, model_config: ModelConfig, task_type: str
     ) -> SpeechToTextConfig:
+        """Return the speech-to-text configuration with a 30-second max clip."""
         return SpeechToTextConfig(
             # Let's set this to 30 as suggested in the docs for now, although
             # the model is only limited by its context length.

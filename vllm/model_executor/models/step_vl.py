@@ -30,6 +30,8 @@ _DEFAULT_NORM_LAYER = partial(nn.LayerNorm, eps=1e-5)
 
 
 def rotate_half(x):
+    """Rearranges tensor dimensions and swaps halves for rotary embedding
+    computation."""
     x = rearrange(x, "... (d r) -> ... d r", r=2)
     x1, x2 = x.unbind(dim=-1)
     x = torch.stack((-x2, x1), dim=-1)
@@ -37,6 +39,8 @@ def rotate_half(x):
 
 
 def apply_rotary_emb(freqs, t, start_index=0, scale=1.0, seq_dim=-2):
+    """Applies rotary embedding to input tensor using frequency cache and
+    optional scaling."""
     dtype = t.dtype
 
     if t.ndim == 3:
@@ -63,6 +67,8 @@ def apply_rotary_emb(freqs, t, start_index=0, scale=1.0, seq_dim=-2):
 
 
 class PerceptionEncoderRope2D(nn.Module):
+    """2D rotary positional embedding module for vision transformers with
+    grid-based frequency computation."""
     def __init__(
         self,
         dim: int,
@@ -116,6 +122,8 @@ class PerceptionEncoderRope2D(nn.Module):
         return freqs
 
     def forward(self, q: torch.Tensor, k: torch.Tensor, grid_hw: tuple[int, int]):
+        """Computes 2D positional frequencies and applies rotary embedding to
+        q and k tensors."""
         if grid_hw[0] != self.max_grid_height or grid_hw[1] != self.max_grid_width:
             rows = torch.arange(grid_hw[0], device=q.device).view(-1, 1)
             cols = torch.arange(grid_hw[1], device=q.device).view(1, -1)
@@ -134,16 +142,21 @@ class PerceptionEncoderRope2D(nn.Module):
 
 
 class PerceptionEncoderLayerScale(nn.Module):
+    """Layer scale module that multiplies input by a learnable gamma parameter."""
     def __init__(self, dim, init_values=1e-5, inplace=False):
         super().__init__()
         self.inplace = inplace
         self.gamma = nn.Parameter(init_values * torch.ones(dim))
 
     def forward(self, x):
+        """Returns x multiplied by gamma parameter, with optional inplace
+        operation."""
         return x.mul_(self.gamma) if self.inplace else x * self.gamma
 
 
 class PerceptionEncoderMLP(nn.Module):
+    """MLP block with ColumnParallelLinear input projection, activation, and
+    RowParallelLinear output projection."""
     def __init__(
         self,
         input_dim: int,
@@ -173,6 +186,7 @@ class PerceptionEncoderMLP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Applies fc1, activation, and fc2 to input tensor."""
         x, _ = self.fc1(x)
         x = self.activation(x)
         x, _ = self.fc2(x)
@@ -180,6 +194,8 @@ class PerceptionEncoderMLP(nn.Module):
 
 
 class PerceptionEncoderVisionAttention(nn.Module):
+    """Vision attention module with QKV projection, output projection,
+    MMEncoderAttention, and 2D rotary embedding."""
     def __init__(
         self,
         embed_dim: int,
@@ -234,6 +250,8 @@ class PerceptionEncoderVisionAttention(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, grid_hw: tuple[int, int]) -> torch.Tensor:
+        """Projects input to q, k, v via qkv_proj, applies rotary embedding,
+        attention, and output projection."""
         bsz, seq_len, _ = x.shape
         qkv, _ = self.qkv_proj(x)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
@@ -250,6 +268,8 @@ class PerceptionEncoderVisionAttention(nn.Module):
 
 
 class PerceptionEncoderVisionBlock(nn.Module):
+    """Vision transformer block with attention, layer scale, and MLP submodules
+    with residual connections."""
     def __init__(
         self,
         d_model: int,
@@ -296,12 +316,16 @@ class PerceptionEncoderVisionBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, grid_hw: tuple[int, int]):
+        """Applies attention with layer scale and residual, then MLP with layer
+        scale and residual."""
         x = x + self.ls_1(self.attn(self.ln_1(x), grid_hw=grid_hw))
         x = x + self.ls_2(self.mlp(self.ln_2(x)))
         return x
 
 
 class PerceptionEncoderVisionTransformer(nn.Module):
+    """Vision transformer composed of multiple PerceptionEncoderVisionBlock
+    layers."""
     def __init__(
         self,
         width: int,
@@ -340,12 +364,15 @@ class PerceptionEncoderVisionTransformer(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, grid_hw: tuple[int, int]):
+        """Iterates through resblocks applying each block to the input."""
         for block in self.resblocks:
             x = block(x, grid_hw=grid_hw)
         return x
 
 
 class PerceptionEncoder(nn.Module):
+    """Perception encoder with convolutional patch projection, positional
+    embeddings, transformer, and downsampling layers."""
     def __init__(
         self,
         config,
@@ -441,6 +468,8 @@ class PerceptionEncoder(nn.Module):
         return pos_embed[None, ...]
 
     def forward_features(self, x: torch.Tensor):
+        """Applies conv1, optional class embedding and positional embedding,
+        layernorm, transformer, and layernorm post-processing."""
         batch, _, h, w = x.shape
         grid_h, grid_w = h // self.patch_size, w // self.patch_size
 
@@ -465,6 +494,8 @@ class PerceptionEncoder(nn.Module):
         return x
 
     def forward(self, x: torch.Tensor):
+        """Applies forward_features, reshapes output to B, C, T, T format, and
+        applies two downsampling convolutions."""
         x = self.forward_features(x)
         B, P, C = x.shape
         T = int(P**0.5)
@@ -479,6 +510,8 @@ class PerceptionEncoder(nn.Module):
 
 
 class StepVLForConditionalGeneration(Step3VLForConditionalGeneration):
+    """Step VL conditional generation model combining PerceptionEncoder vision
+    model with Llama language model."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.": "language_model.model.",
@@ -493,6 +526,8 @@ class StepVLForConditionalGeneration(Step3VLForConditionalGeneration):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initializes PerceptionEncoder vision model, vit_large_projector, and
+        language model via init_vllm_registered_model."""
         super(Step3VLForConditionalGeneration, self).__init__()
 
         config = vllm_config.model_config.hf_config
@@ -535,6 +570,8 @@ class StepVLForConditionalGeneration(Step3VLForConditionalGeneration):
     def _get_vision_model_output(
         self, input_tensor: torch.Tensor | None
     ) -> torch.Tensor | None:
+        """Returns vision model output, using data-parallel sharded vision model
+        when enabled."""
         if input_tensor is None:
             return None
         if self.use_data_parallel:
@@ -542,5 +579,7 @@ class StepVLForConditionalGeneration(Step3VLForConditionalGeneration):
         return self.vision_model(input_tensor)
 
     def _process_image_features(self, image_features: torch.Tensor) -> torch.Tensor:
+        """Processes image features through vit_large_projector and returns the
+        result."""
         image_features, _ = self.vit_large_projector(image_features)
         return image_features

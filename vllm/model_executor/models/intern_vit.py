@@ -47,6 +47,13 @@ NORM2FN = {
 
 
 class InternVisionEmbeddings(nn.Module):
+    """Embedding layer for Intern Vision that projects patches to token space.
+
+    Combines patch embeddings, a class token, and learnable position
+    embeddings. Supports position embedding interpolation for varying
+    input resolutions.
+    """
+
     def __init__(self, config: PretrainedConfig):
         super().__init__()
         self.config = config
@@ -71,6 +78,7 @@ class InternVisionEmbeddings(nn.Module):
         )
 
     def _get_pos_embed(self, pos_embed: torch.Tensor, H: int, W: int):
+        """Interpolate position embeddings to match target spatial dimensions."""
         target_dtype = pos_embed.dtype
         pos_embed = (
             pos_embed.float()
@@ -88,6 +96,7 @@ class InternVisionEmbeddings(nn.Module):
         return pos_embed.reshape(1, -1, H * W).permute(0, 2, 1).to(target_dtype)
 
     def _get_position_embedding(self, H: int, W: int) -> torch.Tensor:
+        """Return position embeddings, interpolating if spatial size changed."""
         position_embedding = self.position_embedding
         if self.num_patches == H * W:
             return position_embedding
@@ -101,6 +110,7 @@ class InternVisionEmbeddings(nn.Module):
         )
 
     def forward(self, pixel_values: torch.FloatTensor) -> torch.Tensor:
+        """Convert pixel values to token embeddings with position info."""
         target_dtype = self.patch_embedding.weight.dtype
         patch_embeds = self.patch_embedding(
             pixel_values.to(target_dtype)
@@ -115,6 +125,8 @@ class InternVisionEmbeddings(nn.Module):
 
 
 class InternVisionPatchModel(nn.Module):
+    """Wrapper that converts raw pixels to patch embeddings."""
+
     def __init__(self, config: PretrainedConfig):
         super().__init__()
         self.config = config
@@ -223,6 +235,7 @@ class InternParallelAttention(nn.Module):
         )
 
     def _apply_qk_norm(self, q: torch.Tensor, k: torch.Tensor):
+        """Normalize query and key vectors across tensor parallel ranks."""
         if self.tp_size > 1:
             q = tensor_model_parallel_all_gather(q.contiguous())
             k = tensor_model_parallel_all_gather(k.contiguous())
@@ -235,6 +248,7 @@ class InternParallelAttention(nn.Module):
         return q, k
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute parallel multi-head attention with optional qk normalization."""
         B, N, _ = x.shape
         qkv, _ = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -248,6 +262,8 @@ class InternParallelAttention(nn.Module):
 
 
 class InternMLP(nn.Module):
+    """Feed-forward MLP for Intern Vision encoder layers."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -277,6 +293,7 @@ class InternMLP(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply the feed-forward MLP with activation and parallel projections."""
         hidden_states, _ = self.fc1(hidden_states)
         hidden_states = self.activation_fn(hidden_states)
         hidden_states, _ = self.fc2(hidden_states)
@@ -290,6 +307,8 @@ class InternMLP(nn.Module):
     is_encoder=True,
 )
 class InternVisionEncoderLayer(nn.Module):
+    """Single encoder layer with attention, MLP, and layer scaling."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -342,6 +361,7 @@ class InternVisionEncoderLayer(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ):
+        """Apply attention and MLP sub-layers with layer scaling residuals."""
         hidden_states = hidden_states + self.attn(self.norm1(hidden_states)) * self.ls1
 
         hidden_states = hidden_states + self.mlp(self.norm2(hidden_states)) * self.ls2
@@ -350,6 +370,8 @@ class InternVisionEncoderLayer(nn.Module):
 
 
 class InternVisionEncoder(nn.Module):
+    """Stack of Intern Vision encoder layers."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -383,6 +405,7 @@ class InternVisionEncoder(nn.Module):
         )
 
     def forward(self, inputs_embeds: torch.Tensor):
+        """Pass embeddings through all encoder layers."""
         hidden_states = inputs_embeds
         for encoder_layer in self.layers:
             hidden_states = encoder_layer(hidden_states)
@@ -391,6 +414,8 @@ class InternVisionEncoder(nn.Module):
 
 
 class InternVisionModel(nn.Module):
+    """Complete Intern Vision model with embeddings and encoder stack."""
+
     packed_modules_mapping = {
         "qkv": ["qkv"],
     }
@@ -445,5 +470,6 @@ class InternVisionModel(nn.Module):
         return encoder_outputs
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load pretrained weights using the automatic weights loader."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

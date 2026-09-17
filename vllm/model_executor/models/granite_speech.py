@@ -112,6 +112,12 @@ class GraniteSpeechAudioInputs(TensorSchema):
 
 
 class GraniteSpeechMultiModalProcessingInfo(BaseProcessingInfo):
+    """Processing metadata for Granite Speech audio inputs.
+
+    Caps audio at one item per request, with ~5000 tokens and 8M sample
+    length as practical maximums.
+    """
+
     def get_data_parser(self):
         feature_extractor = self.get_hf_processor().audio_processor
 
@@ -138,6 +144,9 @@ class GraniteSpeechMultiModalProcessingInfo(BaseProcessingInfo):
 class GraniteSpeechMultiModalProcessor(
     BaseMultiModalProcessor[GraniteSpeechMultiModalProcessingInfo]
 ):
+    """Multi-modal processor replacing audio tokens with feature-length
+    sequences of audio token IDs."""
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -219,6 +228,8 @@ class GraniteSpeechMultiModalProcessor(
 class GraniteSpeechDummyInputsBuilder(
     BaseDummyInputsBuilder[GraniteSpeechMultiModalProcessingInfo]
 ):
+    """Generates dummy audio inputs and prompt text for profiling."""
+
     def get_dummy_mm_data(
         self,
         seq_len: int,
@@ -246,6 +257,13 @@ class GraniteSpeechDummyInputsBuilder(
 
 ### QFormer Projector
 class GraniteSpeechEncoderProjector(nn.Module):
+    """Windowed QFormer projector mapping audio features to LLM embeddings.
+
+    Splits audio features into overlapping windows, queries a BLIP-2
+    QFormer per window, and projects outputs to the language model's
+    hidden dimension.
+    """
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -575,6 +593,13 @@ class GraniteSpeechForConditionalGeneration(
     SupportsLoRA,
     SupportsTranscription,
 ):
+    """Speech-to-text model with audio encoder and language model.
+
+    Processes audio through a Conformer encoder and QFormer projector,
+    then generates text via a Granite language backbone. Supports CTC
+    inference, pipeline parallelism, LoRA, and transcription params.
+    """
+
     supported_languages = ISO639_1_SUPPORTED_LANGS
 
     packed_modules_mapping = {

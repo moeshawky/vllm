@@ -194,6 +194,12 @@ KeyeVideoInputs: TypeAlias = KeyeVideoPixelInputs | KeyeVideoEmbeddingInputs
 
 
 class KeyeVisionEmbeddings(nn.Module):
+    """Projects image patches to embeddings with positional information.
+
+    Uses a 2D convolution for patch embedding and maintains an LRU
+    cache for position embeddings to avoid recomputation.
+    """
+
     def __init__(self, config: PretrainedConfig):
         super().__init__()
         self.config = config
@@ -465,6 +471,8 @@ class KeyeSiglipAttention(nn.Module):
 
 
 class SigLIPRotaryEmbedding(nn.Module):
+    """Rotary positional encoding for vision tokens."""
+
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
         self.dim = dim
@@ -488,6 +496,8 @@ class SigLIPRotaryEmbedding(nn.Module):
 
 
 class KeyeSiglipEncoderLayer(nn.Module):
+    """Transformer encoder layer with residual connections."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -540,6 +550,8 @@ class KeyeSiglipEncoderLayer(nn.Module):
 
 
 class KeyeSiglipEncoder(nn.Module):
+    """Stack of transformer encoder layers with 2D rotary embeddings."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -635,6 +647,8 @@ class KeyeSiglipEncoder(nn.Module):
 
 
 class KeyeSiglipVisionTransformer(nn.Module):
+    """Vision transformer with patch embedding, encoder, and layernorm."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -713,6 +727,8 @@ class KeyeSiglipVisionTransformer(nn.Module):
 
 
 class KeyeSiglipVisionModel(nn.Module):
+    """Vision model with QKV-fused weight mapping."""
+
     config_class = PretrainedConfig
     main_input_name = "pixel_values"
 
@@ -788,6 +804,11 @@ class KeyeSiglipVisionModel(nn.Module):
 
 
 class Projector(nn.Module):
+    """Projects 2x2 patch-merged visual features to the language model dimension.
+
+    Accepts a list of per-image tensors or a single batched tensor.
+    """
+
     def __init__(
         self,
         text_config: PretrainedConfig,
@@ -885,6 +906,8 @@ def _keye_field_config(
 
 
 class KeyeMultiModalDataParser(MultiModalDataParser):
+    """Parses image and video data into embedding items."""
+
     # The patch grid is what sizes the placeholder range.
     embedding_fields = {
         "image": {"image_embeds": "values", "image_grid_thw": "metadata"},
@@ -925,6 +948,8 @@ class KeyeMultiModalDataParser(MultiModalDataParser):
 
 
 class KeyeProcessingInfo(BaseProcessingInfo):
+    """Processing info for Keye vision inputs."""
+
     def get_max_image_size(self) -> int:
         return 9999999  # _MAX_IMAGE_SIZE
 
@@ -1209,6 +1234,8 @@ class KeyeMultiModalProcessor(BaseMultiModalProcessor[KeyeProcessingInfo]):
 
 
 class BaseKeyeModule(nn.Module, SupportsMultiModal):
+    """Base class for Keye multimodal models."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

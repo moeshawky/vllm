@@ -87,6 +87,7 @@ class Gemma4DSparkAttention(Gemma4MTPAttention):
     def _kv_proj(
         self, hidden_states: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Project hidden states to K and V with norms applied."""
         k, _ = self.k_proj(hidden_states)
         k_normed = self.k_norm(k.unflatten(-1, (self.num_kv_heads, self.head_dim)))
         if self.use_k_eq_v:
@@ -100,6 +101,7 @@ class Gemma4DSparkAttention(Gemma4MTPAttention):
     def forward(
         self, positions: torch.Tensor, hidden_states: torch.Tensor, **kwargs
     ) -> torch.Tensor:
+        """Compute attention with QKV projection, norms, and rotary embeddings."""
         q, _ = self.q_proj(hidden_states)
         q = self.q_norm(q.unflatten(-1, (self.num_heads, self.head_dim))).flatten(
             -2, -1
@@ -121,6 +123,7 @@ class Gemma4DSparkDecoderLayer(Gemma4MTPDecoderLayer):
         quant_config: QuantizationConfig | None,
         prefix: str,
     ) -> None:
+        """Initialize decoder layer with DSpark attention replacing the default."""
         super().__init__(
             config, cache_config=cache_config, quant_config=quant_config, prefix=prefix
         )
@@ -192,6 +195,7 @@ class Gemma4DSparkModel(DFlashQwen3Model):
         return self.embed_tokens(input_ids) * self.normalizer
 
     def _build_fused_kv_buffers(self) -> None:
+        """Stack per-layer K/V projection weights into fused buffers."""
         layers_attn = [layer.self_attn for layer in self.layers]
         attn0 = layers_attn[0]
         assert all(a.use_k_eq_v for a in layers_attn), (
@@ -235,6 +239,7 @@ class Gemma4DSparkModel(DFlashQwen3Model):
         num_kv_heads: int,
         head_dim: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Project context states to K and V for all layers via fused buffers."""
         # Project once via k_proj for all layers. K is raw (the inherited path
         # applies k_norm + RoPE); V = v_norm(same projection), no RoPE (k_eq_v).
         normed = torch.empty_like(context_states)
@@ -257,6 +262,7 @@ class Gemma4DSparkModel(DFlashQwen3Model):
         positions: torch.Tensor,
         input_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Run the DSpark draft model forward pass through all decoder layers."""
         hidden_states = (
             self.embed_input_ids(input_ids) if input_embeds is None else input_embeds
         )
@@ -291,6 +297,7 @@ class Gemma4DSparkForCausalLM(Qwen3DSparkForCausalLM):
         self.draft_id_to_target_id = None
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load DSpark model weights, stacking gate/up projections."""
         stacked = [("gate_up_proj", "gate_proj", 0), ("gate_up_proj", "up_proj", 1)]
         params = dict(self.named_parameters())
         params.update(dict(self.named_buffers()))

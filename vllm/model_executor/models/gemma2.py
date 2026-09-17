@@ -16,6 +16,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Inference-only Gemma2 model compatible with HuggingFace weights."""
+
 from collections.abc import Iterable
 from itertools import islice
 
@@ -55,6 +57,8 @@ logger = init_logger(__name__)
 
 
 class Gemma2MLP(nn.Module):
+    """Feedforward network with GELU activation and separate gate and up projections."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -86,6 +90,8 @@ class Gemma2MLP(nn.Module):
         self.act_fn = GeluAndMul(approximate="tanh")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the feedforward layer: gate and up projection, GELU activation,
+        down projection."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -93,6 +99,8 @@ class Gemma2MLP(nn.Module):
 
 
 class Gemma2Attention(nn.Module):
+    """Multi-head attention with QKV projections, rotary embeddings, and optional sliding window."""
+
     def __init__(
         self,
         config: Gemma2Config,
@@ -172,6 +180,8 @@ class Gemma2Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute attention: project to QKV, apply rotary embeddings, attend,
+        project output."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -181,6 +191,8 @@ class Gemma2Attention(nn.Module):
 
 
 class Gemma2DecoderLayer(nn.Module):
+    """Decoder layer with self-attention, feedforward network, and RMSNorm layers."""
+
     def __init__(
         self,
         config: Gemma2Config,
@@ -227,6 +239,8 @@ class Gemma2DecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply layer norm, self-attention, layer norm, feedforward network, and
+        layer norm."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -280,6 +294,7 @@ class Gemma2Model(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input tokens and scale by the square root of the hidden size."""
         return self.embed_tokens(input_ids) * self.normalizer
 
     def forward(
@@ -314,6 +329,8 @@ class Gemma2Model(nn.Module):
 
 
 class Gemma2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """Causal language model wrapper around Gemma2Model with a logits processor."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)

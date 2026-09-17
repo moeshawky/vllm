@@ -7,6 +7,15 @@
 # Copyright (c) 2023 OpenGVLab
 # Licensed under The MIT License [see LICENSE for details]
 # --------------------------------------------------------
+"""InternS1 Vision Transformer implementation.
+
+Adapted from OpenGVLab/InternVL2-4B.
+
+Provides vision patch embeddings, vision embeddings,
+SDPA attention, vision MLP, vision layers, vision encoder,
+and the vision model.
+"""
+
 from collections.abc import Iterable
 
 import torch
@@ -30,6 +39,8 @@ NORM2FN = {
 
 
 class InternS1VisionPatchEmbeddings(nn.Module):
+    """Conv2d-based patch embedding layer for vision input."""
+
     def __init__(self, config):
         super().__init__()
         image_size, patch_size = config.image_size, config.patch_size
@@ -65,6 +76,8 @@ class InternS1VisionPatchEmbeddings(nn.Module):
 
 
 class InternS1VisionEmbeddings(nn.Module):
+    """Vision embeddings with cls token, patch embeddings, and position encoding."""
+
     def __init__(self, config: PretrainedConfig):
         super().__init__()
         self.config = config
@@ -142,6 +155,7 @@ class InternS1VisionEmbeddings(nn.Module):
         pixel_values: torch.Tensor,
         bool_masked_pos: torch.BoolTensor | None = None,
     ) -> torch.Tensor:
+        """Embed pixel values with patch embeddings, cls token, and position encoding."""
         _, _, height, width = pixel_values.shape
         embeddings, (patch_height, patch_width) = self.patch_embeddings(pixel_values)
         batch_size, seq_len, _ = embeddings.size()
@@ -243,6 +257,8 @@ class InternSdpaAttention(nn.Module):
 
 
 class InternS1VisionMLP(nn.Module):
+    """Two-layer MLP with activation for vision encoder."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -277,6 +293,8 @@ class InternS1VisionMLP(nn.Module):
 
 
 class InternS1VisionLayer(nn.Module):
+    """Transformer layer with attention, MLP, layer norms, and layer scale."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -344,6 +362,8 @@ class InternS1VisionLayer(nn.Module):
 
 
 class InternS1VisionEncoder(nn.Module):
+    """Stack of vision transformer layers."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -383,6 +403,8 @@ class InternS1VisionEncoder(nn.Module):
 
 
 class InternS1VisionModel(nn.Module):
+    """Complete vision model with embeddings, encoder, and output layernorm."""
+
     def __init__(
         self,
         config: PretrainedConfig,

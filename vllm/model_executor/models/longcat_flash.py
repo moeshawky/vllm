@@ -238,6 +238,12 @@ class FlashMLP(nn.Module):
 
 
 class LongcatRouter(nn.Module):
+    """Expert router for LongCat MoE layers.
+
+    Computes routing logits for all experts (including zero experts) using
+    a replicated linear classifier with optional E-score correction bias.
+    """
+
     def __init__(
         self,
         config: FlashConfig,
@@ -270,6 +276,13 @@ class LongcatRouter(nn.Module):
 
 
 class LongcatMoe(nn.Module):
+    """Mixture-of-experts layer for LongCat with zero-expert support.
+
+    Routes tokens to top-k experts via the LongcatRouter, applies fused MoE
+    computation with optional EPLB, and handles hidden dimension padding for
+    MoERunner alignment.
+    """
+
     def __init__(
         self,
         config: FlashConfig,
@@ -433,6 +446,12 @@ class FlashDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Process tokens through dual-attention, MoE, and dual-MLP structure.
+
+        Applies two attention sublayers with intermediate MoE computation.
+        The MoE branch runs in parallel with the first MLP, and their outputs
+        are combined before the second attention and MLP sublayers.
+        """
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm[0](hidden_states)
@@ -554,6 +573,7 @@ class FlashModel(nn.Module):
         return hidden_states
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        """Build parameter mapping for expert weight loading from checkpoints."""
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
         return fused_moe_make_expert_params_mapping(

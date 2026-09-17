@@ -70,6 +70,8 @@ logger = init_logger(__name__)
 
 
 def _terratorch_field_names(input_definition: InputDefinition):
+    """Returns the set of field names from an InputDefinition's
+    data keys."""
     return set(input_definition.data.keys())
 
 
@@ -78,6 +80,8 @@ def _terratorch_field_factory(
     *,
     is_shared: bool = True,  # True for unprocessed data, False for processed data
 ):
+    """Creates a field config factory mapping input definition
+    fields to MultiModalFieldConfig objects."""
     def _terratorch_field_config(
         hf_inputs: Mapping[str, torch.Tensor],
     ) -> Mapping[str, MultiModalFieldConfig]:
@@ -97,6 +101,9 @@ def _terratorch_field_factory(
 
 
 class TerratorchMultiModalDataParser(MultiModalDataParser):
+    """Multimodal data parser for Terratorch models handling
+    image data parsing and MM data processing."""
+
     def __init__(self, input_definition: InputDefinition, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -124,6 +131,9 @@ class TerratorchMultiModalDataParser(MultiModalDataParser):
 
 
 class TerratorchProcessingInfo(BaseProcessingInfo):
+    """Processing info for Terratorch models providing input
+    definition, data parser, and supported MM limits."""
+
     @cached_property
     def input_definition(self) -> InputDefinition:
         pretrained_cfg = self.get_hf_config().to_dict()["pretrained_cfg"]
@@ -140,6 +150,9 @@ class TerratorchProcessingInfo(BaseProcessingInfo):
 
 
 class TerratorchInputBuilder(BaseDummyInputsBuilder[TerratorchProcessingInfo]):
+    """Dummy inputs builder for Terratorch models generating
+    dummy multimodal data from the inference runner."""
+
     def __init__(self, info: TerratorchProcessingInfo):
         super().__init__(info)
         self.dummy_data_generator = DummyDataGenerator(
@@ -169,6 +182,9 @@ class TerratorchInputBuilder(BaseDummyInputsBuilder[TerratorchProcessingInfo]):
 
 
 class TerratorchMultiModalProcessor(BaseMultiModalProcessor[TerratorchProcessingInfo]):
+    """Multimodal processor for Terratorch models applying
+    HF processor and generating mm_kwargs, hashes, and placeholders."""
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -240,6 +256,9 @@ class TerratorchMultiModalProcessor(BaseMultiModalProcessor[TerratorchProcessing
     dummy_inputs=TerratorchInputBuilder,
 )
 class Terratorch(nn.Module, IsAttentionFree, SupportsMultiModal):
+    """Terratorch multimodal model with InferenceRunner, IdentityPooler,
+    and attention-free and pooling model attributes."""
+
     supports_multimodal_raw_input_only = True
     is_pooling_model = True
 
@@ -251,6 +270,8 @@ class Terratorch(nn.Module, IsAttentionFree, SupportsMultiModal):
         raise ValueError("Only image modality is supported")
 
     def __init__(self, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes InferenceRunner from pretrained config, model,
+        and IdentityPooler."""
         super().__init__()
 
         config = vllm_config.model_config.hf_config.to_dict()["pretrained_cfg"]
@@ -267,6 +288,8 @@ class Terratorch(nn.Module, IsAttentionFree, SupportsMultiModal):
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Returns empty embedding tensor as Terratorch does not
+        use input tokens for embeddings."""
         # We do not really use any input tokens and therefore no embeddings
         # to be calculated. However, due to the mandatory token ids in
         # the input prompt we pass one token and the size of the dummy
@@ -281,12 +304,17 @@ class Terratorch(nn.Module, IsAttentionFree, SupportsMultiModal):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ):
+        """Runs inference through the InferenceRunner with GPU
+        sync allowed, returning model output."""
         # terratorch's forward has internal GPU syncs.
         with gpu_sync_allowed():
             model_output = self.inference_runner.forward(**kwargs)
         return model_output.output
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads weights from state_dict or tensor list, handling
+        timm module renaming and buffer loading, then uses
+        AutoWeightsLoader for remaining params."""
         params_list = []
         model_buffers = dict(self.named_buffers())
         loaded_buffers = []

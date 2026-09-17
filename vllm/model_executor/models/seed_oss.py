@@ -67,6 +67,10 @@ logger = init_logger(__name__)
 
 
 class SeedOssMLP(nn.Module):
+    """SwiGLU MLP block. Projects hidden states through a merged gate_up projection,
+    applies SiLU activation, then down-projects.
+    """
+
     def __init__(
         self,
         hidden_size: int,
@@ -75,6 +79,9 @@ class SeedOssMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize gate_up_proj as merged column-parallel linear and down_proj
+        as row-parallel linear; validate that hidden_act is silu.
+        """
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
@@ -97,6 +104,7 @@ class SeedOssMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Apply gate_up projection, SiLU activation, and down projection to the input."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -104,6 +112,10 @@ class SeedOssMLP(nn.Module):
 
 
 class SeedOssAttention(nn.Module):
+    """Multi-head attention with tensor-parallel QKV and output projections,
+    rotary position embeddings, and a causal attention backend.
+    """
+
     def __init__(
         self,
         hidden_size: int,
@@ -117,6 +129,9 @@ class SeedOssAttention(nn.Module):
         prefix: str = "",
         attn_type: str = AttentionType.DECODER,
     ) -> None:
+        """Initialize QKV and output projections, compute local head counts from
+        tensor parallel world size, and set up rotary embeddings.
+        """
         super().__init__()
         self.hidden_size = hidden_size
         tp_size = get_tensor_model_parallel_world_size()
@@ -176,6 +191,9 @@ class SeedOssAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute QKV projections, apply rotary position embeddings, run attention,
+        and project the output.
+        """
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -185,6 +203,10 @@ class SeedOssAttention(nn.Module):
 
 
 class SeedOssDecoderLayer(nn.Module):
+    """Single decoder layer with pre-norm self-attention and MLP blocks using
+    RMSNorm residual connections.
+    """
+
     def __init__(
         self,
         config: SeedOssConfig,
@@ -192,6 +214,9 @@ class SeedOssDecoderLayer(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize attention, MLP, and two RMSNorm layers; set attention type
+        from config.
+        """
         super().__init__()
         self.hidden_size = config.hidden_size
         set_default_rope_theta(config, default_theta=1000000)
@@ -235,6 +260,7 @@ class SeedOssDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply self-attention and MLP blocks with pre-norm residual connections."""
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -261,13 +287,20 @@ class SeedOssDecoderLayer(nn.Module):
     }
 )
 class SeedOssModel(nn.Module):
+    """Full SeedOss transformer: embedding, decoder layers, and final RMSNorm.
+    Pipeline parallelism is handled via start_layer/end_layer.
+    """
+
     def __init__(
         self,
         *,
         vllm_config: VllmConfig,
         prefix: str = "",
-        decoder_layer_type: type[nn.Module] = SeedOssDecoderLayer,
+        decoder_layer_type: type[torch.nn.Module] = SeedOssDecoderLayer,
     ):
+        """Initialize embedding, decoder layers, and final norm; validate sliding
+        window configuration.
+        """
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -326,6 +359,7 @@ class SeedOssModel(nn.Module):
             self.norm = PPMissingLayer()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Map input token IDs to embeddings via the vocabulary parallel embedding layer."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -335,6 +369,9 @@ class SeedOssModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Process hidden states through decoder layers; return intermediate tensors
+        for pipeline parallelism or final hidden states.
+        """
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -360,6 +397,10 @@ class SeedOssModel(nn.Module):
 
 
 class SeedOssForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """SeedOss causal language model with LoRA and pipeline parallelism support.
+    Maps HuggingFace weights to vLLM format.
+    """
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -376,6 +417,9 @@ class SeedOssForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize the SeedOssModel, parallel LM head, and logits processor;
+        handle tied word embeddings.
+        """
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -406,6 +450,7 @@ class SeedOssForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Delegate to the inner model's embed_input_ids."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -415,6 +460,7 @@ class SeedOssForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Pass inputs through the inner model and return hidden states."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -424,9 +470,11 @@ class SeedOssForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states using the logits processor and language model head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load HuggingFace weights using AutoWeightsLoader with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

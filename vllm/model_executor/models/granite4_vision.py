@@ -346,6 +346,12 @@ class Granite4VisionLLMForCausalLM(GraniteForCausalLM):
 
 
 class Granite4VisionProcessingInfo(LlavaNextProcessingInfo):
+    """Processing metadata for Granite 4 Vision inputs.
+
+    Computes image token counts accounting for QFormer downsampling
+    and anyres grid pinpoints.
+    """
+
     def get_hf_config(self):
         return self.ctx.get_hf_config()
 
@@ -392,6 +398,8 @@ class Granite4VisionProcessingInfo(LlavaNextProcessingInfo):
 class Granite4VisionMultiModalProcessor(
     BaseLlavaNextMultiModalProcessor[Granite4VisionProcessingInfo]
 ):
+    """Multi-modal processor routing pixel values and image sizes to vLLM."""
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,

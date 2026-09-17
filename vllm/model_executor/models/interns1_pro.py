@@ -83,6 +83,8 @@ logger = init_logger(__name__)
 
 
 class InternS1ProProcessingInfo(Qwen3VLProcessingInfo):
+    """ProcessingInfo for InternS1Pro models, delegating to context."""
+
     def get_hf_config(self):
         return self.ctx.get_hf_config()
 
@@ -91,6 +93,8 @@ class InternS1ProProcessingInfo(Qwen3VLProcessingInfo):
 
 
 class InternS1ProMoeMLP(nn.Module):
+    """Two-layer MLP with SwiGLU activation for dense layers."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -123,6 +127,7 @@ class InternS1ProMoeMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Apply gate_up projection, SwiGLU activation, and down projection."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -130,6 +135,8 @@ class InternS1ProMoeMLP(nn.Module):
 
 
 class InternS1ProMoeSparseMoeBlock(nn.Module):
+    """Sparse MoE block with custom group-based routing."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -204,6 +211,7 @@ class InternS1ProMoeSparseMoeBlock(nn.Module):
         topk: int,
         renormalize: bool,
     ) -> torch.Tensor:
+        """Route tokens to experts using group-based or global top-k selection."""
         routing_weights = torch.softmax(gating_output, dim=-1, dtype=torch.float32)
 
         if self.n_groups > 0:
@@ -230,6 +238,7 @@ class InternS1ProMoeSparseMoeBlock(nn.Module):
         return topk_weights, topk_ids
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Route hidden states through gate and experts with sequence parallel support."""
         assert hidden_states.dim() <= 2, (
             "InternS1ProMoeSparseMoeBlock only supports 1D or 2D inputs"
         )
@@ -257,6 +266,8 @@ class InternS1ProMoeSparseMoeBlock(nn.Module):
 
 
 class InternS1ProMoeAttention(nn.Module):
+    """Attention layer with QK-norm, RoPE, and optional dual-chunk attention."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -362,6 +373,8 @@ class InternS1ProMoeAttention(nn.Module):
 
 
 class InternS1ProMoeDecoderLayer(nn.Module):
+    """Decoder layer with attention, residual norms, and MLP or MoE block."""
+
     def __init__(self, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
 
@@ -452,6 +465,8 @@ class InternS1ProMoeDecoderLayer(nn.Module):
 
 
 class InternS1ProMoeLLMModel(Qwen3MoeLLMModel):
+    """LLM model wrapper using InternS1ProMoedecoder layers."""
+
     def __init__(
         self,
         *,
@@ -467,6 +482,8 @@ class InternS1ProMoeLLMModel(Qwen3MoeLLMModel):
 
 
 class InternS1ProMoeLLMForCausalLM(Qwen3MoeForCausalLM):
+    """Causal LM head with weight tying and logits processor."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super(Qwen3MoeForCausalLM, self).__init__()
         self.config = vllm_config.model_config.hf_config.text_config
@@ -489,6 +506,8 @@ class InternS1ProMoeLLMForCausalLM(Qwen3MoeForCausalLM):
 
 
 class InternS1ProMoeMixtureOfExperts(MixtureOfExperts):
+    """MoE metadata management for InternS1Pro models."""
+
     def update_physical_experts_metadata(
         self,
         num_physical_experts: int,
@@ -538,6 +557,8 @@ class InternS1ProMoeMixtureOfExperts(MixtureOfExperts):
 class InternS1ProForConditionalGeneration(
     Qwen3VLForConditionalGeneration, InternS1ProMoeMixtureOfExperts
 ):
+    """InternS1Pro multimodal MoE model with Qwen3VL vision tower."""
+
     is_3d_moe_weight: bool = True
     packed_modules_mapping = {
         "qkv_proj": [
@@ -602,6 +623,7 @@ class InternS1ProForConditionalGeneration(
         self.set_moe_parameters()
 
     def get_frope_params_map(self) -> str:
+        """Build mapping for frozen RoPE sin/cos coefficients."""
         mapper = {}
         for name, params in self.language_model.model.named_parameters():
             if "rotary_emb.sin_coef" in name:

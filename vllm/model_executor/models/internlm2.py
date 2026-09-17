@@ -51,6 +51,8 @@ from .utils import (
 
 
 class InternLM2MLP(nn.Module):
+    """SwiGLU feed-forward layer for InternLM2 decoder blocks."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -81,6 +83,7 @@ class InternLM2MLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Apply gated linear projection, activation, and down projection."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.w2(x)
@@ -88,6 +91,8 @@ class InternLM2MLP(nn.Module):
 
 
 class InternLM2Attention(nn.Module):
+    """Multi-head attention with RoPE for InternLM2 decoder blocks."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -156,6 +161,7 @@ class InternLM2Attention(nn.Module):
         )
 
     def split_qkv(self, qkv: torch.Tensor):
+        """Split fused QKV tensor into separate Q, K, V tensors."""
         seq_len = qkv.shape[0]
         if self.tp_size > 1:
             qkv_map = [self.q_size, self.kv_size, self.kv_size] * self.tp_size
@@ -184,6 +190,7 @@ class InternLM2Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute attention with fused QKV projection and rotary embeddings."""
         qkv, _ = self.wqkv(hidden_states)
         q, k, v = self.split_qkv(qkv)
         q, k = self.rotary_emb(positions, q, k)
@@ -193,6 +200,8 @@ class InternLM2Attention(nn.Module):
 
 
 class InternLMDecoderLayer(nn.Module):
+    """Single decoder layer with attention and MLP sub-layers."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -229,6 +238,7 @@ class InternLMDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply attention and MLP with RMSNorm residuals."""
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -248,6 +258,8 @@ class InternLMDecoderLayer(nn.Module):
 
 @support_torch_compile
 class InternLM2Model(nn.Module):
+    """InternLM2 transformer with token embeddings and decoder stack."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -297,6 +309,7 @@ class InternLM2Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the transformer with pipeline parallelism support."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -317,11 +330,14 @@ class InternLM2Model(nn.Module):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load pretrained weights with HuggingFace to vLLM name mapping."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 class InternLM2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA, SupportsQuant):
+    """InternLM2 model for causal language modeling."""
+
     hf_to_vllm_mapper = InternLM2Model.hf_to_vllm_mapper
     packed_modules_mapping = {
         "wqkv": ["wqkv"],
@@ -368,6 +384,7 @@ class InternLM2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA, SupportsQuant):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass delegating to the underlying transformer."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -377,16 +394,20 @@ class InternLM2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA, SupportsQuant):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute output logits from hidden states."""
         logits = self.logits_processor(self.output, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load pretrained weights using the automatic weights loader."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)
 
 
 @default_pooling_type(tok_pooling_type="ALL")
 class InternLM2ForRewardModel(InternLM2ForCausalLM):
+    """InternLM2 reward model for preference scoring."""
+
     is_pooling_model = True
 
     def __init__(
@@ -432,6 +453,7 @@ class InternLM2ForRewardModel(InternLM2ForCausalLM):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass computing reward scores from hidden states."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )

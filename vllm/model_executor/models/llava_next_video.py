@@ -3,7 +3,7 @@
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeVar
 
 import torch
 import torch.nn as nn
@@ -78,6 +78,12 @@ class LlavaNextVideoPixelInputs(TensorSchema):
 
 
 class LlavaNextVideoProcessingInfo(BaseProcessingInfo):
+    """Multimodal processing metadata for LLaVA-NeXT Video models.
+
+    Handles video frame token counting with spatial pooling, frame count
+    limits, and HF processor access for LLaVA-NeXT Video.
+    """
+
     def get_hf_config(self):
         return self.ctx.get_hf_config(LlavaNextVideoConfig)
 
@@ -125,6 +131,11 @@ class LlavaNextVideoProcessingInfo(BaseProcessingInfo):
         return num_frame_tokens * num_frames
 
     def _get_max_video_frames(self, max_tokens: int) -> int:
+        """Find the maximum number of video frames fitting within the token limit.
+
+        Iteratively increases frame count until the total video tokens exceed
+        max_tokens, then returns the last valid frame count.
+        """
         target_width, target_height = self.get_image_size_with_most_features()
 
         num_frames = 0
@@ -159,6 +170,12 @@ class LlavaNextVideoProcessingInfo(BaseProcessingInfo):
 class LlavaNextVideoDummyInputsBuilder(
     BaseDummyInputsBuilder[LlavaNextVideoProcessingInfo]
 ):
+    """Builds dummy video inputs for profiling and memory estimation.
+
+    Generates placeholder video token text and dummy frame data at maximum
+    dimensions for worst-case memory profiling.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_videos = mm_counts.get("video", 0)
 
@@ -240,6 +257,12 @@ class LlavaNextVideoMultiModalProcessor(
 
 # adopted from transformers modeling_llava_next_video.py
 class LlavaNextVideoPooler(nn.Module):
+    """Spatial pooling layer for video frame features.
+
+    Applies 2D average or max pooling with a configurable stride to downsample
+    the spatial dimensions of video frame features before projection.
+    """
+
     def __init__(self, config: LlavaNextVideoConfig):
         super().__init__()
 
@@ -275,6 +298,13 @@ class LlavaNextVideoPooler(nn.Module):
 
 
 class LlavaNextMultiModalProjector(nn.Module):
+    """Two-layer MLP projecting video features to text model space.
+
+    Applies a linear layer, activation function, and another linear layer to
+    transform video features into the same dimension as the language model's
+    hidden states.
+    """
+
     def __init__(
         self,
         vision_hidden_size: int,
@@ -307,6 +337,12 @@ class LlavaNextMultiModalProjector(nn.Module):
 class LlavaNextVideoForConditionalGeneration(
     nn.Module, SupportsLoRA, SupportsMultiModal, SupportsPP
 ):
+    """Inference-only LLaVA-NeXT Video model for vLLM.
+
+    Combines a CLIP or SigLIP vision encoder with spatial pooling and a
+    projector to embed video frames into the language model's input space.
+    """
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -439,6 +475,12 @@ class LlavaNextVideoForConditionalGeneration(
         return [e.flatten(0, 1) for e in embeds]
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embed video frames into the language model's input space.
+
+        Parses and validates video input, processes frames through the vision
+        encoder, spatial pooling, and projector, then inserts a newline token
+        between each frame's features.
+        """
         video_input = self._parse_and_validate_video_input(**kwargs)
         if video_input is None:
             return []
@@ -496,16 +538,13 @@ class LlavaNextVideoForConditionalGeneration(
         self,
         num_video_tokens: int,
     ) -> int:
-        # Invert the spatial pooling done by `vision_resampler`: each frame
-        # contributes `pooled_grid_length ** 2` tokens after the language
-        # model's placeholder count, but `patch_grid_length ** 2` tokens
-        # when it leaves the vision encoder.
-        pooled_tokens_per_frame = self.pooled_grid_length**2
-        if num_video_tokens <= 0 or pooled_tokens_per_frame <= 0:
-            return 0
+        """Return the number of tokens after spatial pooling.
 
-        num_frames = num_video_tokens // pooled_tokens_per_frame
-        return num_frames * (self.patch_grid_length**2)
+        Inverts the spatial pooling stride to compute how many encoder output
+        tokens correspond to the input frame count.
+        """
+        stride = self.config.spatial_pool_stride
+        return num_video_tokens // (stride * stride)
 
     def get_num_mm_connector_tokens(
         self,

@@ -116,6 +116,7 @@ class SharedExpertMLP(nn.Module):
         self.gate = gate
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass through shared experts with optional gating."""
         out = self.shared_experts(hidden_states)
         if self.gate is not None:
             out = torch.sigmoid(self.gate(hidden_states)[0]) * out
@@ -217,6 +218,7 @@ class MoEBlockFuser:
 
     @classmethod
     def match(cls, moe_block: nn.Module, experts_name: str) -> "MoEBlockFuser | None":
+        """Match an MoE block and return a MoEBlockFuser if found."""
         # Standard MoE block returns a single tensor.
         if _returns_tuple(type(moe_block)):
             return None

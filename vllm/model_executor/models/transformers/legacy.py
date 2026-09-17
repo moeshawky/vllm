@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 
 class LegacyMixin:
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
+        """Initializes LegacyMixin by dropping unsupported output embedding
+        prefixes from hf_to_vllm_mapper, removing position_ids and score.bias
+        substrings, and setting RoBERTa padding configuration."""
         super().__init__(vllm_config=vllm_config, prefix=prefix)
 
         # Drop unsupported/unwanted output embeddings layers.
@@ -62,6 +65,9 @@ class LegacyMixin:
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass applying RoBERTa-specific position offset before
+        delegating to parent class; offsets positions by padding_idx + 1
+        for RoBERTa models."""
         if self.is_roberta:
             # RoBERTa positions start at padding_idx + 1.
             # Non-in-place add to avoid mutating the persistent GPU buffer --

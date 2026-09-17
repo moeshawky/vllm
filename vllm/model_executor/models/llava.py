@@ -124,6 +124,13 @@ LlavaImageInputs: TypeAlias = (
 
 
 class LlavaMultiModalProjector(nn.Module):
+    """Two-layer MLP projecting vision encoder features to text model space.
+
+    Applies a column-parallel linear layer, activation function, and
+    row-parallel linear layer to transform image features into the same
+    dimension as the language model's hidden states.
+    """
+
     def __init__(
         self,
         vision_hidden_size: int,
@@ -159,6 +166,12 @@ class LlavaMultiModalProjector(nn.Module):
 
 
 class LlavaLikeConfig(Protocol):
+    """Protocol for LLaVA-compatible HuggingFace model configurations.
+
+    Requires vision_config, image_token_index, vision_feature_select_strategy,
+    and vision_feature_layer attributes.
+    """
+
     vision_config: Final[PretrainedConfig]
     image_token_index: Final[int]
     vision_feature_select_strategy: Final[str]
@@ -170,6 +183,12 @@ class LlavaLikeProcessor(Protocol):
 
 
 class BaseLlavaProcessingInfo(BaseProcessingInfo):
+    """Multimodal processing metadata for LLaVA-family models.
+
+    Provides image token counting, image size limits, and HF processor/config
+    access for LLaVA variants.
+    """
+
     def get_hf_config(self) -> LlavaLikeConfig:
         return self.ctx.get_hf_config(LlavaConfig)
 
@@ -218,6 +237,12 @@ _I = TypeVar("_I", bound=BaseLlavaProcessingInfo)
 
 
 class LlavaDummyInputsBuilder(BaseDummyInputsBuilder[_I]):
+    """Builds dummy multimodal inputs for profiling and memory estimation.
+
+    Generates placeholder image token text and dummy pixel data at maximum
+    image dimensions for worst-case memory profiling.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
 
@@ -304,6 +329,13 @@ class BaseLlavaMultiModalProcessor(BaseMultiModalProcessor[_I]):
 
 
 class LlavaMultiModalProcessor(BaseLlavaMultiModalProcessor[LlavaProcessingInfo]):
+    """Multimodal processor for original LLaVA models.
+
+    Maps image pixel values or precomputed embeddings to batched multimodal
+    fields and generates prompt updates replacing image tokens with the
+    appropriate number of feature tokens.
+    """
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -505,6 +537,15 @@ class LlavaForConditionalGeneration(
     SupportsEagle,
     SupportsEagle3,
 ):
+    """LLaVA-1.5 multimodal model for image-conditioned text generation.
+
+    Combines a vision tower (CLIP, SigLIP, or Pixtral), a two-layer MLP
+    projector, and a language model backbone. Image features are embedded
+    into the text sequence at reserved image token positions before the
+    language model forward pass. Supports LoRA, multimodal, pipeline
+    parallel, and EAGLE speculative decoding.
+    """
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -587,6 +628,12 @@ class LlavaForConditionalGeneration(
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> LlavaImageInputs | None:
+        """Parse and validate image input from forward pass kwargs.
+
+        Accepts either pixel_values or image_embeds, validates against
+        the vision config type, and returns the appropriate typed input
+        schema. Returns None if no image input is provided.
+        """
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -634,6 +681,12 @@ class LlavaForConditionalGeneration(
         self,
         inputs: LlavaImagePixelInputs | PixtralHFImagePixelInputs,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
+        """Run pixel values through the vision tower.
+
+        Extracts pixel values from the input schema and passes them to
+        the vision tower, skipping vision feature layer selection since
+        that is handled inside the tower itself.
+        """
         pixel_values = inputs["pixel_values"]
 
         return self._image_pixels_to_features(self.vision_tower, pixel_values)
@@ -741,8 +794,11 @@ class LlavaForConditionalGeneration(
         self,
         num_image_tokens: int,
     ) -> int:
-        # LLaVA's vision encoder outputs one token per patch without
-        # spatial merging or pixel shuffle
+        """Return the number of tokens output by the vision encoder.
+
+        LLaVA's vision encoder produces one token per image patch with no
+        spatial merging or pixel shuffling, so the count is unchanged.
+        """
         return num_image_tokens
 
     def get_num_mm_connector_tokens(

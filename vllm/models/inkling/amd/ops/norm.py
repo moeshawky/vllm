@@ -368,6 +368,7 @@ def embed_dual_rmsnorm_cat(
 
 
 def rmsnorm(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
+    """Apply root mean square normalization to the input tensor."""
     assert x.ndim == 2, f"{x.shape=}"
     assert weight.ndim == 1, f"{weight.shape=}"
     n_rows, n_cols = x.shape

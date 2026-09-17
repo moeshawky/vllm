@@ -11,13 +11,17 @@ from .ops import rmsnorm
 
 
 class InklingRMSNorm(nn.Module):
+    """RMSNorm without bias, backed by vendored Triton kernel."""
     def __init__(self, hidden_size: int, eps: float = 1e-6) -> None:
+        """Initializes RMSNorm weight parameter and epsilon value."""
         super().__init__()
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
         self.hidden_size = hidden_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass applying RMS normalization using the vendored
+        Triton kernel."""
         if x.numel() == 0:
             return x
         original_shape = x.shape

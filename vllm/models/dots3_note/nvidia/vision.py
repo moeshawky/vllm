@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # ruff: noqa: E501
+"""DotsMoEVitConfig and vision model classes."""
+
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +29,7 @@ from .vision_moe import note_vision_fused_moe_fp8
 
 
 class DotsMoEVitConfig(PretrainedConfig):
+    """Config class for DotsMoE ViT vision model inheriting PretrainedConfig."""
     model_type: str = "dots_moe_vit"
 
     def __init__(
@@ -71,6 +74,8 @@ class DotsMoEVitConfig(PretrainedConfig):
         enable_fp8_moe: bool = True,
         **kwargs: Any,
     ):
+        """Constructor with vision-specific hyperparameters including
+        adapter type, pixel-shuffle settings, and FP8 MoE flags."""
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
         self.hidden_size = hidden_size
@@ -108,16 +113,20 @@ class DotsMoEVitConfig(PretrainedConfig):
 
 
 class RMSNorm(nn.Module):
+    """RMSNorm module with weight and epsilon parameters, no bias."""
     def __init__(self, dim: int, eps: float = 1e-6):
+        """Initializes RMSNorm weight parameter and epsilon value."""
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass applying RMS normalization and scaling by learned weight."""
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
 
     def extra_repr(self) -> str:
+        """Returns string representation of weight shape and epsilon value."""
         return f"{tuple(self.weight.shape)}, eps={self.eps}"
 
     def _norm(self, x: torch.Tensor) -> torch.Tensor:
@@ -128,13 +137,17 @@ class RMSNorm(nn.Module):
 
 
 class DotsSwiGLUFFN(nn.Module):
+    """Standard SwiGLU feed-forward network with three linear layers."""
     def __init__(self, in_features, hidden_features, bias=False):
+        """Initializes three linear layers for the SwiGLU feed-forward block."""
         super().__init__()
         self.fc1 = nn.Linear(in_features, hidden_features, bias=bias)
         self.fc2 = nn.Linear(hidden_features, in_features, bias=bias)
         self.fc3 = nn.Linear(in_features, hidden_features, bias=bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass applying SwiGLU activation: fc1 -> SiLU ->
+        fc3 product -> fc2."""
         return self.fc2(F.silu(self.fc1(x)) * self.fc3(x))
 
 
@@ -321,7 +334,9 @@ class MoESwiGLUFFNFP8(MoESwiGLUFFN):
 
 
 class DotsPatchEmbed(nn.Module):
+    """Patch embedding module using Conv2d followed by RMSNorm."""
     def __init__(self, config: DotsMoEVitConfig):
+        """Initializes Conv2d projection and RMSNorm for patch embedding."""
         super().__init__()
         self.num_channels = config.num_channels
         self.patch_size = config.patch_size
@@ -336,6 +351,8 @@ class DotsPatchEmbed(nn.Module):
         self.norm = RMSNorm(config.embed_dim, eps=config.rms_norm_eps)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass reshaping input, applying Conv2d projection,
+        and normalizing."""
         x = x.view(
             -1,
             self.num_channels,
@@ -352,7 +369,10 @@ class DotsPatchEmbed(nn.Module):
 
 
 class MoEVisionBlock(nn.Module):
+    """Single vision transformer block with attention and MoE/MLP
+    sublayer."""
     def __init__(self, config: DotsMoEVitConfig, layer_number: int):
+        """Initializes attention, norms, and MLP for a single vision block."""
         super().__init__()
         attn_impl = resolve_attn_implementation(
             config.attn_implementation, eager_fallback="eager_v2"
@@ -383,6 +403,8 @@ class MoEVisionBlock(nn.Module):
         max_seqlen: int,
         seqlens: list[int] | None = None,
     ) -> torch.Tensor:
+        """Forward pass applying attention residual and MLP on
+        normalized input."""
         hidden_states = apply_vision_attention_residual(
             self.attn,
             self.norm_1,
@@ -506,6 +528,7 @@ _ADAPTER_CLASSES: dict[str, type[nn.Module]] = {
 
 @dataclass(frozen=True)
 class VitForwardMeta:
+    """Dataclass holding pre-computed forward-pass metadata for vision model."""
     cu_seqlens: torch.Tensor
     max_seqlen: int
     rotary_pos_emb: VisionRotaryPositionEmbedding
@@ -517,9 +540,12 @@ class VitForwardMeta:
 
 
 class DotsMoEVitModel(PreTrainedModel):
+    """Full DotsMoE ViT model inheriting PreTrainedModel."""
     config_class = DotsMoEVitConfig
 
     def __init__(self, config: DotsMoEVitConfig) -> None:
+        """Initializes patch embedding, rotary positions, blocks, adapter,
+        and gradient checkpointing."""
         super().__init__(config)
         self.config = config
         self.spatial_merge_size = config.spatial_merge_size
@@ -546,6 +572,8 @@ class DotsMoEVitModel(PreTrainedModel):
 
     @property
     def dtype(self) -> torch.dtype:
+        """Property returning the dtype of the first expert weights
+        in the first block MLP."""
         mlp = self.blocks[0].mlp
         if hasattr(mlp, "fc13"):
             return mlp.fc13.weight.dtype
@@ -558,9 +586,13 @@ class DotsMoEVitModel(PreTrainedModel):
 
     @property
     def device(self) -> torch.device:
+        """Property returning the device of the patch embedding
+        projection weights."""
         return self.patch_embed.proj.weight.device
 
     def process_weights_after_loading(self) -> None:
+        """Processes weights after loading, converting MoE experts
+        to FP8 and optionally compiling blocks."""
         for block in self.blocks:
             if isinstance(block.mlp, MoESwiGLUFFNFP8):
                 block.mlp.process_weights_after_loading()
@@ -568,12 +600,16 @@ class DotsMoEVitModel(PreTrainedModel):
             self.compile_block_modules()
 
     def compile_block_modules(self, **compile_kwargs: Any) -> None:
+        """Compiles attention and norm modules of each block
+        with torch.compile."""
         for block in self.blocks:
             block.attn = torch.compile(block.attn, **compile_kwargs)
             block.norm_1 = torch.compile(block.norm_1, **compile_kwargs)
             block.norm_2 = torch.compile(block.norm_2, **compile_kwargs)
 
     def get_pos_ids_by_grid(self, grid_thw_cpu: torch.Tensor):
+        """Computes positional IDs for each grid tile, respecting
+        pre_pixel_shuffle layout."""
         # Mirrors ``cybertron`` ``AIMv2NativeModel.rot_pos_emb``: when ``pre_pixel_shuffle``
         # is set, RoPE positions follow the qwen ``merge_size`` grouped layout (default 2x2);
         # otherwise positions are flat row-major regardless of ``spatial_merge_size``.
@@ -606,6 +642,8 @@ class DotsMoEVitModel(PreTrainedModel):
         return pos_ids
 
     def rot_pos_emb(self, grid_thw_cpu: torch.Tensor):
+        """Computes rotary positional embeddings by indexing into
+        the rotary embedding table."""
         pos_ids = torch.cat(self.get_pos_ids_by_grid(grid_thw_cpu), dim=0)
         pos_ids = pos_ids.to(self.device, non_blocking=True)
         max_grid_size = int(grid_thw_cpu[:, 1:].max())
@@ -613,6 +651,8 @@ class DotsMoEVitModel(PreTrainedModel):
         return rotary_pos_emb_full[pos_ids].flatten(1)
 
     def prepare_meta(self, grid_thw_cpu: torch.Tensor) -> VitForwardMeta:
+        """Prepares VitForwardMeta with cu_seqlens, max_seqlen, rotary_pos_emb,
+        and seqlens from grid_thw."""
         if grid_thw_cpu.device.type != "cpu":
             raise ValueError("NOTE vision grid_thw must remain on CPU")
 
@@ -639,6 +679,8 @@ class DotsMoEVitModel(PreTrainedModel):
     def forward(
         self, hidden_states: torch.Tensor, meta: VitForwardMeta, bf16=True
     ) -> torch.Tensor:
+        """Forward pass through patch embedding, blocks, post-norm,
+        and adapter."""
         if bf16:
             hidden_states = hidden_states.to(
                 device=self.device, dtype=self.dtype, non_blocking=True

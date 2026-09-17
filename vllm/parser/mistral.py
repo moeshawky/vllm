@@ -81,7 +81,8 @@ _OPEN_BRACE = "{"
 
 
 class StreamingState(Enum):
-    """Streaming parsing state for pre-v11 tool call extraction."""
+    """Streaming parsing state for pre-v11 tool call
+    extraction."""
 
     WAITING_FOR_TOOL_START = auto()
     WAITING_FOR_TOOL_KEY = auto()
@@ -95,22 +96,28 @@ class StreamingState(Enum):
 
 
 class MistralToolCall(ToolCall):
-    """ToolCall with a Mistral-compatible random alphanumeric id."""
+    """ToolCall with a Mistral-compatible random
+    alphanumeric id."""
 
     id: str = Field(default_factory=lambda: MistralToolCall.generate_random_id())
 
     @staticmethod
     def generate_random_id() -> str:
+        """Generate a 9-char alphanumeric random ID per
+        Mistral's tool call ID specification."""
         # Mistral Tool Call Ids must be alphanumeric with a length of 9.
         # https://github.com/mistralai/mistral-common/blob/21ee9f6cee3441e9bb1e6ed2d10173f90bd9b94b/src/mistral_common/protocol/instruct/validator.py#L299
         return "".join(choices(_ALPHANUMERIC, k=9))
 
     @staticmethod
     def is_valid_id(id: str) -> bool:
+        """Validate that an ID is 9-char alphanumeric."""
         return id.isalnum() and len(id) == 9
 
 
 def _is_pre_v11_tokeniser(model_tokenizer: TokenizerLike) -> bool:
+    """Check if the tokenizer is a pre-v11 Mistral tokenizer
+    by checking for _ARGS in vocab or version < 11."""
     if is_mistral_tokenizer(model_tokenizer):
         return model_tokenizer.version < 11
     vocab: dict[str, int] = getattr(model_tokenizer, "get_vocab", lambda: {})()
@@ -263,6 +270,8 @@ class MistralParser(ParserEngine):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the MistralParser. Auto-detects reasoning
+        encoding and sets up legacy streaming state."""
         vocab = tokenizer.get_vocab()
         self._reasoning_encoding: Literal["special_token", "text", "none"]
         if _THINK_START_SPECIAL in vocab:
@@ -309,6 +318,8 @@ class MistralParser(ParserEngine):
     def adjust_request(
         self, request: ChatCompletionRequest | ResponsesRequest
     ) -> ChatCompletionRequest | ResponsesRequest:
+        """Adjust request for Mistral format. Injects grammar for
+        tool calling and handles structured output constraints."""
         if not isinstance(request, ResponsesRequest) and request._grammar_from_parser:
             return request
         so_non_supported_attributes = [
@@ -510,7 +521,8 @@ class MistralParser(ParserEngine):
         }
 
     def _ensure_tool_id(self, slot: ToolCallSlot, name: str) -> None:
-        """Assign a Mistral-compatible 9-char alphanumeric id to `slot`."""
+        """Assign a Mistral-compatible 9-char alphanumeric id
+        to `slot`."""
         if not slot.id:
             slot.id = MistralToolCall.generate_random_id()
 
@@ -519,6 +531,8 @@ class MistralParser(ParserEngine):
         content: str,
         request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
+        """Extract tool calls from content, dispatching
+        to legacy extraction for pre-v11 tokenizers."""
         if self._is_pre_v11:
             return self._legacy_extract_tool_calls(content, request)
         return super().extract_tool_calls_from_content(content, request)
@@ -632,6 +646,9 @@ class MistralParser(ParserEngine):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> DeltaMessage | None:
+        """Extract tool calls from streaming deltas.
+        Dispatches to legacy streaming for pre-v11
+        tokenizers."""
         if not self._is_pre_v11:
             return super().extract_tool_calls_streaming(
                 previous_text,
@@ -665,6 +682,9 @@ class MistralParser(ParserEngine):
 
     @ijson.coroutine
     def update_stream_state_pre_v11_tokenizer(self):
+        """ijson coroutine that updates streaming state
+        for pre-v11 Mistral tokenizers. Tracks tool start,
+        name, arguments parsing."""
         while True:
             (prefix, event, value) = yield
 
@@ -835,7 +855,8 @@ class MistralParser(ParserEngine):
                 return None
 
     def _track_streamed_args_pre_v11(self, tool_call: DeltaToolCall) -> None:
-        r"""Accumulate `tool_call` arguments into the streaming state."""
+        """Accumulate tool call arguments into the
+        streaming state for pre-v11 tokenizers."""
         if tool_call.function is not None and tool_call.function.arguments is not None:
             self.streamed_args_for_tool[self.current_tool_id] += (
                 tool_call.function.arguments
@@ -854,6 +875,9 @@ class MistralParser(ParserEngine):
         stop_after_colon: int = -1,
         stop_after_comma: int = -1,
     ) -> tuple[str, str]:
+        """Split a delta string at the first occurrence
+        of a delimiter (quotes, braces, brackets, colon,
+        comma)."""
         delta_to_be_parsed = ""
         for i, c in enumerate(delta_text):
             if c in ['"', "'"]:
@@ -892,6 +916,9 @@ class MistralParser(ParserEngine):
         return (delta_to_be_parsed, "")
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        """Check if reasoning has ended. Handles
+        special_token, text, and none encoding modes.
+        [TOOL_CALLS] acts as implicit reasoning-end marker."""
         if self._reasoning_encoding == "none":
             return True
         if super().is_reasoning_end(input_ids):
@@ -914,23 +941,26 @@ class MistralParser(ParserEngine):
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning from a model output.
+        Returns None for 'none' encoding mode."""
         if self._reasoning_encoding == "none":
             return None, model_output
         return super().extract_reasoning(model_output, request)
 
     def _accept_tool_name(self, name: str) -> bool:
-        # Once `[ARGS]` or the opening `{` has moved the slot past its name,
-        # that name is final, empty included. Emitting the call with ""
-        # surfaces the malformed generation instead of dropping it.
+        """Return True if the tool name is valid.
+        Once [ARGS] or { has moved past name,
+        the name is final."""
         return self._is_valid_tool_name(name)
 
     def _try_extract_name(self, idx: int) -> str | None:
-        # No JSON-embedded "name" key in this format; the slot name is final.
+        """Return the slot name. This format has
+        no JSON-embedded name key."""
         return self._tool_slots[idx].name
 
     def _extract_name_and_args(self, raw_body: str) -> tuple[str, str]:
-        # Never a {"name": ..., "arguments": ...} envelope -- a literal "name"
-        # argument key must not be mistaken for the tool name.
+        """Extract name and args from raw body.
+        The name is always empty for Mistral format."""
         return "", self._extract_args_json(raw_body, "")
 
     def _handle_arg_chunk(

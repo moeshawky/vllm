@@ -65,6 +65,7 @@ class InklingLogitsProcessor(LogitsProcessor):
         embedding_bias: torch.Tensor | None = None,
         skip_gather: bool = False,
     ) -> torch.Tensor | None:
+        """Forward pass dispatching to LoRA or base path based on wrapper presence."""
         # ``base_layer`` exists only on the LogitsProcessorWithLoRA wrapper,
         # which calls this forward with ``self`` bound to the wrapper. The
         # wrapper is not an ``InklingLogitsProcessor`` instance, so dispatch
@@ -84,6 +85,8 @@ class InklingLogitsProcessor(LogitsProcessor):
         embedding_bias: torch.Tensor | None = None,
         skip_gather: bool = False,
     ) -> torch.Tensor | None:
+        """LoRA-forward path: computes base logits plus LoRA
+        delta, applies muP divisor."""
         # ``self`` is the LogitsProcessorWithLoRA wrapper here: ``_get_logits``
         # returns the base logits plus the lm_head LoRA delta. Apply the muP
         # divisor on the full logits so the LoRA delta is scaled too.
@@ -109,6 +112,7 @@ class InklingLogitsProcessor(LogitsProcessor):
         embedding_bias: torch.Tensor | None = None,
         skip_gather: bool = False,
     ) -> torch.Tensor | None:
+        """Base-forward path: folds muP width divisor into lm_head GEMM alpha."""
         mup = self.logits_mup_width_multiplier
         if not mup:
             return super().forward(lm_head, hidden_states, embedding_bias, skip_gather)

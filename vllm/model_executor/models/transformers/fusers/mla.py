@@ -135,6 +135,7 @@ class MLAFuser(StackedFuser):
 
     @property
     def has_q_lora(self) -> bool:
+        """Whether q_lora is present in the MLA module."""
         return self.q_a_proj_name is not None
 
     def info(self, name: str) -> str:
@@ -160,6 +161,7 @@ class MLAFuser(StackedFuser):
 
     @classmethod
     def match(cls, graph: fx.Graph, module: nn.Module) -> "MLAFuser | None":
+        """Match the MLA attention pattern in graph and return MLAFuser."""
         # Find all `rms_norm(linear(placeholder))` chains.
         chains = []
         for node in graph.nodes:
@@ -232,6 +234,7 @@ class MLAFuser(StackedFuser):
         )
 
     def validate(self, module: nn.Module, vllm_config: "VllmConfig") -> bool:
+        """Check if MLA is enabled in the model config."""
         return vllm_config.model_config.use_mla
 
     def update_forward(self, module: nn.Module) -> None:
@@ -279,6 +282,7 @@ class MLAFuser(StackedFuser):
         self.fused_forward = compile_forward(funcdef, fn)
 
     def update_attrs(self, module: nn.Module, prefix: str, vllm_config: "VllmConfig"):
+        """Replace MLA projection submodules with vLLM equivalents."""
         quant_config = vllm_config.quant_config
 
         def replace_linear_by_name(name: str, style: str):

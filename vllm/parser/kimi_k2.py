@@ -51,6 +51,8 @@ _TOOL_ID_RE = re.compile(r"(?P<id>.+:\d+)")
 
 @functools.cache
 def kimi_k2_config(thinking: bool = True) -> ParserEngineConfig:
+    """Return a cached ParserEngineConfig for Kimi K2
+    format with thinking support."""
     reasoning_terminals = (
         {
             "THINK_START": THINK_START,
@@ -156,6 +158,8 @@ class KimiK2Parser(ParserEngine):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the KimiK2Parser. Determines
+        thinking_enabled from chat_kwargs and sets up token IDs."""
         chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
         thinking = chat_kwargs.get("thinking", None)
         enable_thinking = chat_kwargs.get("enable_thinking", None)
@@ -177,6 +181,8 @@ class KimiK2Parser(ParserEngine):
 
     @staticmethod
     def _extract_tool_id_and_name(header: str | None) -> tuple[str | None, str | None]:
+        """Extract the tool ID and name from a header
+        string. Parses the format 'functions.name:N'."""
         if header is None:
             return None, None
         match = _TOOL_ID_RE.match(header.strip())
@@ -193,6 +199,8 @@ class KimiK2Parser(ParserEngine):
         deltas: list[DeltaToolCall],
         name: str | None,
     ) -> None:
+        """Emit a name delta, extracting the tool ID and
+        name from the header. Sets the slot ID and name."""
         tool_id, tool_name = self._extract_tool_id_and_name(name)
         if not tool_name:
             if 0 <= idx < len(self._tool_slots):
@@ -204,6 +212,8 @@ class KimiK2Parser(ParserEngine):
         super()._emit_name_delta(idx, deltas, tool_name)
 
     def _handle_tool_end(self, event, deltas) -> None:
+        """Handle tool end by extracting tool ID and
+        name, then calling parent handler."""
         idx = event.tool_index
         if 0 <= idx < len(self._tool_slots) and not self._tool_slots[idx].name_sent:
             tool_id, tool_name = self._extract_tool_id_and_name(
@@ -215,6 +225,8 @@ class KimiK2Parser(ParserEngine):
         super()._handle_tool_end(event, deltas)
 
     def _handle_arg_chunk(self, event, deltas) -> None:
+        """Handle argument chunks. Emits DeltaToolCall
+        if name was not yet sent but now is."""
         idx = event.tool_index
         name_sent_before = (
             0 <= idx < len(self._tool_slots) and self._tool_slots[idx].name_sent
@@ -234,9 +246,14 @@ class KimiK2Parser(ParserEngine):
             )
 
     def _extract_args_json(self, raw_args: str, func_name: str) -> str:
+        """Extract arguments JSON. Returns raw_args.strip()
+        or '{}' for empty."""
         return raw_args.strip() or "{}"
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        """Check if reasoning has ended by scanning for
+        THINK_START, THINK_END, and TOOL_SECTION_START
+        token IDs."""
         if not self.thinking_enabled:
             return True
 
@@ -255,6 +272,8 @@ class KimiK2Parser(ParserEngine):
         return False
 
     def extract_content_ids(self, input_ids: list[int]) -> list[int]:
+        """Extract content token IDs after the last
+        THINK_END or TOOL_SECTION_START token."""
         if not self.thinking_enabled:
             return input_ids
 
@@ -275,11 +294,15 @@ class KimiK2Parser(ParserEngine):
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning from model output. Returns
+        None if thinking is disabled."""
         if not self.thinking_enabled:
             return None, model_output
         return super().extract_reasoning(model_output, request)
 
     def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
+        """Count reasoning tokens if thinking is enabled.
+        Returns 0 otherwise."""
         if not self.thinking_enabled:
             return 0
         return super().count_reasoning_tokens(token_ids)

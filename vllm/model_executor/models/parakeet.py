@@ -132,8 +132,9 @@ class ProjectedParakeet(nn.Module):
         )
 
 
-EPSILON = 1e-5
-LOG_ZERO_GUARD_VALUE = 2**-24
+EPSILON = 1e-5  # Small constant for numerical stability in feature normalization.
+LOG_ZERO_GUARD_VALUE = 2**-24  # Logarithmic guard value to prevent log(0) in mel
+    # spectrogram computation.
 
 
 class ParakeetExtractor:

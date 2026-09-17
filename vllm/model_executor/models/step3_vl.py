@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+"""Step3VL model implementation for vision-language multimodal inference
+with dual-path encoder CUDA graph support."""
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from math import sqrt
@@ -95,7 +98,11 @@ Step3VLImageInputs: TypeAlias = Step3VLImagePixelInputs | Step3VLImageEmbeddingI
 
 
 class Step3VLProcessingInfo(BaseProcessingInfo):
+    """Provides image processor and HF processor retrieval for Step3VL
+    models with multimodal limits."""
     def get_image_processor(self, **kwargs):
+        """Return a Step3VLImageProcessor configured with enable_patch
+        option."""
         config = self.get_hf_config()
 
         kwargs.setdefault(
@@ -106,15 +113,18 @@ class Step3VLProcessingInfo(BaseProcessingInfo):
         return Step3VLImageProcessor(**kwargs)
 
     def get_hf_processor(self) -> Step3VLProcessor:
+        """Return a Step3VLProcessor with tokenizer and image processor."""
         return Step3VLProcessor(
             tokenizer=self.get_tokenizer(),
             image_processor=self.get_image_processor(),
         )
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Return unlimited image support."""
         return {"image": None}
 
     def get_max_image_tokens(self) -> int:
+        """Return the maximum image tokens from the image processor."""
         image_processor = self.get_image_processor()
         target_width, target_height = self.get_image_size_with_most_features()
 
@@ -125,14 +135,18 @@ class Step3VLProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
+        """Return the max tokens per item for the image modality."""
         return {"image": self.get_max_image_tokens()}
 
     def get_image_size_with_most_features(self) -> ImageSize:
+        """Return the maximum image size."""
         return ImageSize(MAX_IMAGE_SIZE, MAX_IMAGE_SIZE)
 
 
 class Step3VLDummyInputsBuilder(BaseDummyInputsBuilder[Step3VLProcessingInfo]):
+    """Generates dummy text and image data for Step3VL multimodal testing."""
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Return <im_patch> tokens as dummy text for image inputs."""
         num_images = mm_counts.get("image", 0)
         return "<im_patch>" * num_images
 
@@ -142,6 +156,7 @@ class Step3VLDummyInputsBuilder(BaseDummyInputsBuilder[Step3VLProcessingInfo]):
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Construct dummy image data with target dimensions."""
         target_width, target_height = self.info.get_image_size_with_most_features()
         num_images = mm_counts.get("image", 0)
 
@@ -158,12 +173,16 @@ class Step3VLDummyInputsBuilder(BaseDummyInputsBuilder[Step3VLProcessingInfo]):
 
 
 class Step3VLMultiModalProcessor(BaseMultiModalProcessor[Step3VLProcessingInfo]):
+    """Handles multimodal input processing for Step3VL with patch-aware
+    image token replacement."""
     def _get_prompt_updates(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
         out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
+        """Generate prompt replacements for image tokens using patch-level
+        feature IDs."""
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         image_placeholder_token_id = hf_processor.image_token_id
 
@@ -193,6 +212,8 @@ class Step3VLMultiModalProcessor(BaseMultiModalProcessor[Step3VLProcessingInfo])
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
+        """Map input fields to MultiModalFieldConfig for pixel and patch
+        values."""
         num_patches = hf_inputs.get("num_patches", torch.empty(0))
 
         return dict(
@@ -208,6 +229,8 @@ class Step3VLMultiModalProcessor(BaseMultiModalProcessor[Step3VLProcessingInfo])
 
 
 def get_abs_pos(abs_pos, tgt_size):
+    """Resize absolute positional embeddings from source size to target
+    size using bicubic interpolation."""
     dim = abs_pos.size(-1)
     abs_pos_new = abs_pos.squeeze(0)
     cls_token, old_pos_embed = abs_pos_new[:1], abs_pos_new[1:]
@@ -240,7 +263,11 @@ def get_abs_pos(abs_pos, tgt_size):
 
 
 class Step3VisionEmbeddings(nn.Module):
+    """Patch embedding, class embedding, and absolute positional encoding
+    for Step3VL vision inputs."""
     def __init__(self, config: Step3VisionEncoderConfig):
+        """Initialize Step3VisionEmbeddings with Conv2dLayer patch embedding,
+        class embedding, position embedding, and registered position_ids buffer."""
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -270,6 +297,8 @@ class Step3VisionEmbeddings(nn.Module):
         )
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """Apply patch embedding, add class token and absolute positional
+        encoding, and pad with extra class tokens."""
         batch_size = pixel_values.shape[0]
         patch_embeds = self.patch_embedding(
             pixel_values
@@ -293,14 +322,16 @@ class Step3VisionEmbeddings(nn.Module):
 
 
 class Step3VisionAttention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
-
+    """Multi-headed attention from 'Attention Is All You Need' paper with
+    QKVParallelLinear and MMEncoderAttention for vision encoder blocks."""
     def __init__(
         self,
         config,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize Step3VisionAttention with QKVParallelLinear, RowParallelLinear,
+        and MMEncoderAttention; configures tensor parallelism."""
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -362,12 +393,16 @@ class Step3VisionAttention(nn.Module):
 
 
 class Step3VisionMLP(nn.Module):
+    """Feed-forward network with ColumnParallelLinear, activation
+    function, and RowParallelLinear."""
     def __init__(
         self,
         config,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize Step3VisionMLP with fc1 and fc2 linear layers and
+        activation function; configures tensor parallelism."""
         super().__init__()
         self.config = config
         self.activation_fn = get_act_fn(config.hidden_act)
@@ -390,6 +425,7 @@ class Step3VisionMLP(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply fc1, activation, and fc2 sequentially."""
         hidden_states, _ = self.fc1(hidden_states)
         hidden_states = self.activation_fn(hidden_states)
         hidden_states, _ = self.fc2(hidden_states)
@@ -397,12 +433,16 @@ class Step3VisionMLP(nn.Module):
 
 
 class Step3VisionEncoderLayer(nn.Module):
+    """Single vision encoder layer with self-attention and MLP
+    with residual connections."""
     def __init__(
         self,
         config: Step3VisionEncoderConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize Step3VisionEncoderLayer with Step3VisionAttention,
+        LayerNorm, and Step3VisionMLP."""
         super().__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = Step3VisionAttention(
@@ -422,18 +462,24 @@ class Step3VisionEncoderLayer(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.FloatTensor:
+        """Apply self-attention and MLP with residual connections
+        and LayerNorm."""
         hidden_states = hidden_states + self.layer_norm1(self.self_attn(hidden_states))
         hidden_states = hidden_states + self.layer_norm2(self.mlp(hidden_states))
         return hidden_states
 
 
 class Step3VisionEncoder(nn.Module):
+    """Stacks Step3VisionEncoderLayer blocks sequentially for the
+    vision transformer."""
     def __init__(
         self,
         config: Step3VisionEncoderConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize Step3VisionEncoder with a ModuleList of
+        Step3VisionEncoderLayer blocks."""
         super().__init__()
         self.config = config
         self.layers = nn.ModuleList(
@@ -451,6 +497,7 @@ class Step3VisionEncoder(nn.Module):
         self,
         inputs_embeds,
     ):
+        """Pass inputs through all encoder layers sequentially."""
         hidden_states = inputs_embeds
         for encoder_layer in self.layers:
             hidden_states = encoder_layer(hidden_states)
@@ -458,12 +505,16 @@ class Step3VisionEncoder(nn.Module):
 
 
 class Step3VisionTransformer(nn.Module):
+    """Full vision transformer with embeddings, encoder, and optional
+    data-parallel sharding."""
     def __init__(
         self,
         config: Step3VisionEncoderConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize Step3VisionTransformer with Step3VisionEmbeddings
+        and Step3VisionEncoder."""
         super().__init__()
         self.config = config
         self.use_data_parallel = is_vit_use_data_parallel()
@@ -479,6 +530,8 @@ class Step3VisionTransformer(nn.Module):
         self,
         pixel_values: torch.Tensor,
     ):
+        """Apply embeddings and encoder processing with optional
+        data-parallel sharded vision model."""
         hidden_states = self.embeddings(pixel_values)
         if self.use_data_parallel:
             hidden_states = run_dp_sharded_vision_model(hidden_states, self.transformer)
@@ -495,6 +548,8 @@ class Step3VisionTransformer(nn.Module):
 class Step3VLForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsEncoderCudaGraph
 ):
+    """Vision-language model with vision encoder, downsamplers, projector,
+    and language model; supports encoder CUDA graphs."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.": "language_model.model.",
@@ -512,6 +567,8 @@ class Step3VLForConditionalGeneration(
         raise ValueError("Only image modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initialize Step3VLForConditionalGeneration with vision model,
+        two Conv2dLayer downsamplers, linear projector, and language model."""
         super().__init__()
         config = vllm_config.model_config.hf_config
         multimodal_config = vllm_config.model_config.multimodal_config
@@ -591,6 +648,7 @@ class Step3VLForConditionalGeneration(
 
     @property
     def img_output_tokens(self) -> int:
+        """Compute spatial tokens after two rounds of downsampling."""
         return self._compute_spatial_tokens(
             self.config.vision_config.image_size,
             self.config.vision_config.patch_size,
@@ -599,6 +657,7 @@ class Step3VLForConditionalGeneration(
 
     @property
     def patch_output_tokens(self) -> int:
+        """Compute spatial tokens for patch-level inputs."""
         return self._compute_spatial_tokens(
             504,
             self.config.vision_config.patch_size,
@@ -617,6 +676,8 @@ class Step3VLForConditionalGeneration(
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> Step3VLImageInputs | None:
+        """Extract pixel_values, patch_pixel_values, num_patches, or
+        image_embeds from kwargs."""
         pixel_values = kwargs.pop("pixel_values", None)
         patch_pixel_values = kwargs.pop("patch_pixel_values", None)
         num_patches = kwargs.pop("num_patches", None)
@@ -642,6 +703,8 @@ class Step3VLForConditionalGeneration(
         raise AssertionError("This line should be unreachable.")
 
     def _process_image_features(self, image_features: torch.Tensor) -> torch.Tensor:
+        """Apply two downsampling layers and linear projection to image
+        features."""
         B, P = image_features.shape[:2]
         HW = int(sqrt(P))
         image_features = image_features.permute(0, 2, 1).view(B, -1, HW, HW)
@@ -653,11 +716,14 @@ class Step3VLForConditionalGeneration(
         return image_features
 
     def _get_vision_model_output(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        """Return vision model output excluding the first four tokens."""
         return self.vision_model(input_tensor)[:, 4:]
 
     def _process_image_input(
         self, image_input: Step3VLImageInputs
     ) -> tuple[torch.Tensor, ...]:
+        """Process pixel and patch image inputs, merging features per
+        batch item."""
         if image_input["type"] == "image_embeds":
             image_features = image_input["data"]
             return [
@@ -698,6 +764,7 @@ class Step3VLForConditionalGeneration(
         return merged_image_features
 
     def embed_multimodal(self, **kwargs) -> MultiModalEmbeddings:
+        """Parse image input and return processed vision embeddings."""
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -724,6 +791,7 @@ class Step3VLForConditionalGeneration(
     # -- SupportsEncoderCudaGraph protocol methods --
 
     def get_encoder_cudagraph_config(self):
+        """Return encoder CUDA graph configuration for image modalities."""
         from vllm.v1.worker.encoder_cudagraph_defs import (
             EncoderCudaGraphConfig,
             EncoderCudaGraphPathConfig,
@@ -751,6 +819,7 @@ class Step3VLForConditionalGeneration(
         self,
         vllm_config: "VllmConfig",
     ) -> tuple[int, int]:
+        """Return min and max encoder CUDA graph budgets."""
         min_budget = self.img_output_tokens
         max_budget = min(
             vllm_config.scheduler_config.max_num_batched_tokens,
@@ -762,6 +831,7 @@ class Step3VLForConditionalGeneration(
         self,
         mm_kwargs: dict[str, Any],
     ):
+        """Compute encoder item specs for each batch item."""
         from vllm.v1.worker.encoder_cudagraph_defs import EncoderItemSpec
 
         num_patches = mm_kwargs.get("num_patches")
@@ -792,6 +862,7 @@ class Step3VLForConditionalGeneration(
         mm_kwargs: dict[str, Any],
         indices: list[int],
     ) -> dict[str, Any]:
+        """Select encoder items based on batch indices."""
         pixel_values = mm_kwargs["pixel_values"]
         patch_pixel_values = mm_kwargs["patch_pixel_values"]
         num_patches = mm_kwargs["num_patches"]
@@ -829,6 +900,7 @@ class Step3VLForConditionalGeneration(
         dtype: torch.dtype,
         path: str = "default",
     ):
+        """Prepare dummy inputs for encoder CUDA graph capture."""
         from vllm.v1.worker.encoder_cudagraph_defs import (
             EncoderCudaGraphCaptureInputs,
         )
@@ -867,6 +939,7 @@ class Step3VLForConditionalGeneration(
         values: dict[str, torch.Tensor],
         path: str = "default",
     ) -> torch.Tensor:
+        """Run batched encoder forward for CUDA graph replay."""
         assert path in ("global", "local")
         if path == "global":
             return self._batched_encoder_forward(values["pixel_values"])
@@ -878,6 +951,7 @@ class Step3VLForConditionalGeneration(
         mm_kwargs: dict[str, Any],
         path: str = "default",
     ) -> torch.Tensor:
+        """Run batched encoder forward in eager mode."""
         assert path in ("global", "local")
         if path == "global":
             return self._batched_encoder_forward(mm_kwargs["pixel_values"])
@@ -940,6 +1014,7 @@ class Step3VLForConditionalGeneration(
         max_frames_per_batch: int,
         path: str = "default",
     ):
+        """Prepare replay buffers for encoder CUDA graph."""
         from vllm.v1.worker.encoder_cudagraph_defs import (
             EncoderCudaGraphReplayBuffers,
         )
@@ -960,6 +1035,7 @@ class Step3VLForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Pass inputs through the language model."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -973,8 +1049,10 @@ class Step3VLForConditionalGeneration(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Delegate to the language model's compute_logits method."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        """Load HF weights using AutoWeightsLoader with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

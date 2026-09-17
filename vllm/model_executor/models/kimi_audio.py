@@ -151,6 +151,8 @@ class KimiAudioProcessingInfo(BaseProcessingInfo):
 
 
 class KimiAudioDummyInputsBuilder(BaseDummyInputsBuilder[KimiAudioProcessingInfo]):
+    """Generates dummy audio inputs for shape inference."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         return ""
 

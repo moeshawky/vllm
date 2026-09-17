@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Helpers for vLLM's torch profiler output: string
+trimming/indentation, a fixed-width dataclass table printer
+(TablePrinter), and readers over torch._C._profiler._ProfilerEvent
+fields (module name, torch op repr, argument repr, and
+torch op stack trace).
+"""
+
 import dataclasses
 from collections.abc import Callable
 
@@ -13,6 +20,11 @@ from torch._C._profiler import _EventType, _ProfilerEvent, _TensorMetadata
 
 
 def trim_string_back(string: str, width: int) -> str:
+    """Shorten a string to fit a fixed column width.
+    If the string is longer than width, it is cut from
+    the end and '...' is appended when the remainder
+    is longer than 3 characters.
+    """
     if len(string) > width:
         offset = len(string) - width + 3
         string = string[:-offset]
@@ -22,19 +34,33 @@ def trim_string_back(string: str, width: int) -> str:
 
 
 class TablePrinter:
+    """Prints dataclass instances as a fixed-width column
+    table. The constructor takes a dataclass type and a dict
+    mapping each field name to a column width.
+    """
     def __init__(self, row_cls: type[DataclassInstance], column_widths: dict[str, int]):
+        """Store the dataclass type and column widths.
+        Raises AssertionError if the column_widths keys
+        do not exactly match the dataclass field names.
+        """
         self.row_cls = row_cls
         self.fieldnames = [x.name for x in dataclasses.fields(row_cls)]
         self.column_widths = column_widths
         assert set(self.column_widths.keys()) == set(self.fieldnames)
 
     def print_table(self, rows: list[DataclassInstance]):
+        """Print a header row, a separator line, then
+        one row per dataclass instance.
+        """
         self._print_header()
         self._print_line()
         for row in rows:
             self._print_row(row)
 
     def _print_header(self):
+        """Print the field names as the first row, each
+        trimmed and left-justified to its column width.
+        """
         for i, f in enumerate(self.fieldnames):
             last = i == len(self.fieldnames) - 1
             col_width = self.column_widths[f]
@@ -44,6 +70,10 @@ class TablePrinter:
             )
 
     def _print_row(self, row):
+        """Print one dataclass row. String values are
+        trimmed and left-justified; exact float/int values
+        are formatted to two decimals and right-justified.
+        """
         assert isinstance(row, self.row_cls)
 
         for i, f in enumerate(self.fieldnames):
@@ -61,6 +91,10 @@ class TablePrinter:
             print(val_str, end=" | " if not last else "\n")
 
     def _print_line(self):
+        """Print a separator line of '=' whose length
+        is the sum of all column widths plus 3 chars per
+        inter-column ' | ' separator.
+        """
         total_col_width = 0
         for column_width in self.column_widths.values():
             total_col_width += column_width
@@ -70,6 +104,10 @@ class TablePrinter:
 def indent_string(
     string: str, indent: int, indent_style: Callable[[int], str] | str = " "
 ) -> str:
+    """Prefix a string with indentation. indent_style
+    may be a str (repeated indent times) or a Callable
+    [[int], str] (called with indent as the argument).
+    """
     if indent:
         if isinstance(indent_style, str):
             return indent_style * indent + string
@@ -85,6 +123,9 @@ def indent_string(
 
 
 def event_has_module(event: _ProfilerEvent) -> bool:
+    """True when the event is a PyCall event whose
+    typed payload carries a module attribute.
+    """
     event_type, typed_event = event.typed
     if event_type == _EventType.PyCall:
         return typed_event.module is not None
@@ -92,10 +133,16 @@ def event_has_module(event: _ProfilerEvent) -> bool:
 
 
 def event_is_torch_op(event: _ProfilerEvent) -> bool:
+    """True when the event tag is _EventType.TorchOp."""
     return event.tag == _EventType.TorchOp
 
 
 def event_arg_repr(arg) -> str:
+    """Render a torch op input argument as a string.
+    None/float/int/bool/str are formatted directly; lists
+    and tuples are rendered recursively; any other value
+    must be a _TensorMetadata.
+    """
     if arg is None or type(arg) in [float, int, bool, str]:
         return f"{arg}"
     elif isinstance(arg, list):
@@ -109,12 +156,20 @@ def event_arg_repr(arg) -> str:
 
 
 def event_torch_op_repr(event: _ProfilerEvent) -> str:
+    """Render a TorchOp event as 'name(args)' with the
+    'aten::' prefix stripped from the name.
+    """
     assert event.tag == _EventType.TorchOp
     args_str = ", ".join([event_arg_repr(x) for x in event.typed[1].inputs])
     return f"{event.name}({args_str})".replace("aten::", "")
 
 
 def event_module_repr(event: _ProfilerEvent) -> str:
+    """Render a module event as 'ClassName(param=value, ...)'.
+    Parameters come from module.parameters (a list of
+    (name, value) pairs); when absent, only the class
+    name is returned.
+    """
     assert event_has_module(event)
     module = event.typed[1].module
     if module.parameters and len(module.parameters) > 0:
@@ -129,6 +184,10 @@ def event_module_repr(event: _ProfilerEvent) -> str:
 def event_torch_op_stack_trace(
     curr_event: _ProfilerEvent, until: Callable[[_ProfilerEvent], bool]
 ) -> str:
+    """Walk up the event parent chain collecting TorchOp
+    events into an 'a <- b <- c' string, stopping at the
+    first parent for which until(parent) is True.
+    """
     trace = ""
     curr_event = curr_event.parent
     while curr_event and not until(curr_event):

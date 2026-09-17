@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""PaliGemma vision-language model for multimodal image understanding."""
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal, TypeAlias
 

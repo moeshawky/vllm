@@ -37,6 +37,8 @@ class Ling3Parser(Glm47MoeParser):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the Ling3Parser. Sets thinking_enabled
+        and parser_engine_config from GLM-4.7 config."""
         chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
         thinking = chat_kwargs.get("thinking", None)
         enable_thinking = chat_kwargs.get("enable_thinking", None)
@@ -68,6 +70,8 @@ class Ling3Parser(Glm47MoeParser):
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning. If no thinking and no tool
+        call marker, returns reasoning as content."""
         if not self.thinking_enabled:
             return None, model_output
 
@@ -80,4 +84,4 @@ class Ling3Parser(Glm47MoeParser):
 (
     Ling3ParserReasoningAdapter,
     Ling3ParserToolAdapter,
-) = make_adapters(Ling3Parser)
+) = make_adapters(Ling3Parser)  # Create parser adapters

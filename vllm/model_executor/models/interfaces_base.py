@@ -57,11 +57,13 @@ class VllmModel(Protocol[T_co]):
 
 
 def _check_vllm_model_init(model: type[object] | object) -> bool:
+    """Check that the model constructor accepts the vllm_config keyword."""
     model_init = model.__init__
     return supports_kw(model_init, "vllm_config")
 
 
 def _check_vllm_model_embed_input_ids(model: type[object] | object) -> bool:
+    """Check that the model has a callable embed_input_ids method."""
     model_embed_input_ids = getattr(model, "embed_input_ids", None)
     if not callable(model_embed_input_ids):
         logger.warning(
@@ -74,6 +76,7 @@ def _check_vllm_model_embed_input_ids(model: type[object] | object) -> bool:
 
 
 def _check_vllm_model_forward(model: type[object] | object) -> bool:
+    """Check that forward accepts input_ids and positions keyword arguments."""
     model_forward = getattr(model, "forward", None)
     if not callable(model_forward):
         return False
@@ -103,6 +106,7 @@ def is_vllm_model(model: object) -> TypeIs[VllmModel]: ...
 def is_vllm_model(
     model: type[object] | object,
 ) -> TypeIs[type[VllmModel]] | TypeIs[VllmModel]:
+    """Check if a class or instance satisfies the VllmModel interface."""
     return (
         _check_vllm_model_init(model)
         and _check_vllm_model_embed_input_ids(model)
@@ -135,6 +139,7 @@ def is_text_generation_model(model: object) -> TypeIs[VllmModelForTextGeneration
 def is_text_generation_model(
     model: type[object] | object,
 ) -> TypeIs[type[VllmModelForTextGeneration]] | TypeIs[VllmModelForTextGeneration]:
+    """Check if a model supports text generation with compute_logits."""
     if not is_vllm_model(model):
         return False
 
@@ -223,6 +228,7 @@ def is_pooling_model(model: object) -> TypeIs[VllmModelForPooling]: ...
 def is_pooling_model(
     model: type[object] | object,
 ) -> TypeIs[type[VllmModelForPooling]] | TypeIs[VllmModelForPooling]:
+    """Check if a model supports pooling with a pooler component."""
     if not is_vllm_model(model):
         return False
 
@@ -250,12 +256,14 @@ def default_pooling_type(
 def get_default_seq_pooling_type(
     model: type[object] | object,
 ) -> SequencePoolingType:
+    """Get the default sequence pooling type for a model."""
     return getattr(model, "default_seq_pooling_type", "LAST")
 
 
 def get_default_tok_pooling_type(
     model: type[object] | object,
 ) -> TokenPoolingType:
+    """Get the default token pooling type for a model."""
     return getattr(model, "default_tok_pooling_type", "ALL")
 
 
@@ -270,10 +278,12 @@ def attn_type(attn_type: AttnTypeStr):
 
 
 def get_attn_type(model: type[object] | object) -> AttnTypeStr:
+    """Get the attention type for a model."""
     return getattr(model, "attn_type", "decoder")
 
 
 def get_score_type(model: type[object] | object) -> ScoreType:
+    """Resolve the score type from a model's MRO."""
     score_types = set()
     for m in model.__mro__:
         score_type = getattr(m, "score_type", "bi-encoder")

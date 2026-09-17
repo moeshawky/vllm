@@ -48,6 +48,8 @@ logger = init_logger(__name__)
 
 @support_torch_compile
 class LlamaModel(nn.Module):
+    """Eagle draft model wrapper for Llama4 with layer index offset."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={"model.": ""},
         orig_to_new_stacked={
@@ -67,6 +69,7 @@ class LlamaModel(nn.Module):
         start_layer_id: int = 0,
         quant_config: QuantizationConfig | None = None,
     ) -> None:
+        """Initialize Eagle Llama4 draft model with target layer offset."""
         super().__init__()
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
         self.validate_and_update_config(start_layer_id, quant_config)
@@ -129,6 +132,7 @@ class LlamaModel(nn.Module):
     def validate_and_update_config(
         self, start_layer_id: int, quant_config: QuantizationConfig | None = None
     ) -> None:
+        """Validate draft model constraints and pad layer configs by start_layer_id."""
         # yoco and moe is not supported by draft model yet
         assert self.config.yoco_global_kv_layer is None
         assert self.config.yoco_local_kv_layer is None
@@ -153,6 +157,8 @@ class LlamaModel(nn.Module):
 
 
 class EagleLlama4ForCausalLM(Llama4ForCausalLM, SupportsMultiModalEmbeddings):
+    """Eagle speculative decoder wrapper for Llama4 with separate lm_head."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
@@ -184,6 +190,7 @@ class EagleLlama4ForCausalLM(Llama4ForCausalLM, SupportsMultiModalEmbeddings):
         self.set_moe_parameters()
 
     def get_language_model(self) -> torch.nn.Module:
+        """Return the inner Eagle draft model."""
         return self.model
 
     embed_input_ids = SupportsMultiModal.embed_input_ids  # type: ignore
@@ -198,6 +205,7 @@ class EagleLlama4ForCausalLM(Llama4ForCausalLM, SupportsMultiModalEmbeddings):
         return self.model(input_ids, positions, hidden_states, inputs_embeds)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> None:
+        """Load weights with rotary QK permutation and Eagle weight processing."""
         def transform(inputs):
             name, loaded_weight = inputs
             name, weight = self.permute_qk_weight_for_rotary(name, loaded_weight)

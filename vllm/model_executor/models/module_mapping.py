@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Module mapping definitions for multi-model structures, providing
+MultiModelKeys dataclass for tracking module prefixes.
+"""
 
 # Adapted from
 #  https://github.com/modelscope/ms-swift/blob/v2.4.2/swift/utils/module_mapping.py

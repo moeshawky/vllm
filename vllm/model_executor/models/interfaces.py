@@ -98,6 +98,7 @@ class StreamingTranscriptionPostProcessor:
     """Stateful streaming post-processor for transcription deltas."""
 
     def process_delta(self, text_delta: str, finished: bool) -> str:
+        """Process a streaming transcription delta and return the output text."""
         return text_delta
 
 
@@ -546,6 +547,7 @@ def supports_multimodal(model: object) -> TypeIs[SupportsMultiModal]: ...
 def supports_multimodal(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsMultiModal]] | TypeIs[SupportsMultiModal]:
+    """Check if a model supports multimodal inputs."""
     return getattr(model, "supports_multimodal", False)
 
 
@@ -564,18 +566,22 @@ def supports_multimodal_embeddings(
 def supports_multimodal_embeddings(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsMultiModalEmbeddings]] | TypeIs[SupportsMultiModalEmbeddings]:
+    """Check if a model supports external multimodal embeddings."""
     return getattr(model, "supports_multimodal_embeddings", False)
 
 
 def supports_multimodal_raw_input_only(model: type[object] | object) -> bool:
+    """Check if a model processes multimodal inputs in their raw form."""
     return getattr(model, "supports_multimodal_raw_input_only", False)
 
 
 def requires_raw_input_tokens(model: type[object] | object) -> bool:
+    """Check if a model processes input tokens in their raw form."""
     return getattr(model, "requires_raw_input_tokens", False)
 
 
 def supports_multimodal_encoder_tp_data(model: type[object] | object) -> bool:
+    """Check if a model supports data-parallel multimodal encoder."""
     return getattr(model, "supports_encoder_tp_data", False)
 
 
@@ -592,6 +598,7 @@ def supports_multimodal_pruning(model: object) -> TypeIs[SupportsMultiModalPruni
 def supports_multimodal_pruning(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsMultiModalPruning]] | TypeIs[SupportsMultiModalPruning]:
+    """Check if a model supports multimodal embedding pruning."""
     return getattr(model, "supports_multimodal_pruning", False)
 
 
@@ -636,6 +643,7 @@ def supports_score_template(model: object) -> TypeIs[SupportsScoreTemplate]: ...
 def supports_score_template(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsScoreTemplate]] | TypeIs[SupportsScoreTemplate]:
+    """Check if a model supports score templates for pairwise ranking."""
     return getattr(model, "supports_score_template", False)
 
 
@@ -683,6 +691,7 @@ def supports_lora(model: object) -> TypeIs[SupportsLoRA]: ...
 def supports_lora(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsLoRA]] | TypeIs[SupportsLoRA]:
+    """Check if a model supports LoRA adapters."""
     result = _supports_lora(model)
 
     if not result:
@@ -788,6 +797,7 @@ def supports_pp(model: object) -> TypeIs[SupportsPP]: ...
 def supports_pp(
     model: type[object] | object,
 ) -> bool | TypeIs[type[SupportsPP]] | TypeIs[SupportsPP]:
+    """Check if a model supports pipeline parallelism."""
     supports_attributes = _supports_pp_attributes(model)
     supports_inspect = _supports_pp_inspect(model)
 
@@ -859,6 +869,7 @@ def has_inner_state(model: type[object]) -> TypeIs[type[HasInnerState]]: ...
 def has_inner_state(
     model: type[object] | object,
 ) -> TypeIs[type[HasInnerState]] | TypeIs[HasInnerState]:
+    """Check if a model maintains internal state across forward passes."""
     return getattr(model, "has_inner_state", False)
 
 
@@ -886,6 +897,7 @@ def is_attention_free(model: type[object]) -> TypeIs[type[IsAttentionFree]]: ...
 def is_attention_free(
     model: type[object] | object,
 ) -> TypeIs[type[IsAttentionFree]] | TypeIs[IsAttentionFree]:
+    """Check if a model has no attention layers."""
     return getattr(model, "is_attention_free", False)
 
 
@@ -941,6 +953,7 @@ def is_hybrid(model: type[object]) -> TypeIs[type[IsHybrid]]: ...
 def is_hybrid(
     model: type[object] | object,
 ) -> TypeIs[type[IsHybrid]] | TypeIs[IsHybrid]:
+    """Check if a model has both attention and mamba blocks."""
     return getattr(model, "is_hybrid", False)
 
 
@@ -1057,6 +1070,7 @@ def get_mixture_of_experts_model(model: object) -> MixtureOfExperts | None:
 
 
 def is_mixture_of_experts(model: object) -> TypeIs[MixtureOfExperts]:
+    """Check if a model is a mixture of experts model."""
     return (
         isinstance(model, MixtureOfExperts) and getattr(model, "num_moe_layers", 0) > 0
     )
@@ -1078,6 +1092,7 @@ def has_noops(model: type[object]) -> TypeIs[type[HasNoOps]]: ...
 def has_noops(
     model: type[object] | object,
 ) -> TypeIs[type[HasNoOps]] | TypeIs[HasNoOps]:
+    """Check if a model contains no-op layers."""
     return getattr(model, "has_noops", False)
 
 
@@ -1106,6 +1121,7 @@ def supports_mamba_prefix_caching(
 def supports_mamba_prefix_caching(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsMambaPrefixCaching]] | TypeIs[SupportsMambaPrefixCaching]:
+    """Check if a model's mamba layers support prefix caching."""
     return getattr(model, "supports_mamba_prefix_caching", False)
 
 
@@ -1131,6 +1147,7 @@ def supports_replayssm(model: type[object]) -> TypeIs[type[SupportsReplaySSM]]: 
 def supports_replayssm(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsReplaySSM]] | TypeIs[SupportsReplaySSM]:
+    """Check if a model supports ReplaySSM cached decode."""
     return getattr(model, "supports_replayssm", False)
 
 
@@ -1227,6 +1244,7 @@ def supports_realtime(model: object) -> TypeIs[SupportsRealtime]: ...
 def supports_realtime(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsRealtime]] | TypeIs[SupportsRealtime]:
+    """Check if a model supports realtime streaming transcription."""
     return getattr(model, "supports_realtime", False)
 
 
@@ -1433,6 +1451,7 @@ def supports_transcription(model: object) -> TypeIs[SupportsTranscription]: ...
 def supports_transcription(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsTranscription]] | TypeIs[SupportsTranscription]:
+    """Check if a model supports audio transcription."""
     return getattr(model, "supports_transcription", False)
 
 
@@ -1547,6 +1566,7 @@ def supports_eagle(model: object) -> TypeIs[SupportsEagle]: ...
 def supports_eagle(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsEagle]] | TypeIs[SupportsEagle]:
+    """Check if a model supports EAGLE-1/EAGLE-2 speculative decoding."""
     return isinstance(model, SupportsEagle)
 
 
@@ -1623,6 +1643,7 @@ def supports_eagle3(model: object) -> TypeIs[SupportsEagle3]: ...
 def supports_eagle3(
     model: type[object] | object,
 ) -> TypeIs[type[SupportsEagle3]] | TypeIs[SupportsEagle3]:
+    """Check if a model supports EAGLE-3 speculative decoding."""
     return isinstance(model, SupportsEagle3)
 
 

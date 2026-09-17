@@ -14,6 +14,7 @@ from vllm.model_executor.models.transformers.fusers.packed_qkv import PackedQKVF
 from vllm.model_executor.models.transformers.fusers.qkv import QKVFuser
 from vllm.model_executor.models.transformers.fusers.rms_norm import RMSNormFuser
 
+# Export list for all re-exported fuser classes.
 __all__ = [
     "BaseFuser",
     "RewriteFuser",

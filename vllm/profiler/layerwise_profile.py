@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Layerwise profiling built on torch.profiler.profile. Records CPU and
+CUDA activity with module info, rebuilds a per-module event tree from
+the Kineto result, and exposes per-module CUDA time tables.
+"""
+
 import copy
 from collections import defaultdict
 from collections.abc import Callable
@@ -30,6 +35,10 @@ except ImportError:
 
 @dataclass
 class _ModuleTreeNode:
+    """Node in the module event tree built from the Kineto
+    event tree. Wraps one _ProfilerEvent and links parent/children
+    nodes; trace holds a torch op stack-trace string.
+    """
     event: _ProfilerEvent
     parent: "_ModuleTreeNode | None" = None
     children: list["_ModuleTreeNode"] = field(default_factory=list)
@@ -37,14 +46,19 @@ class _ModuleTreeNode:
 
     @property
     def is_leaf(self):
+        """True when the wrapped event has no children."""
         return self.event.children is None or len(self.event.children) == 0
 
     @property
     def is_torch_op(self):
+        """True when the wrapped event is a TorchOp event."""
         return event_is_torch_op(self.event)
 
     @property
     def is_cuda(self):
+        """True when the event is a Kineto event whose typed
+        payload reports device_type CUDA.
+        """
         return (
             self.event.tag == _EventType.Kineto
             and self.event.typed[1].device_type == DeviceType.CUDA
@@ -53,6 +67,10 @@ class _ModuleTreeNode:
 
 @dataclass
 class SummaryStatsEntry:
+    """Row of the summary stats table: name, cumulative CUDA
+    time in microseconds, percentage of total CUDA time, and
+    invocation count.
+    """
     name: str
     cuda_time_us: float
     pct_cuda_time: float
@@ -61,6 +79,10 @@ class SummaryStatsEntry:
 
 @dataclass
 class ModelStatsEntry:
+    """Row of the model stats table: module/op name, CPU time
+    in microseconds, CUDA time in microseconds, percentage of
+    total CUDA time, and a torch op stack trace.
+    """
     name: str
     cpu_time_us: float
     cuda_time_us: float
@@ -69,11 +91,18 @@ class ModelStatsEntry:
 
 
 StatsEntry: TypeAlias = ModelStatsEntry | SummaryStatsEntry
+# Union of the two stats-row dataclasses; parameterizes
+# _StatsTreeNode and the flatten/convert helpers.
 StatsEntryT = TypeVar("StatsEntryT", bound=StatsEntry)
+# TypeVar bound to the StatsEntry union; keeps _StatsTreeNode
+# and the tree traversal helpers generic over the row type.
 
 
 @dataclass
 class _StatsTreeNode(Generic[StatsEntryT]):
+    """Generic tree node holding one stats-row entry plus
+    children/parent links.
+    """
     entry: StatsEntryT
     children: list["_StatsTreeNode[StatsEntryT]"] = field(default_factory=list)
     parent: "_StatsTreeNode[StatsEntryT] | None" = None
@@ -81,6 +110,11 @@ class _StatsTreeNode(Generic[StatsEntryT]):
 
 @dataclass
 class LayerwiseProfileResults(profile):
+    """Holds profiling results: wraps a torch _ProfilerResult
+    (Kineto) and, in __post_init__, builds the correlation map,
+    the per-module event tree, and both stats trees. Exposes table
+    printing, CSV export, and dict conversion.
+    """
     _kineto_results: _ProfilerResult
     _kineto_event_correlation_map: dict[int, list[_KinetoEvent]] = field(init=False)
     _event_correlation_map: dict[int, list[FunctionEvent]] = field(init=False)
@@ -92,11 +126,17 @@ class LayerwiseProfileResults(profile):
     num_running_seqs: int | None = None
 
     def __post_init__(self):
+        """Build the derived structures: correlation map,
+        module tree, and both stats trees.
+        """
         self._build_correlation_map()
         self._build_module_tree()
         self._build_stats_trees()
 
     def print_model_table(self, column_widths: dict[str, int] | None = None):
+        """Print the model stats tree as a table, dropping rows
+        with zero CUDA and zero CPU time.
+        """
         _column_widths = dict(
             name=60, cpu_time_us=12, cuda_time_us=12, pct_cuda_time=12, trace=60
         )
@@ -115,6 +155,9 @@ class LayerwiseProfileResults(profile):
         )
 
     def print_summary_table(self, column_widths: dict[str, int] | None = None):
+        """Print the summary stats tree as a table, dropping
+        rows with zero CUDA time.
+        """
         _column_widths = dict(
             name=80, cuda_time_us=12, pct_cuda_time=12, invocations=15
         )
@@ -133,12 +176,18 @@ class LayerwiseProfileResults(profile):
         )
 
     def export_model_stats_table_csv(self, filename: str):
+        """Write the flattened model stats tree to a CSV file
+        via a pandas DataFrame (asdict per row).
+        """
         df = pd.DataFrame(
             [asdict(row) for _, row in self._flatten_stats_tree(self._model_stats_tree)]
         )
         df.to_csv(filename)
 
     def export_summary_stats_table_csv(self, filename: str):
+        """Write the flattened summary stats tree to a CSV file
+        via a pandas DataFrame (asdict per row).
+        """
         df = pd.DataFrame(
             [
                 asdict(row)
@@ -148,6 +197,9 @@ class LayerwiseProfileResults(profile):
         df.to_csv(filename)
 
     def convert_stats_to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict with num_running_seqs
+        metadata plus the summary and model stats trees.
+        """
         return {
             "metadata": {"num_running_seqs": self.num_running_seqs},
             "summary_stats": self._convert_stats_tree_to_dict(self._summary_stats_tree),
@@ -159,6 +211,10 @@ class LayerwiseProfileResults(profile):
         depths_rows: list[tuple[int, StatsEntryT]],
         indent_style: Callable[[int], str] | str = " ",
     ):
+        """Static helper: deep-copies each row, prefixes its name
+        with an indent derived from depth, and drops rows with
+        cuda_time_us == 0.
+        """
         indented_rows: list[StatsEntryT] = []
         for depth, row in depths_rows:
             if row.cuda_time_us == 0:
@@ -169,11 +225,19 @@ class LayerwiseProfileResults(profile):
         return indented_rows
 
     def _build_correlation_map(self):
+        """Index every Kineto event by correlation_id into
+        a defaultdict(list) for later lookup.
+        """
         self._kineto_event_correlation_map = defaultdict(list)
         for event in self._kineto_results.events():
             self._kineto_event_correlation_map[event.correlation_id()].append(event)
 
     def _build_module_tree(self):
+        """DFS over the Kineto experimental event tree to
+        build _module_tree: a node for each event carrying module
+        info, plus leaf nodes for torch ops under the nearest module
+        ancestor. Only events with start_tid == 1 are considered.
+        """
         self._module_tree = []
         event_tree = self._kineto_results.experimental_event_tree()
 
@@ -211,6 +275,9 @@ class LayerwiseProfileResults(profile):
             _df_traversal(root)
 
     def _get_kineto_gpu_event(self, node: _ModuleTreeNode):
+        """Look up the CUDA Kineto event correlated with a
+        module tree node.
+        """
         if node.event.tag != _EventType.Kineto:
             return None
         correlated_kineto_events = self._kineto_event_correlation_map.get(
@@ -238,9 +305,16 @@ class LayerwiseProfileResults(profile):
         return _cumulative_cuda_time_recursive(node)
 
     def _total_cuda_time(self):
+        """Sum of _cumulative_cuda_time over all module tree
+        roots; the denominator used for pct_cuda_time.
+        """
         return sum([self._cumulative_cuda_time(root) for root in self._module_tree])
 
     def _build_stats_trees(self):
+        """Populate _summary_stats_tree and _model_stats_tree
+        from _module_tree. Summary rows aggregate repeated module
+        paths; model rows are one node per module/op occurrence.
+        """
         summary_dict: dict[tuple[str, ...], _StatsTreeNode[SummaryStatsEntry]] = {}
         total_cuda_time = self._total_cuda_time()
 
@@ -340,6 +414,9 @@ class LayerwiseProfileResults(profile):
     def _flatten_stats_tree(
         self, tree: list[_StatsTreeNode[StatsEntryT]]
     ) -> list[tuple[int, StatsEntryT]]:
+        """DFS-flatten a stats tree into a list of (depth, entry)
+        pairs for table printing.
+        """
         entries: list[tuple[int, StatsEntryT]] = []
 
         def df_traversal(node: _StatsTreeNode[StatsEntryT], depth: int = 0):
@@ -355,6 +432,9 @@ class LayerwiseProfileResults(profile):
     def _convert_stats_tree_to_dict(
         self, tree: list[_StatsTreeNode[StatsEntryT]]
     ) -> list[dict[str, Any]]:
+        """DFS-convert a stats tree into a nested list of
+        {'entry': asdict, 'children': [...]} dicts.
+        """
         root_dicts: list[dict[str, Any]] = []
 
         def df_traversal(
@@ -371,6 +451,11 @@ class LayerwiseProfileResults(profile):
 
 
 class layerwise_profile(profile):
+    """Profiler context manager subclassing torch.profiler.profile.
+    Configures CPU+CUDA activities, record_shapes, with_stack,
+    with_modules, and a verbose _ExperimentalConfig. On __exit__
+    it builds a LayerwiseProfileResults from self.profiler.kineto_results.
+    """
     def __init__(self, num_running_seqs: int | None = None):
         """
         layerwise profile constructor.
@@ -394,6 +479,9 @@ class layerwise_profile(profile):
         return super().__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """End the torch profiler via super().__exit__, then
+        construct LayerwiseProfileResults from self.profiler.kineto_results.
+        """
         super().__exit__(exc_type, exc_val, exc_tb)
         self.results = LayerwiseProfileResults(
             self.profiler.kineto_results, num_running_seqs=self.num_running_seqs

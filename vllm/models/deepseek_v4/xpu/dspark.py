@@ -46,6 +46,11 @@ _EXPERT_SCALE_RE = re.compile(r"\.experts\.\d+\.w[123]\.scale$")
 
 
 class DSparkDeepseekV4Model(nn.Module):
+    """XPU DSpark draft model for DeepSeek-V4.
+
+    Replaces tilelang MHC kernels with platform-agnostic custom
+    ops.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None

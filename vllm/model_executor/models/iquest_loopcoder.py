@@ -58,6 +58,8 @@ from .utils import (
 
 
 class LoopCoderAttention(nn.Module):
+    """Multi-loop attention with global and sliding-window variants."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -178,6 +180,7 @@ class LoopCoderAttention(nn.Module):
         loop_idx: int,
         gate_proj: LoopGateProjection | None = None,
     ) -> torch.Tensor:
+        """Apply global attention for loop 0, gated mix for later loops."""
         if loop_idx == 0:
             attn = self.attn[0]
             qkv, _ = self.qkv_proj(hidden_states)
@@ -208,6 +211,8 @@ class LoopCoderAttention(nn.Module):
 
 
 class LoopCoderDecoderLayer(nn.Module):
+    """Decoder layer with loop attention, MLP, and residual norms."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -366,6 +371,8 @@ class LoopGateProjection(nn.Module):
     }
 )
 class IQuestLoopCoderModel(nn.Module):
+    """LoopCoder transformer with multi-loop attention and gate projections."""
+
     def __init__(
         self,
         *,
@@ -443,6 +450,7 @@ class IQuestLoopCoderModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Process input through looped decoder layers and gate projections."""
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
         else:
@@ -463,6 +471,7 @@ class IQuestLoopCoderModel(nn.Module):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights with stacked param mapping and gate projection handling."""
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -529,6 +538,8 @@ class IQuestLoopCoderModel(nn.Module):
 
 
 class IQuestLoopCoderForCausalLM(nn.Module):
+    """Causal LM head with weight tying and logits processor."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config

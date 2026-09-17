@@ -61,6 +61,8 @@ from .utils import (
 
 
 class InternS2MobiusProcessingInfo(InternS2PreviewProcessingInfo):
+    """ProcessingInfo for InternS2Mobius, inheriting from InternS2Preview."""
+
     pass
 
 
@@ -120,6 +122,7 @@ class InternS2MobiusMetaMoeBlock(nn.Module):
         hidden_states: torch.Tensor,
         already_sequence_parallel: bool = False,
     ) -> torch.Tensor:
+        """Route tokens through experts with sequence parallel support."""
         orig_shape = hidden_states.shape
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
@@ -142,6 +145,8 @@ class InternS2MobiusMetaMoeBlock(nn.Module):
 
 
 class InternS2MobiusSharedExpertBlock(nn.Module):
+    """Shared expert block with gated MLP used by all decoder layers."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
 
@@ -169,6 +174,8 @@ class InternS2MobiusSharedExpertBlock(nn.Module):
 
 
 class InternS2MobiusDecoderLayer(nn.Module):
+    """Decoder layer with linear or full attention, shared expert, and MoE."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -286,6 +293,8 @@ class InternS2MobiusDecoderLayer(nn.Module):
     }
 )
 class InternS2MobiusModel(nn.Module, EagleModelMixin):
+    """InternS2Mobius transformer with MoE banks and pipeline parallel support."""
+
     hf_to_vllm_mapper = Qwen3_5Model.hf_to_vllm_mapper
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
@@ -347,6 +356,7 @@ class InternS2MobiusModel(nn.Module, EagleModelMixin):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Process input through decoder layers with pipeline parallel support."""
         if get_pp_group().is_first_rank:
             hidden_states = (
                 inputs_embeds
@@ -409,6 +419,8 @@ class InternS2MobiusModel(nn.Module, EagleModelMixin):
 
 
 class InternS2MobiusForCausalLM(Qwen3_5ForCausalLMBase):
+    """Causal LM head with weight tying and mamba cache validation."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         config = vllm_config.model_config.hf_text_config
         self.vllm_config = vllm_config
@@ -448,6 +460,8 @@ class InternS2MobiusForCausalLM(Qwen3_5ForCausalLMBase):
 
 
 class InternS2MobiusMTP(Qwen3_5MoeMTP):
+    """Multi-token prediction head using draft model config."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         speculative_config = vllm_config.speculative_config
         if speculative_config is None or speculative_config.draft_model_config is None:
@@ -469,6 +483,8 @@ class InternS2MobiusMTP(Qwen3_5MoeMTP):
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
 class InternS2MobiusForConditionalGeneration(InternS2PreviewForConditionalGeneration):
+    """Multimodal conditional generation with Qwen3 vision tower and MoE LLM."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "model") -> None:
         nn.Module.__init__(self)
 
@@ -510,6 +526,7 @@ class InternS2MobiusForConditionalGeneration(InternS2PreviewForConditionalGenera
         self.set_moe_parameters()
 
     def set_moe_parameters(self) -> None:
+        """Extract MoE hyperparameters from the language model."""
         meta_mlp = self.language_model.model.meta_mlp
         if not meta_mlp:
             raise RuntimeError("Intern-S2-Mobius requires at least one MoE bank.")
@@ -530,6 +547,7 @@ class InternS2MobiusForConditionalGeneration(InternS2PreviewForConditionalGenera
         num_physical_experts: int,
         num_local_physical_experts: int,
     ) -> None:
+        """Update physical expert metadata for elastic load balancing."""
         assert self.num_local_physical_experts == num_local_physical_experts
         self.num_physical_experts = num_physical_experts
         self.num_local_physical_experts = num_local_physical_experts

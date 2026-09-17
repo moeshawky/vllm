@@ -77,6 +77,7 @@ logger = init_logger(__name__)
 
 
 class Ernie4_5_VLMoeMLP(Ernie4_5_MoeMLP):
+    """Gated MLP with optional shared experts that are added to the routed expert output."""
     def __init__(self, shared_experts: torch.nn.Module | None = None, **kwargs):
         super().__init__(**kwargs)
         self.shared_experts = shared_experts
@@ -89,6 +90,7 @@ class Ernie4_5_VLMoeMLP(Ernie4_5_MoeMLP):
 
 
 class Ernie4_5_VLMoeAttention(nn.Module):
+    """Multi-head attention using Ernie4_5_VLRotaryEmbedding for vision-language multimodal rotary positional encoding."""
     def __init__(
         self,
         hidden_size: int,
@@ -190,6 +192,7 @@ class Ernie4_5_VLMoeAttention(nn.Module):
 
 
 class Ernie4_5_VLMoeMoE(nn.Module):
+    """Mixture-of-experts layer with separate text and vision expert routers. Routes tokens to text or vision experts based on the visual_token_mask."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -383,6 +386,7 @@ class Ernie4_5_VLMoeMoE(nn.Module):
 
 
 class Ernie4_5_VLMoeDecoderLayer(nn.Module):
+    """Decoder layer with pre-LN normalization, multimodal rotary attention, and optional MoE MLP selected by layer index and interval."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -495,6 +499,7 @@ class Ernie4_5_VLMoeDecoderLayer(nn.Module):
 #         "visual_token_mask": 0,
 #     })
 class Ernie4_5_VLMoeModel(nn.Module):
+    """Full Ernie VL model with embedding, stacked decoder layers, and pipeline-parallel support. Tracks im_patch_id for vision tokens."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -577,6 +582,7 @@ class Ernie4_5_VLMoeModel(nn.Module):
 
 # only used as text backbone for ernie4.5-vl
 class Ernie4_5_VLMoeForCausalLM(nn.Module, SupportsPP):
+    """Causal language model wrapper around Ernie4_5_VLMoeModel with ParallelLMHead and logits processing."""
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

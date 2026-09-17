@@ -22,6 +22,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""TeleFLM causal LM model based on Llama structure with MuP scaling
+factors."""
 
 import torch
 import torch.nn as nn
@@ -36,6 +38,9 @@ from vllm.model_executor.models.llama import (
 
 
 class TeleFLMModel(LlamaModel):
+    """TeleFLM transformer model extending LlamaModel with MuP input
+    scaling for embedding."""
+
     def __init__(
         self,
         *,
@@ -43,6 +48,8 @@ class TeleFLMModel(LlamaModel):
         prefix: str = "",
         layer_type: type[nn.Module] = LlamaDecoderLayer,
     ):
+        """Initializes LlamaModel and configures MuP scaling factors if
+        use_mup is enabled."""
         super().__init__(vllm_config=vllm_config, prefix=prefix, layer_type=layer_type)
         """
         This implementation is based on the µScaling paper presented at  
@@ -58,6 +65,8 @@ class TeleFLMModel(LlamaModel):
             self.input_mult = self.config.input_mult
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Looks up token embeddings and optionally scales by
+        input_mult when MuP is enabled."""
         embedding = self.embed_tokens(input_ids)
         if self.use_mup:
             embedding = embedding * self.input_mult
@@ -65,7 +74,12 @@ class TeleFLMModel(LlamaModel):
 
 
 class TeleFLMForCausalLM(LlamaForCausalLM):
+    """Causal LM head for TeleFLM with MuP output scaling
+    for logits."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initializes LlamaForCausalLM and configures MuP scaling
+        factors and LogitsProcessor with output_mult scale."""
         super().__init__(vllm_config=vllm_config, prefix=prefix)
         # mup
         self.use_mup = self.config.use_mup

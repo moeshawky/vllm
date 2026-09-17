@@ -99,6 +99,12 @@ ImageInputs: TypeAlias = Idefics3ImagePixelInputs | Idefics3ImageEmbeddingInputs
 
 
 class Idefics3ProcessingInfo(BaseProcessingInfo):
+    """Processing info for Idefics3 multimodal inputs.
+
+    Computes image patch counts, grid dimensions, and prompt token
+    replacements for Idefics3 vision-language processing.
+    """
+
     def get_hf_processor(self, **kwargs: object) -> Idefics3Processor:
         return self.ctx.get_hf_processor(Idefics3Processor, **kwargs)
 
@@ -208,6 +214,8 @@ class Idefics3ProcessingInfo(BaseProcessingInfo):
 
 
 class Idefics3DummyInputsBuilder(BaseDummyInputsBuilder[Idefics3ProcessingInfo]):
+    """Builds dummy multimodal inputs for Idefics3 profiling."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
 
@@ -240,6 +248,12 @@ class Idefics3DummyInputsBuilder(BaseDummyInputsBuilder[Idefics3ProcessingInfo])
 
 
 class Idefics3MultiModalProcessor(BaseMultiModalProcessor[Idefics3ProcessingInfo]):
+    """Processes Idefics3 multimodal inputs through HuggingFace pipeline.
+
+    Applies the HuggingFace processor to images, computes patch counts,
+    and generates prompt updates for image token replacement.
+    """
+
     def _apply_hf_processor_main(
         self,
         mm_items: MultiModalDataItems,
@@ -349,6 +363,8 @@ class Idefics3MultiModalProcessor(BaseMultiModalProcessor[Idefics3ProcessingInfo
 
 
 class Idefics3SimpleMLP(nn.Module):
+    """Linear projection layer for Idefics3 modality alignment."""
+
     def __init__(
         self,
         config: Idefics3Config,
@@ -372,6 +388,12 @@ class Idefics3SimpleMLP(nn.Module):
 
 
 class Idefics3Connector(nn.Module):
+    """Connects Idefics3 vision features to the text model.
+
+    Applies pixel shuffling to reduce spatial resolution while increasing
+    channel depth, then projects to the text model's hidden size.
+    """
+
     def __init__(
         self,
         config: Idefics3Config,
@@ -387,6 +409,11 @@ class Idefics3Connector(nn.Module):
         )
 
     def pixel_shuffle(self, x: torch.Tensor, scale_factor: int = 2) -> torch.Tensor:
+        """Rearrange spatial dimensions into channel depth.
+
+        Scales the spatial resolution down by scale_factor and multiplies
+        channel depth by scale_factor squared.
+        """
         bsz, seq, embed_dim = x.size()
         height = width = int(seq**0.5)
         x = x.view(bsz, height, width, embed_dim)
@@ -403,12 +430,19 @@ class Idefics3Connector(nn.Module):
         return x
 
     def forward(self, image_hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply pixel shuffle and linear projection to image features."""
         image_hidden_states = self.pixel_shuffle(image_hidden_states, self.scale_factor)
         image_hidden_states = self.modality_projection(image_hidden_states)
         return image_hidden_states
 
 
 class Idefics3Model(nn.Module):
+    """Idefics3 vision-language model core.
+
+    Combines an Idefics2 vision transformer, a pixel-shuffle connector,
+    and a Llama text model for multimodal inference.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -443,6 +477,11 @@ class Idefics3Model(nn.Module):
         pixel_values: torch.Tensor,
         pixel_attention_mask: torch.Tensor,
     ) -> torch.Tensor:
+        """Encode image pixels through the vision transformer.
+
+        Removes padding images, computes patch-level attention masks,
+        and passes the result through the vision encoder.
+        """
         # NOTE: we skip the step to select the vision feature layer since
         # this is already done inside the vision tower
         pixel_values = pixel_values.to(
@@ -479,6 +518,7 @@ class Idefics3Model(nn.Module):
         return image_hidden_states
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed token IDs through the text model's embedding layer."""
         return self.text_model.embed_input_ids(input_ids)
 
     def forward(
@@ -488,6 +528,7 @@ class Idefics3Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the text model forward pass."""
         hidden_states = self.text_model(
             input_ids,
             positions,
@@ -503,6 +544,13 @@ class Idefics3Model(nn.Module):
     dummy_inputs=Idefics3DummyInputsBuilder,
 )
 class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLoRA):
+    """Idefics3 model for conditional generation with multimodal inputs.
+
+    Wraps the Idefics3Model with multimodal input processing, logit
+    computation, and weight loading. Supports both pixel values and
+    pre-computed image embeddings as input.
+    """
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -557,6 +605,7 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         self.logits_processor = LogitsProcessor(config.text_config.vocab_size)
 
     def _parse_and_validate_image_input(self, **kwargs: object) -> ImageInputs | None:
+        """Parse and validate raw image input kwargs into typed input objects."""
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -585,6 +634,7 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         raise AssertionError("This line should be unreachable.")
 
     def _process_image_pixels(self, inputs: Idefics3ImagePixelInputs) -> torch.Tensor:
+        """Encode raw pixel values through the vision encoder."""
         pixel_values = inputs["pixel_values"]
         pixel_attention_mask = inputs["pixel_attention_mask"]
 
@@ -597,6 +647,11 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         self,
         image_input: ImageInputs,
     ) -> torch.Tensor | list[torch.Tensor]:
+        """Process image input into per-image feature tensors.
+
+        Accepts either pre-computed embeddings or raw pixels, runs
+        through the connector, and splits by image.
+        """
         if image_input["type"] == "image_embeds":
             return image_input["data"]
 
@@ -607,6 +662,7 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         return [e.flatten(0, 1) for e in image_features.split(num_patches.tolist())]
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Parse image input and return multimodal embeddings."""
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -631,6 +687,7 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Compute output logits from hidden states."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
@@ -652,6 +709,7 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         self,
         num_image_tokens: int,
     ) -> int:
+        """Compute the number of tokens produced by the vision encoder."""
         hf_config = self.config
         scale_factor = hf_config.scale_factor
 
@@ -661,6 +719,7 @@ class Idefics3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsLo
         self,
         num_vision_tokens: int,
     ) -> int:
+        """Compute the number of tokens after the connector projection."""
         hf_config = self.config
         scale_factor = hf_config.scale_factor
 

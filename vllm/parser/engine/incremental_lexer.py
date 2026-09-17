@@ -9,11 +9,15 @@ from dataclasses import dataclass
 
 import regex as re
 
-CONTENT_TERMINAL = "__CONTENT__"
+CONTENT_TERMINAL = "__CONTENT__"  # Sentinel for unmatched content
 
 
 @dataclass(slots=True)
 class TerminalDef:
+    """Represents a terminal definition with a name, regex pattern,
+    and literal string.
+    """
+
     name: str
     pattern: re.Pattern[str]
     is_literal: bool = False
@@ -22,6 +26,10 @@ class TerminalDef:
 
 @dataclass(slots=True)
 class LexToken:
+    """Represents a token identified by the incremental lexer: terminal
+    name, value, and token count.
+    """
+
     terminal: str
     value: str
     token_count: int = 0
@@ -45,6 +53,9 @@ class LexerShape:
     )
 
     def __init__(self, terminals: list[TerminalDef]) -> None:
+        """Initialize LexerShape by sorting terminals and pre-computing
+        prefix sets.
+        """
         self.terminals = sorted(
             terminals,
             key=lambda t: (not t.is_literal, -len(t.pattern.pattern)),

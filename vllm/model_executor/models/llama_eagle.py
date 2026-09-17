@@ -28,6 +28,8 @@ logger = init_logger(__name__)
 
 
 class LlamaDecoderLayer(LlamaDecoderLayer):
+    """Eagle decoder layer with optional input layernorm skip."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -50,6 +52,8 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
 
 @support_torch_compile
 class LlamaModel(nn.Module):
+    """Eagle draft model for Llama with layer index offset."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -129,6 +133,8 @@ class LlamaModel(nn.Module):
 
 
 class EagleLlamaForCausalLM(LlamaForCausalLM):
+    """Eagle speculative decoder wrapper for Llama with separate lm_head."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
@@ -161,6 +167,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
         hidden_states: torch.Tensor,
         inputs_embeds: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run Eagle draft forward; multimodal inputs not supported."""
         if inputs_embeds is not None:
             raise NotImplementedError(
                 f"{type(self).__name__} does not support multimodal inputs yet."
@@ -168,6 +175,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
         return self.model(input_ids, positions, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        """Load weights with Eagle-specific name and weight processing."""
         def transform(inputs):
             name, loaded_weight = inputs
             if "lm_head" not in name:

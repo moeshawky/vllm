@@ -103,6 +103,7 @@ class Mamba2Model(nn.Module):
         quant_config = vllm_config.quant_config
         lora_config = vllm_config.lora_config
         is_lora_enabled = bool(lora_config)
+        # Mamba2 does not support LoRA.
         assert not is_lora_enabled
 
         self.config = config

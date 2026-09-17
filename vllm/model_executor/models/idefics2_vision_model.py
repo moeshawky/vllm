@@ -81,6 +81,9 @@ class Idefics2VisionEmbeddings(nn.Module):
         patch_attention_mask: torch.BoolTensor,
         tgt_sizes: torch.IntTensor | None = None,
     ) -> torch.Tensor:
+        """Patchify pixel values, compute variable-resolution position IDs
+        using bucketized fractional coordinates, and add positional
+        embeddings."""
         batch_size, _, max_im_h, max_im_w = pixel_values.shape
         target_dtype = self.patch_embedding.weight.dtype
         patch_embeds = self.patch_embedding(pixel_values.to(target_dtype))
@@ -182,6 +185,9 @@ class Idefics2VisionAttention(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Compute multi-head self-attention. Uses SDPA with mask when
+        attention_mask is provided, otherwise uses the unified
+        MMEncoderAttention."""
         qkv, _ = self.qkv_proj(
             hidden_states
         )  # batch_size, q_len, 3 * num_heads_per_partition * head_dim
@@ -220,6 +226,8 @@ class Idefics2VisionAttention(nn.Module):
 
 
 class Idefics2VisionMLP(nn.Module):
+    """Two-layer feed-forward network with configurable activation function."""
+
     def __init__(
         self,
         config: Idefics2VisionConfig,
@@ -249,6 +257,7 @@ class Idefics2VisionMLP(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply first linear layer, activation, and second linear layer."""
         hidden_states, _ = self.fc1(hidden_states)
         hidden_states = self.activation_fn(hidden_states)
         hidden_states, _ = self.fc2(hidden_states)
@@ -256,6 +265,8 @@ class Idefics2VisionMLP(nn.Module):
 
 
 class Idefics2EncoderLayer(nn.Module):
+    """A single encoder layer with pre-layer-norm self-attention and MLP."""
+
     def __init__(
         self,
         config: Idefics2Config,
@@ -359,6 +370,9 @@ class Idefics2Encoder(nn.Module):
 
 
 class Idefics2VisionTransformer(nn.Module):
+    """Idefics2 ViT encoder with variable-resolution embeddings, stacked
+    encoder layers, and optional post-layer-norm."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -424,6 +438,8 @@ class Idefics2VisionTransformer(nn.Module):
         patch_attention_mask: torch.BoolTensor | None = None,
         tgt_sizes: torch.IntTensor | None = None,
     ) -> torch.Tensor:
+        """Embed pixel values, run through the encoder stack with optional
+        attention masking, and apply post-layer-norm."""
         batch_size = pixel_values.size(0)
 
         if patch_attention_mask is None:
@@ -475,6 +491,8 @@ class Idefics2VisionTransformer(nn.Module):
         return last_hidden_state
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load checkpoint weights, filtering out layers beyond the configured
+        count."""
         loader = AutoWeightsLoader(self)
 
         layer_count = len(self.encoder.layers)

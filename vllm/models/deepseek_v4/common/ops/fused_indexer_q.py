@@ -8,7 +8,7 @@ from vllm.triton_utils import tl, triton
 from vllm.utils.import_utils import has_cutedsl
 
 # MXFP4: 32 elements per block, packed 2 nibbles per byte, ue8m0 block scale.
-MXFP4_BLOCK_SIZE = 32
+MXFP4_BLOCK_SIZE = 32  # 32 elements per MXFP4 block, packed 2 nibbles per byte with ue8m0 block scale.
 
 
 @triton.jit
@@ -374,6 +374,7 @@ def fused_indexer_q_rope_quant(
                 index_weights_out,
             )
         elif current_platform.is_xpu():
+            # XPU backend dispatch for DeepseekV4 fused indexer Q RoPE via custom torch.ops.
             torch.ops.vllm.xpu_deepseek_fused_indexer_q_rope_mxfp4(
                 index_q,
                 positions,
@@ -453,6 +454,7 @@ def fused_indexer_q_rope_quant(
             index_weights_out,
         )
     else:
+        # Non-cutedsl, non-XPU path launches the native Triton kernel directly.
         _fused_indexer_q_rope_quant_kernel[(num_tokens, num_index_q_heads)](
             positions,
             index_q,

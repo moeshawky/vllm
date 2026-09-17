@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Eagle speculative decoding models based on Mistral structure."""
 
 from collections.abc import Iterable
 

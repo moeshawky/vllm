@@ -7,6 +7,13 @@
 # Copyright (c) 2023 OpenGVLab
 # Licensed under The MIT License [see LICENSE for details]
 # --------------------------------------------------------
+"""InternVL multimodal model with vision-language processing.
+
+Provides image/video input schemas, processing info,
+dummy inputs builder, multimodal processor, and the
+main chat model class with encoder CUDA graph support.
+"""
+
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from functools import cached_property
@@ -346,6 +353,7 @@ class InternVLProcessingInfo(BaseInternVLProcessingInfo):
 
     @cached_property
     def ctx_video_token(self):
+        """Resolve the video token for the text model type, if supported."""
         text_model_type = self.get_hf_config().get_text_config().model_type
         ctx_video_token_map = {
             "qwen2": "<|video_pad|>",
@@ -387,6 +395,7 @@ class InternVLProcessingInfo(BaseInternVLProcessingInfo):
         )
 
     def get_supported_mm_limits(self):
+        """Return image and video limits based on video token availability."""
         video_limit = {"video": None} if self.ctx_video_token else {}
         return {**super().get_supported_mm_limits(), **video_limit}
 
@@ -395,6 +404,7 @@ class InternVLProcessingInfo(BaseInternVLProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> int:
+        """Compute the max frames per video given the sequence length budget."""
         max_images = mm_counts.get("image", 0)
         max_videos = mm_counts.get("video", 0)
 
@@ -458,6 +468,7 @@ class InternVLMultiModalProcessor(
         hf_processor_mm_kwargs: Mapping[str, object],
         processed_data: BatchFeature,
     ) -> BatchFeature:
+        """Postprocess multimodal data, adding video token ID if available."""
         processed_data = super()._postprocess_hf_mm_data(
             mm_data,
             hf_processor_mm_kwargs,
@@ -501,6 +512,7 @@ class InternVLMultiModalProcessor(
         hf_processor: InternVLProcessor,
         out_mm_data: BatchedTensorInputs,
     ):
+        """Build prompt replacement for video modality."""
         tokenizer = self.info.get_tokenizer()
 
         if "video_num_patches" in out_mm_data:
@@ -555,6 +567,8 @@ class InternVLChatModel(
     SupportsLoRA,
     SupportsEncoderCudaGraph,
 ):
+    """InternVL multimodal chat model with vision tower and encoder CUDA graph."""
+
     supports_encoder_tp_data = True
     supports_tower_connector_lora = True
 
@@ -631,6 +645,7 @@ class InternVLChatModel(
     def _patch_quant_config(
         self, config: PretrainedConfig, quant_config: QuantizationConfig
     ):
+        """Add vision_model to AWQ modules_to_not_convert if missing."""
         # the awq models from OpenGVLab missing `modules_to_not_convert`
         # patch the quant_config to add `modules_to_not_convert` back
         if isinstance(quant_config, AutoAWQConfig):
@@ -677,6 +692,7 @@ class InternVLChatModel(
         )
 
     def pixel_shuffle(self, x, scale_factor=0.5):
+        """Reshape and permute tensor dimensions to rearrange pixels."""
         n, w, h, c = x.size()
         # N, W, H, C --> N, W, H * scale, C // scale
         x = x.view(n, w, int(h * scale_factor), int(c / scale_factor))
@@ -918,6 +934,7 @@ class InternVLChatModel(
     # -- SupportsEncoderCudaGraph protocol methods --
 
     def get_encoder_cudagraph_config(self):
+        """Return encoder CUDA graph config for image and video modalities."""
         from vllm.v1.worker.encoder_cudagraph_defs import EncoderCudaGraphConfig
 
         return EncoderCudaGraphConfig(
@@ -1056,6 +1073,7 @@ class InternVLChatModel(
         values: dict[str, torch.Tensor],
         path: str = "default",
     ) -> torch.Tensor:
+        """Run vision encoder via captured CUDA graph on pixel_values_flat."""
         # The graph is always captured with pixel_values_flat as the input
         # buffer. During video replay the manager copies video tiles into
         # this same buffer before calling graph.replay(), so we always read
@@ -1069,6 +1087,7 @@ class InternVLChatModel(
         mm_kwargs: dict[str, Any],
         path: str = "default",
     ) -> torch.Tensor:
+        """Run vision encoder eagerly, selecting pixel buffer by modality."""
         if self.get_input_modality(mm_kwargs) == "image":
             pixel_values = mm_kwargs["pixel_values_flat"]
         else:

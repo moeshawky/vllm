@@ -49,6 +49,10 @@ from .utils import AutoWeightsLoader, PPMissingLayer, WeightsMapper, maybe_prefi
 
 
 class Glm4Attention(nn.Module):
+    """Attention module with QKV projection, rotary embeddings, and
+    optional Q/K norms. Uses partial rotary factor of 0.5.
+    """
+
     def __init__(
         self,
         config: Glm4Config,
@@ -130,6 +134,7 @@ class Glm4Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute attention with QKV projection, rotary embeddings, and output projection."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -139,6 +144,8 @@ class Glm4Attention(nn.Module):
 
 
 class Glm4DecoderLayer(nn.Module):
+    """Decoder layer with attention, MLP, and four RMS norms."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -188,6 +195,7 @@ class Glm4DecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run one decoder layer with pre/post-norm attention and MLP."""
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -223,6 +231,8 @@ ALL_DECODER_LAYER_TYPES = {
     }
 )
 class Glm4Model(LlamaModel):
+    """GLM-4 backbone built on LlamaModel with Glm4DecoderLayer."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__(
             vllm_config=vllm_config, prefix=prefix, layer_type=Glm4DecoderLayer
@@ -230,6 +240,8 @@ class Glm4Model(LlamaModel):
 
 
 class Glm4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """GLM-4 causal language model with LoRA and pipeline parallelism support."""
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],

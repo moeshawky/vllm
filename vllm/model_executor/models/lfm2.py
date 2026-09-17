@@ -47,6 +47,8 @@ from .utils import (
 
 
 class Lfm2MLP(nn.Module):
+    """FFN block with fused gate-up projection for LFM2."""
+
     def __init__(
         self,
         dim: int,
@@ -91,6 +93,8 @@ class Lfm2MLP(nn.Module):
 
 
 class Lfm2Attention(nn.Module):
+    """RoPE attention with QK normalization for LFM2."""
+
     def __init__(
         self,
         config: Lfm2Config,
@@ -182,6 +186,8 @@ class Lfm2Attention(nn.Module):
 
 
 class Lfm2AttentionDecoderLayer(nn.Module):
+    """Attention-based decoder layer for LFM2 with pre-norm structure."""
+
     def __init__(
         self,
         config: Lfm2Config,
@@ -240,6 +246,8 @@ class Lfm2AttentionDecoderLayer(nn.Module):
 
 
 class Lfm2ShortConvDecoderLayer(nn.Module):
+    """Short-convolution based decoder layer for LFM2 with pre-norm structure."""
+
     def __init__(
         self,
         config: Lfm2Config,
@@ -296,6 +304,8 @@ class Lfm2ShortConvDecoderLayer(nn.Module):
 
 @support_torch_compile
 class Lfm2Model(nn.Module):
+    """LFM2 hybrid backbone alternating attention and short-conv layers."""
+
     # HF uses .conv. but vLLM uses .short_conv. to avoid LoRA regex collision
     # with the inner .conv.conv child (ShortConv has a child self.conv, so
     # naming the container .conv too makes _match_target_modules match both).
@@ -395,6 +405,8 @@ class Lfm2Model(nn.Module):
 class Lfm2ForCausalLM(
     nn.Module, HasInnerState, SupportsLoRA, SupportsPP, IsHybrid, SupportsQuant
 ):
+    """LFM2 causal language model with hybrid attention and short-conv layers."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

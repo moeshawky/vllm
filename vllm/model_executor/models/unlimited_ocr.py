@@ -131,6 +131,8 @@ class UnlimitedOCRProcessingInfo(DeepseekOCRProcessingInfo):
     def get_num_image_tokens(
         self, *, image_width: int, image_height: int, cropping: bool = True
     ) -> int:
+        """Computes the number of image tokens for Unlimited-OCR accounting for global views, local crop views, and the 32-crop limit."""
+
         patch_size = 16
         downsample_ratio = 4
 
@@ -165,6 +167,8 @@ class UnlimitedOCRProcessingInfo(DeepseekOCRProcessingInfo):
         # With max_crops=32, the widest possible grid is 4×8 (aspect ratio 1:2).
         # A 2560×5120 image (4×640 × 8×640) selects exactly 4×8=32 tiles and
         # produces the maximum token count.
+        """Returns the maximum image size for Unlimited-OCR with max_crops=32, selecting the widest possible grid of 4x8 tiles."""
+
         return ImageSize(width=640 * 4, height=640 * 8)
 
 
@@ -230,6 +234,8 @@ class UnlimitedOCRMultiModalProcessor(DeepseekOCRMultiModalProcessor):
         # (no crop) requests. The processing cache assumes per-item output is
         # invariant of how many images are passed per prompt, so we only cache
         # the single-image case and recompute multi-image requests fresh.
+        """Bypasses the processing cache for multi-image requests (>1 image) and delegates to the parent class for single-image requests."""
+
         if inputs.mm_data_items.get_count("image", strict=False) > 1:
             return self._apply_hf_processor(inputs, timing_ctx)
 
@@ -242,5 +248,7 @@ class UnlimitedOCRMultiModalProcessor(DeepseekOCRMultiModalProcessor):
     dummy_inputs=DeepseekOCRDummyInputsBuilder,
 )
 class UnlimitedOCRForCausalLM(DeepseekOCRForCausalLM):
+    """Causal LM model for Unlimited-OCR extending DeepseekOCRForCausalLM with Unlimited-OCR-specific multimodal processor and processing info."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__(vllm_config=vllm_config, prefix=prefix)

@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""SPDX-licensed Voyage bidirectional embedding model for vLLM combining
+Qwen3Model with a Voyage embedding head.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -50,6 +54,7 @@ class VoyageQwen3BidirectionalEmbedModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embeds input token IDs through the underlying Qwen3Model."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -59,9 +64,13 @@ class VoyageQwen3BidirectionalEmbedModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass through the model applying bidirectional attention
+        and the linear embedding head.
+        """
         out = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return self.linear(out)
 
     def load_weights(self, weights: Iterable[WeightItem]) -> set[str]:
+        """Loads model weights using AutoWeightsLoader."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

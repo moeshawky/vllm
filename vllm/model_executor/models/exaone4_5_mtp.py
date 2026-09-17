@@ -43,6 +43,7 @@ KVCache = tuple[torch.Tensor, torch.Tensor]
 
 @support_torch_compile
 class Exaone4_5MultiTokenPredictor(ExaoneMoeMultiTokenPredictor):
+    """MTP predictor that normalizes embeddings and hidden states separately before concatenation, then projects through a column-parallel linear layer."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
 
@@ -106,6 +107,7 @@ class Exaone4_5MultiTokenPredictor(ExaoneMoeMultiTokenPredictor):
                 inputs_embeds = self.get_input_embeddings(input_ids)
             assert hidden_states.shape[-1] == inputs_embeds.shape[-1]
             inputs_embeds = self.pre_fc_norm_embedding(inputs_embeds)
+            # Applies RMSNorm to both embedding and hidden states before concatenation, unlike the base ExaoneMoeMultiTokenPredictor.
             hidden_states = self.pre_fc_norm_hidden(hidden_states)
             hidden_states = torch.cat([inputs_embeds, hidden_states], dim=-1)
             hidden_states = self.fc(hidden_states)
@@ -116,6 +118,7 @@ class Exaone4_5MultiTokenPredictor(ExaoneMoeMultiTokenPredictor):
             residual = intermediate_tensors["residual"]
 
         current_step_idx = spec_step_idx % self.num_mtp_layers
+        # Cycles through available MTP layers using modulo to support variable step indices with a fixed layer set.
         hidden_states, residual = self.layers[current_step_idx](
             positions=positions,
             hidden_states=hidden_states,
@@ -133,6 +136,7 @@ class Exaone4_5MultiTokenPredictor(ExaoneMoeMultiTokenPredictor):
 
 @support_torch_compile
 class Exaone4_5_MTP(ExaoneMoeMTP, SupportsMultiModal):
+    """Multimodal MTP model that merges vision embeddings with text tokens and remaps mtp-prefixed checkpoint weights to model-prefixed format."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         config = vllm_config.model_config.hf_config
         text_config = config.text_config
@@ -187,6 +191,7 @@ class Exaone4_5_MTP(ExaoneMoeMTP, SupportsMultiModal):
         shared_weight_names = ["embed_tokens", "lm_head"]
 
         def remap_weight_names(weights):
+        # Yields only mtp-prefixed and shared-weight (embed_tokens, lm_head) names, skipping all other parameters for loading.
             for name, weight in weights:
                 if name.startswith("mtp."):
                     name = name.replace("mtp.", "model.")

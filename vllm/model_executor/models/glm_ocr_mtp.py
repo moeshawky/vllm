@@ -55,6 +55,8 @@ from .utils import (
 
 
 class GlmOcrMultiTokenPredictorLayer(nn.Module):
+    """Single MTP predictor layer with embedding and previous-state fusion."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
 
@@ -84,6 +86,7 @@ class GlmOcrMultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Fuse embedding and previous hidden states, pass through decoder."""
         assert inputs_embeds is not None
         # masking inputs at position 0, as not needed by MTP
         inputs_embeds[positions[0] == 0] = 0
@@ -103,6 +106,8 @@ class GlmOcrMultiTokenPredictorLayer(nn.Module):
 
 
 class GlmOcrMultiTokenPredictor(Glm4MoeLiteMultiTokenPredictor):
+    """Collection of MTP layers selected round-robin by step index."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
         config = vllm_config.model_config.hf_config.text_config
@@ -128,6 +133,8 @@ class GlmOcrMultiTokenPredictor(Glm4MoeLiteMultiTokenPredictor):
 
 
 class GlmOcrMTP(nn.Module, SupportsPP):
+    """Draft model for speculative decoding with GLM-OCR."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config.text_config
@@ -155,6 +162,7 @@ class GlmOcrMTP(nn.Module, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Delegate to the underlying multi-token predictor."""
         hidden_states = self.model(
             input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
         )
@@ -165,9 +173,11 @@ class GlmOcrMTP(nn.Module, SupportsPP):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor | None:
+        """Delegate logits computation to the underlying predictor."""
         return self.model.compute_logits(hidden_states, spec_step_idx)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load checkpoint weights with spec layer name rewriting."""
         if self.quant_config is not None and (
             cache_scale_mapper := self.quant_config.get_cache_scale_mapper()
         ):

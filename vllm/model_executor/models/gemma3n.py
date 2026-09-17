@@ -15,6 +15,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Inference-only Gemma3n text model with alternating updates (AltUp) for
+sparse parameter scaling."""
+
 from collections.abc import Iterable
 
 import torch
@@ -80,6 +83,7 @@ class Gemma3nAltUp(nn.Module):
         quant_config: QuantizationConfig | None,
         prefix: str,
     ):
+        """Initialize the AltUp module with routing and projection layers."""
         super().__init__()
 
         self.altup_num_inputs = altup_num_inputs
@@ -127,11 +131,13 @@ class Gemma3nAltUp(nn.Module):
         return torch.tanh(routed.float()).type_as(x)
 
     def scale_corrected_output(self, corrected: torch.Tensor) -> torch.Tensor:
+        """Scale the corrected output using a learnable per-dimension scale factor."""
         return (
             corrected.type_as(self.correct_output_scale) * self.correct_output_scale
         ).type_as(corrected)
 
     def predict(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Predict hidden states for all AltUp inputs from the active input."""
         # hidden:       [altup_num_inputs, num_tokens, hidden_size]
         # modalities:   [num_tokens, num_altup_inputs]
         # all_coefs:    [num_tokens, num_altup_inputs ** 2]
@@ -158,6 +164,8 @@ class Gemma3nAltUp(nn.Module):
     def correct(
         self, predictions: torch.Tensor, activated: torch.Tensor
     ) -> torch.Tensor:
+        """Correct all AltUp inputs using the innovation between prediction and
+        activated state."""
         # predictions:  [altup_num_inputs, num_tokens, hidden_size]
         # activated:    [num_tokens, hidden_size]
         # modalities:   [num_tokens, altup_num_inputs]
@@ -194,6 +202,8 @@ class Gemma3nLaurelBlock(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str,
     ) -> None:
+        """Initialize the Laurel block with left and right linear projections and
+        normalization."""
         super().__init__()
 
         self.linear_left = ColumnParallelLinear(
@@ -218,6 +228,8 @@ class Gemma3nLaurelBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the Laurel transformation: project down, project up, normalize, add
+        residual."""
         laurel_x = self.linear_left(x)
         laurel_x = self.linear_right(laurel_x)
         normed_laurel_x = self.post_laurel_norm(laurel_x)
@@ -225,6 +237,9 @@ class Gemma3nLaurelBlock(nn.Module):
 
 
 class Gemma3nMLP(nn.Module):
+    """Feedforward network with GELU activation, supporting optional activation
+    sparsity."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -265,6 +280,8 @@ class Gemma3nMLP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the feedforward layer: gate and up projection, activation,
+        down projection."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -272,6 +289,8 @@ class Gemma3nMLP(nn.Module):
 
 
 class Gemma3nAttention(nn.Module):
+    """Multi-head attention with QKV projections, QKV normalization, and rotary embeddings."""
+
     def __init__(
         self,
         config: Gemma3nTextConfig,
@@ -403,6 +422,8 @@ class Gemma3nAttention(nn.Module):
         hidden_states: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        """Compute attention: project to QKV, normalize Q, K, V, apply rotary
+        embeddings, attend, project output."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
 
@@ -424,6 +445,9 @@ class Gemma3nAttention(nn.Module):
 
 
 class Gemma3nDecoderLayer(nn.Module):
+    """Decoder layer with AltUp, self-attention, MLP, Laurel block, and per-layer
+    input handling."""
+
     def __init__(
         self,
         config: Gemma3nTextConfig,
@@ -526,6 +550,8 @@ class Gemma3nDecoderLayer(nn.Module):
         per_layer_input: torch.Tensor,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply AltUp predict, attention, MLP, Laurel, AltUp correct, and
+        per-layer input gating."""
         # ActUp (predict).
         predictions = self.altup.predict(hidden_states)
         active_prediction = predictions[self.altup_active_idx]
@@ -706,6 +732,8 @@ class Gemma3nSelfDecoder(nn.Module):
         per_layer_inputs: torch.Tensor | None = None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Embed inputs, apply AltUp embedding, run self-decoder layers, return
+        hidden states."""
         if inputs_embeds is not None:
             hidden_states_0 = inputs_embeds
         else:
@@ -763,6 +791,7 @@ class Gemma3nCrossDecoder(nn.Module):
         per_layer_inputs: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        """Run cross-decoder layers on hidden states and per-layer inputs."""
         # [altnum_inputs, num_tokens, hidden_size]
         hidden_states = hidden_states.permute(2, 0, 1)
         for idx, layer in enumerate(self.decoder_layers):
@@ -784,6 +813,8 @@ class Gemma3nCrossDecoder(nn.Module):
     enable_if=lambda vllm_config: not vllm_config.cache_config.kv_sharing_fast_prefill
 )
 class Gemma3nTextModel(nn.Module, SupportsQuant):
+    """Gemma3n text model with self-decoder, cross-decoder, and AltUp unembedding."""
+
     # Decoder layers, altup_unembed_projections and norm live on the text
     # model; every other submodule lives under self_decoder.
     hf_to_vllm_mapper = WeightsMapper(
@@ -1031,6 +1062,8 @@ class Gemma3nTextModel(nn.Module, SupportsQuant):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the self-decoder and cross-decoder, apply AltUp unembedding,
+        normalize output."""
         if self.fast_prefill_enabled:
             hidden_states = self.fast_prefill_forward(
                 input_ids,
@@ -1051,11 +1084,14 @@ class Gemma3nTextModel(nn.Module, SupportsQuant):
         return self.norm(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from an iterable of name-value pairs."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 class Gemma3nForCausalLM(nn.Module):
+    """Causal language model wrapper around Gemma3nTextModel with a logits processor."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={
             "embed_audio.": None,
@@ -1102,6 +1138,7 @@ class Gemma3nForCausalLM(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the text model forward pass and return hidden states."""
         hidden_states = self.model(
             input_ids,
             positions,
@@ -1116,9 +1153,12 @@ class Gemma3nForCausalLM(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute output logits from hidden states using the embedding matrix as
+        weights."""
         logits = self.logits_processor(self.model.embed_tokens, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from an iterable of name-value pairs."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

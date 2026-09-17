@@ -15,6 +15,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Inference-only Gemma3 text model compatible with HuggingFace weights."""
+
 from collections.abc import Iterable
 from itertools import islice
 
@@ -61,6 +63,8 @@ logger = init_logger(__name__)
 
 
 class Gemma3MLP(nn.Module):
+    """Feedforward network with configurable activation and separate gate and up projections."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -87,6 +91,8 @@ class Gemma3MLP(nn.Module):
         self.act_fn = get_act_and_mul_fn(hidden_activation)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the feedforward layer: gate and up projection, activation,
+        down projection."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -94,6 +100,8 @@ class Gemma3MLP(nn.Module):
 
 
 class Gemma3Attention(nn.Module):
+    """Multi-head attention with QKV projections, QK normalization, and rotary embeddings."""
+
     def __init__(
         self,
         config: Gemma3TextConfig,
@@ -205,6 +213,8 @@ class Gemma3Attention(nn.Module):
         hidden_states: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        """Compute attention: project to QKV, normalize Q and K, apply rotary
+        embeddings, attend, project output."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
 
@@ -222,6 +232,8 @@ class Gemma3Attention(nn.Module):
 
 
 class Gemma3DecoderLayer(nn.Module):
+    """Decoder layer with self-attention, feedforward network, and RMSNorm layers."""
+
     def __init__(
         self,
         config: Gemma3TextConfig,
@@ -269,6 +281,8 @@ class Gemma3DecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply layer norm, self-attention, layer norm, feedforward network, and
+        layer norm."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -336,6 +350,7 @@ class Gemma3Model(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input tokens and scale by the square root of the hidden size."""
         # NOTE(woosuk): Only apply the normalizer to the output of
         # vocab embedding. Don't apply it to the vision embedding.
         return self.embed_tokens(input_ids) * self.normalizer

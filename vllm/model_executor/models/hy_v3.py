@@ -84,6 +84,8 @@ logger = init_logger(__name__)
 
 
 class HYV3FeedForward(nn.Module):
+    """SwiGLU feed-forward layer with separate gate and up projections."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -117,6 +119,7 @@ class HYV3FeedForward(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Apply gate-up projection, SwiGLU activation, and down projection."""
         gate_up, _ = self.gate_up_proj(x)
         out = self.act_fn(gate_up)
         out, _ = self.down_proj(out)
@@ -124,6 +127,9 @@ class HYV3FeedForward(nn.Module):
 
 
 class HYV3MoEFused(nn.Module):
+    """Fused mixture-of-experts layer with a sigmoid-gated router and
+    optional shared MLP for HYV3 MoE decoder layers."""
+
     def __init__(
         self,
         config: HYV3Config,
@@ -203,6 +209,8 @@ class HYV3MoEFused(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Route tokens through experts via sigmoid gating and
+        return the aggregated output."""
         orig_shape = hidden_states.shape
         hidden_dim = hidden_states.shape[-1]
         hidden_states = hidden_states.view(-1, hidden_dim)
@@ -217,6 +225,9 @@ class HYV3MoEFused(nn.Module):
 
 
 class HYV3Attention(nn.Module):
+    """Multi-head attention layer with fused QKV projection, RoPE, and optional
+    QK normalization. Uses HPC fused RoPE+QK-norm+KV-cache path when supported."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -328,6 +339,9 @@ class HYV3Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute attention with RoPE positional encoding. Routes through the
+        HPC fused RoPE+QK-norm path if available, otherwise applies norm and
+        RoPE separately."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         output_shape = None
@@ -359,6 +373,9 @@ class HYV3Attention(nn.Module):
 
 
 class HYV3DecoderLayer(nn.Module):
+    """A HYV3 transformer decoder layer. The first `first_k_dense_replace`
+    layers use dense SwiGLU FFN; subsequent layers use fused MoE."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -409,6 +426,8 @@ class HYV3DecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         idx: int = -1,
     ) -> torch.Tensor:
+        """Apply pre-norm attention and MoE/dense FFN sub-layers with residual
+        connections, returning updated hidden states and residual."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -429,6 +448,9 @@ class HYV3DecoderLayer(nn.Module):
 
 @support_torch_compile
 class HYV3Model(nn.Module, MixtureOfExperts):
+    """HYV3 transformer model with embedding, decoder layers, final norm, and
+    MoE metadata for expert parallelism."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -528,6 +550,8 @@ class HYV3Model(nn.Module, MixtureOfExperts):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Run the decoder stack and return final hidden states or intermediate
+        tensors for pipeline parallel ranks."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -556,6 +580,8 @@ class HYV3Model(nn.Module, MixtureOfExperts):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load and map checkpoint weights into model parameters, handling
+        stacked QKV/gate-up projections and per-expert MoE weights."""
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             (".qkv_proj", ".q_proj", "q"),
@@ -647,6 +673,9 @@ class HYV3Model(nn.Module, MixtureOfExperts):
 
 
 class HYV3ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
+    """Causal language model wrapper over HYV3Model with an LM head and logits
+    processor. Supports pipeline and tensor parallelism with LoRA."""
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -689,6 +718,7 @@ class HYV3ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Delegate to the underlying HYV3Model and return its output."""
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -699,10 +729,12 @@ class HYV3ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Apply the LM head and logits processor to obtain per-token logits."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load checkpoint weights, filtering out MTP spec layers for this model."""
         def _filter_weights(weights):
             for name, weight in weights:
                 spec_layer = get_spec_layer_idx_from_weight_name(self.config, name)
@@ -714,4 +746,5 @@ class HYV3ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         return loader.load_weights(_filter_weights(weights))
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        """Return expert parameter mapping from the wrapped model."""
         return self.model.get_expert_mapping()

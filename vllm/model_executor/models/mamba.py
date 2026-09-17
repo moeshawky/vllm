@@ -43,6 +43,7 @@ from .utils import (
 )
 
 KVCache = tuple[torch.Tensor, torch.Tensor]
+"""Type alias for the KV cache tuple used in Mamba state management."""
 
 
 class MambaDecoderLayer(nn.Module):
@@ -55,11 +56,14 @@ class MambaDecoderLayer(nn.Module):
         is_lora_enabled: bool | None = False,
         prefix: str = "",
     ) -> None:
+        """Initialize a Mamba decoder layer with mixer and RMSNorm."""
         super().__init__()
         self.config = config
+        # Flag for Falcon-Mamba variant which uses different mixer configuration
         self.is_falcon_mamba = config.model_type == "falcon_mamba"
         self.is_lora_enabled = is_lora_enabled
         mixer_rms_eps = config.mixer_rms_eps if self.is_falcon_mamba else None
+        # MambaMixer instance handling the state-space model computation
         self.mixer = MambaMixer(
             hidden_size=config.hidden_size,
             ssm_state_size=config.state_size,
@@ -78,6 +82,7 @@ class MambaDecoderLayer(nn.Module):
             prefix=f"{prefix}.mixer",
         )
 
+        # RMSNorm applied after the mixer in the decoder layer
         self.norm = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
     def forward(
@@ -86,6 +91,7 @@ class MambaDecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         **kwargs,
     ):
+        """Apply norm, mixer, and residual connection."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.norm(hidden_states)
@@ -100,6 +106,7 @@ class MambaDecoderLayer(nn.Module):
 @support_torch_compile
 class MambaModel(nn.Module):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize the Mamba backbone with embeddings and decoder layers."""
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -137,6 +144,7 @@ class MambaModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs into hidden state vectors."""
         return self.embeddings(input_ids)
 
     def forward(
@@ -146,6 +154,7 @@ class MambaModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Run forward pass through all Mamba decoder layers."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -176,6 +185,7 @@ class MambaForCausalLM(
     hf_to_vllm_mapper = WeightsMapper(orig_to_new_substr={".A_log": ".A"})
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize the Mamba causal LM model with backbone and LM head."""
         config = vllm_config.model_config.hf_config
 
         self.scheduler_config = vllm_config.scheduler_config
@@ -203,6 +213,7 @@ class MambaForCausalLM(
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs through the backbone."""
         return self.backbone.embed_input_ids(input_ids)
 
     def forward(
@@ -213,6 +224,7 @@ class MambaForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
+        """Run forward pass through the Mamba backbone."""
         hidden_states = self.backbone(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -224,6 +236,7 @@ class MambaForCausalLM(
         cls,
         vllm_config: "VllmConfig",
     ) -> tuple[torch.dtype, torch.dtype]:
+        """Calculate Mamba state dtypes from the vLLM config."""
         return MambaStateDtypeCalculator.mamba1_state_dtype(
             vllm_config.model_config.dtype,
             vllm_config.cache_config.mamba_cache_dtype,
@@ -235,6 +248,7 @@ class MambaForCausalLM(
         cls,
         vllm_config: "VllmConfig",
     ) -> tuple[tuple[int, int], tuple[int, int]]:
+        """Calculate Mamba state shapes from the vLLM config."""
         parallel_config = vllm_config.parallel_config
         hf_config = vllm_config.model_config.hf_config
 
@@ -247,18 +261,23 @@ class MambaForCausalLM(
 
     @classmethod
     def get_mamba_state_copy_func(cls) -> tuple[MambaStateCopyFunc, MambaStateCopyFunc]:
+        """Return Mamba state copy functions for state transfer."""
         return MambaStateCopyFuncCalculator.mamba1_state_copy_func()
 
     def copy_inputs_before_cuda_graphs(self, input_buffers, **kwargs):
+        """Copy input buffers before CUDA graph capture."""
         return self.mamba_cache.copy_inputs_before_cuda_graphs(input_buffers, **kwargs)
 
     def get_seqlen_agnostic_capture_inputs(self, batch_size: int):
+        """Get sequence-length-agnostic inputs for CUDA graph capture."""
         return self.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Compute output logits from hidden states."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights with HF-to-vLLM name mapping."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

@@ -16,6 +16,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Llama 4 multimodal model implementations with vision encoder, multi-modal
+projector, and Llama4ForCausalLM.
+"""
+
 import math
 from collections.abc import Iterable, Mapping
 from itertools import tee
@@ -184,6 +188,8 @@ class Llama4MultiModalProjector(nn.Module):
         return hidden_states
 
 
+# pixel_shuffle rearranges input tensor by reshaping patches and permuting
+# dimensions to increase spatial resolution.
 def pixel_shuffle(input_tensor, shuffle_ratio):
     # input_tensor: [batch_size, num_patches, channels]
     batch_size, num_patches, channels = input_tensor.shape

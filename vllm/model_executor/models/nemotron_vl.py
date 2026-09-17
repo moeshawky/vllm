@@ -48,6 +48,9 @@ from .utils import (
     maybe_prefix,
 )
 
+"""Inference-only Nemotron VL vision-language model with SigLIP or C-RADIO
+vision encoder."""
+
 
 class NemotronVLProcessingInfo(BaseInternVLProcessingInfo):
     """Processing info for Nemotron VL models."""

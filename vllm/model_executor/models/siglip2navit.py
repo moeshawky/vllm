@@ -33,12 +33,18 @@ from .vision import is_vit_use_data_parallel
 
 
 class VisionRotaryEmbedding(nn.Module):
+    """Computes and caches inverse frequency tensors
+    for rotary position embeddings in vision models."""
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
+        """Initializes VisionRotaryEmbedding with inverse frequency
+        buffer computed from dimension and theta."""
         super().__init__()
         inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float) / dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
+        """Generates rotary frequency tensor for a given
+        sequence length."""
         seq = torch.arange(
             seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
@@ -47,7 +53,13 @@ class VisionRotaryEmbedding(nn.Module):
 
 
 class Siglip2VisionEmbeddings(nn.Module):
+    """Implements patch embedding and optional position
+    embedding with grid-based positional encoding for
+    SigLIP-2 vision inputs."""
     def __init__(self, config: PretrainedConfig):
+        """Initializes Siglip2VisionEmbeddings with either
+        ReplicatedLinear or Conv2dLayer patch embedding
+        and optional position embedding."""
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -156,6 +168,8 @@ def apply_rotary_pos_emb(
     is_flash_attn_backend: bool,
     apply_rotary_emb: ApplyRotaryEmb,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Applies rotary position embeddings to query and
+    key tensors using platform-specific backend functions."""
     cos = cos.chunk(2, dim=-1)[0].contiguous()
     sin = sin.chunk(2, dim=-1)[0].contiguous()
 
@@ -181,6 +195,8 @@ class Siglip2Attention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initializes Siglip2NavitModel with a
+        Siglip2VisionTransformer."""
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -277,12 +293,16 @@ class Siglip2Attention(nn.Module):
 
 
 class Siglip2MLP(nn.Module):
+    """Implements a feed-forward network with ColumnParallelLinear
+    and RowParallelLinear using activation function."""
     def __init__(
         self,
         config: Siglip2VisionConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initializes Siglip2MLP with fc1 and fc2 linear layers
+        and activation function; configures tensor parallelism."""
         super().__init__()
         self.config = config
         use_data_parallel = is_vit_use_data_parallel()
@@ -303,6 +323,7 @@ class Siglip2MLP(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Applies fc1, activation, and fc2 sequentially."""
         hidden_states, _ = self.fc1(hidden_states)
         hidden_states = self.activation_fn(hidden_states)
         hidden_states, _ = self.fc2(hidden_states)
@@ -310,12 +331,16 @@ class Siglip2MLP(nn.Module):
 
 
 class Siglip2EncoderLayer(nn.Module):
+    """Implements a single vision encoder layer with
+    self-attention and MLP with residual connections."""
     def __init__(
         self,
         config: Siglip2VisionConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initializes Siglip2EncoderLayer with Siglip2Attention,
+        LayerNorm, and Siglip2MLP."""
         super().__init__()
         self.embed_dim = config.hidden_size
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
@@ -375,6 +400,9 @@ class Siglip2Encoder(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initializes Siglip2Encoder with ModuleList of
+        Siglip2EncoderLayer blocks and rotary positional
+        embedding configuration."""
         super().__init__()
         self.config = config
         self.layers = nn.ModuleList(
@@ -404,6 +432,8 @@ class Siglip2Encoder(nn.Module):
 
     # copied from qwen2.5_vl
     def rot_pos_emb(self, grid_thw):
+        """Computes rotary positional embeddings from
+        grid dimensions."""
         pos_ids = []
         for t, h, w in grid_thw:
             hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -433,6 +463,8 @@ class Siglip2Encoder(nn.Module):
         return rotary_pos_emb
 
     def get_window_index(self, grid_thw):
+        """Computes window indices and cumulative
+        sequence lengths for windowed attention."""
         window_index: list = []
         cu_window_seqlens: list = [0]
         window_index_id = 0
@@ -551,12 +583,16 @@ class Siglip2Encoder(nn.Module):
 
 
 class Siglip2VisionTransformer(nn.Module):
+    """Implements the full vision transformer with
+    embeddings, encoder, and post-layer norm."""
     def __init__(
         self,
         config: Siglip2VisionConfig,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initializes Siglip2VisionTransformer with
+        Siglip2VisionEmbeddings and Siglip2Encoder."""
         super().__init__()
         self.config = config
         embed_dim = config.hidden_size
@@ -587,6 +623,8 @@ class Siglip2VisionTransformer(nn.Module):
 
 
 class Siglip2NavitModel(torch.nn.Module):
+    """Wraps Siglip2VisionTransformer for vision-only models,
+    providing forward and weight loading."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -614,11 +652,15 @@ class Siglip2NavitModel(torch.nn.Module):
         pixel_values: torch.FloatTensor,
         grid_thws: torch.LongTensor,
     ) -> torch.Tensor:
+        """Delegates to the vision model's forward
+        method."""
         return self.vision_model(
             pixel_values=pixel_values,
             grid_thws=grid_thws,
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Loads HF weights using AutoWeightsLoader
+        with the hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

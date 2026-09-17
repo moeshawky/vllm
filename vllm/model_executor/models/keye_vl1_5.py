@@ -200,6 +200,8 @@ KeyeVL1_5VideoInputs: TypeAlias = (
 
 
 class KeyeVL1_5Projector(nn.Module):
+    """Projects 2x2 patch-merged visual features to language model dimension."""
+
     def __init__(
         self,
         text_config: PretrainedConfig,
@@ -322,6 +324,8 @@ def _keye_field_config(
 
 
 class KeyeVL1_5MultiModalDataParser(MultiModalDataParser):
+    """Parses image and video data into embedding items."""
+
     # The patch grid is what sizes the placeholder range.
     embedding_fields = {
         "image": {"image_embeds": "values", "image_grid_thw": "metadata"},
@@ -362,6 +366,8 @@ class KeyeVL1_5MultiModalDataParser(MultiModalDataParser):
 
 
 class KeyeVL1_5ProcessingInfo(KeyeProcessingInfo):
+    """Processing info for Keye VL 1.5 with video support."""
+
     def get_data_parser(self):
         return KeyeVL1_5MultiModalDataParser(
             expected_hidden_size=self._get_expected_hidden_size(),
@@ -378,6 +384,8 @@ class KeyeVL1_5ProcessingInfo(KeyeProcessingInfo):
 
 
 class KeyeVL1_5MultiModalProcessor(BaseMultiModalProcessor[KeyeVL1_5ProcessingInfo]):
+    """Multimodal processor with video timestamp and frame type handling."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -512,6 +520,8 @@ class KeyeVL1_5DummyInputsBuilder(
 class KeyeVL1_5ForConditionalGeneration(
     BaseKeyeModule, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE
 ):
+    """Keye VL 1.5 multimodal model with M-RoPE position computation."""
+
     def _build_projector(
         self,
         text_config: PretrainedConfig,

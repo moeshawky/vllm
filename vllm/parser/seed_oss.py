@@ -21,6 +21,9 @@ from vllm.parser.qwen3 import Qwen3Parser
 
 
 class SeedOssParser(Qwen3Parser):
+    """seed_oss parser using the same XML grammar as Qwen3 with
+    different wrapper token strings.
+    """
     CONFIG_NAME = "seed_oss"
     THINK_START = "<seed:think>"
     THINK_END = "</seed:think>"

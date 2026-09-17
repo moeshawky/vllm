@@ -49,7 +49,7 @@ logger = init_logger(__name__)
 # Gemma4 argument parser
 # ---------------------------------------------------------------------------
 
-_PARTIAL_DELIM_SUFFIXES = tuple(
+_PARTIAL_DELIM_SUFFIXES = tuple(  # Pre-computed suffixes for stripping incomplete delimiters
     STRING_DELIM[:k] for k in range(len(STRING_DELIM), 0, -1)
 )
 
@@ -294,6 +294,8 @@ def _gemma4_arg_converter(raw_args: str, partial: bool) -> str:
 
 @functools.cache
 def gemma4_config() -> ParserEngineConfig:
+    """Return a ParserEngineConfig for the Gemma4 output format with
+    channel-based reasoning and custom tool calls."""
     return ParserEngineConfig(
         name="gemma4",
         initial_state=ParserState.CONTENT,
@@ -389,7 +391,7 @@ def gemma4_config() -> ParserEngineConfig:
     )
 
 
-_GEMMA4_THOUGHT_PREFIX = "thought\n"
+_GEMMA4_THOUGHT_PREFIX = "thought\n"  # Stripped from reasoning during _events_to_delta
 _GEMMA4_THOUGHT_TOKEN = "thought"
 
 
@@ -408,6 +410,8 @@ class Gemma4Parser(ParserEngine):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the Gemma4Parser. Sets up thinking enabled, token IDs,
+        and streaming state."""
         chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
         self._thinking_enabled = chat_kwargs.get("enable_thinking", False)
         super().__init__(
@@ -425,6 +429,8 @@ class Gemma4Parser(ParserEngine):
         self._is_first_feed: bool = True
 
     def _reset(self, initial_state=None) -> None:
+        """Reset the parser state including reasoning text and prefix
+        stripping flags."""
         super()._reset(initial_state=initial_state)
         self._reasoning_text = ""
         self._prefix_stripped = False
@@ -435,6 +441,8 @@ class Gemma4Parser(ParserEngine):
         delta_text: str,
         delta_token_ids: Sequence[int],
     ) -> tuple[str, Sequence[int]]:
+        """Pre-process the first feed by injecting <|channel|> if
+        the prompt starts with thought without the channel marker."""
         if not self._is_first_feed:
             return delta_text, delta_token_ids
         self._is_first_feed = False
@@ -465,6 +473,8 @@ class Gemma4Parser(ParserEngine):
         return delta_text, delta_token_ids
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        """Check if reasoning has ended by scanning for start, end,
+        tool_call, turn, and response token IDs."""
         end_id = self._reasoning_end_token_id
         start_id = self._reasoning_start_token_id
         tool_call_id = self._tool_call_token_id
@@ -541,6 +551,8 @@ class Gemma4Parser(ParserEngine):
         events: list[SemanticEvent],
         finished: bool = False,
     ) -> DeltaMessage | None:
+        """Convert events to DeltaMessage, stripping the 'thought\\n'
+        prefix from reasoning content."""
         delta = super()._events_to_delta(events, finished=finished)
         if delta is None or delta.reasoning is None:
             return delta
@@ -583,6 +595,8 @@ class Gemma4Parser(ParserEngine):
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning from model output, stripping the
+        thought prefix."""
         reasoning, content = super().extract_reasoning(model_output, request)
         if reasoning:
             if reasoning.startswith(_GEMMA4_THOUGHT_PREFIX):

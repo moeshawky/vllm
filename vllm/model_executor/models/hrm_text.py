@@ -51,6 +51,12 @@ from .utils import AutoWeightsLoader, WeightsMapper, maybe_prefix
 
 
 class HrmTextMLP(nn.Module):
+    """SwiGLU feed-forward network with fused gate-up projection.
+
+    Uses tensor-parallel linear layers with SiLU activation. Only silu
+    hidden_act is supported.
+    """
+
     def __init__(
         self,
         hidden_size: int,
@@ -244,6 +250,13 @@ class HrmTextAttention(nn.Module):
 
 
 class HrmTextDecoderLayer(nn.Module):
+    """Transformer decoder layer with parameterless RMSNorm.
+
+    Uses HrmTextAttention and HrmTextMLP with RMSNorm layers that have
+    no learned weight (has_weight=False), matching the HF main
+    implementation.
+    """
+
     def __init__(
         self,
         config: PretrainedConfig,

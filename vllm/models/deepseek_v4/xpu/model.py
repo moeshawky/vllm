@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""XPU implementation of DeepSeek V4 model components.
+
+Includes MLP, MoE experts, decoder layers, and the causal LM
+model. Provides Triton kernels for MegaMoE input staging, custom
+DeepGEMM operators, and the full model forward path with
+hyper-connections.
+"""
 import typing
 from collections.abc import Callable, Iterable
 from itertools import islice
@@ -66,6 +73,9 @@ from vllm.utils.torch_utils import direct_register_custom_op
 
 
 class DeepseekV4MLP(nn.Module):
+    """Multi-layer perceptron with gate-up projection,
+    activation, and down projection for DeepSeek V4.
+    """
     def __init__(
         self,
         hidden_size: int,
@@ -280,6 +290,7 @@ def _stage_deepseek_v4_mega_moe_inputs(
 def make_deepseek_v4_expert_params_mapping(
     num_experts: int,
 ) -> list[tuple[str, str, int, str]]:
+    """Creates expert parameter name mappings for DeepSeek V4 MoE."""
     return [
         (
             "experts.w13_" if shard_id in ("w1", "w3") else "experts.w2_",
@@ -297,6 +308,9 @@ def make_deepseek_v4_expert_params_mapping(
 
 
 class DeepseekV4MegaMoEExperts(nn.Module):
+    """DeepSeek V4 MegaMoE expert module with DeepGEMM integration
+    for fp8/fp4 expert computation.
+    """
     _symm_buffer_cache: dict[tuple[int, int, int, int, int, int, int], object] = {}
 
     def __init__(
@@ -599,6 +613,9 @@ direct_register_custom_op(
 
 
 class DeepseekV4MoE(nn.Module):
+    """Mixture-of-Experts layer for DeepSeek V4 on XPU, supporting
+    both MegaMoE and fused MoE backends.
+    """
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -806,6 +823,9 @@ class DeepseekV4MoE(nn.Module):
 
 
 class DeepseekV4DecoderLayer(nn.Module):
+    """Decoder layer for DeepSeek V4 on XPU with hyper-connections
+    and custom attention.
+    """
     def __init__(
         self,
         vllm_config,
@@ -970,6 +990,9 @@ class DeepseekV4DecoderLayer(nn.Module):
 
 
 class DeepseekV4Model(nn.Module, EagleModelMixin):
+    """DeepSeek V4 model on XPU with pipeline parallel, hyper-
+    connections, and MTP hidden state support.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -1267,6 +1290,9 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
 
 
 def _make_deepseek_v4_weights_mapper(expert_dtype: str) -> WeightsMapper:
+    """Creates a WeightsMapper for DeepSeek V4 checkpoint format
+    with expert-dtype-aware scale regex.
+    """
     if expert_dtype == "fp4":
         # MXFP4 experts use Mxfp4MoEMethod, which registers scales as
         # ``w{1,2,3}_weight_scale`` (no _inv suffix). FP8 linear and
@@ -1305,6 +1331,9 @@ def _make_deepseek_v4_weights_mapper(expert_dtype: str) -> WeightsMapper:
 
 
 class DeepseekV4ForCausalLM(nn.Module, SupportsPP, SupportsEagle3):
+    """DeepSeek V4 causal LM model with pipeline parallel and
+    speculative decoding support.
+    """
     model_cls = DeepseekV4Model
 
     # Default mapper assumes the original FP4-expert checkpoint layout.

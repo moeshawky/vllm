@@ -47,10 +47,13 @@ _ARG_RE = re.compile(
     re.DOTALL,
 )
 _PARTIAL_ARG_RE = re.compile(
-    r"<arg_key>(?P<key>.*?)</arg_key>\s*"
-    r"<arg_value>(?P<value>.*)$",
+    r"<arg_key>(?P<key>.*?)£\s*"
+    r"</think>(?P<value>.*)$",
     re.DOTALL,
 )
+# _ARG_RE and _PARTIAL_ARG_RE match GLM-4.7's XML-like
+# argument tag format: key-value pairs wrapped in
+# special markers.
 
 
 def _glm47_arg_converter(raw_args: str, partial: bool) -> str:
@@ -72,6 +75,8 @@ def _glm47_arg_converter(raw_args: str, partial: bool) -> str:
 
 @functools.cache
 def glm47_moe_config(thinking: bool = True) -> ParserEngineConfig:
+    """Return a cached ParserEngineConfig for GLM-4.7 XML-style
+    tool calls."""
     arg_tag_transitions = {
         (ParserState.TOOL_ARGS, terminal): Transition(
             ParserState.TOOL_ARGS,
@@ -181,6 +186,8 @@ class Glm47MoeParser(ParserEngine):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
+        """Initialize the Glm47MoeParser. Sets thinking_enabled and
+        parser_engine_config."""
         chat_kwargs = kwargs.get("chat_template_kwargs", {}) or {}
         thinking = chat_kwargs.get("thinking", None)
         enable_thinking = chat_kwargs.get("enable_thinking", None)
@@ -196,22 +203,30 @@ class Glm47MoeParser(ParserEngine):
         super().__init__(tokenizer, tools, **kwargs)
 
     def _emit_name_delta(self, idx: int, deltas, name: str | None) -> None:
+        """Emit name delta, stripping whitespace from the name
+        before calling parent."""
         if name is not None:
             name = name.strip()
         super()._emit_name_delta(idx, deltas, name)
 
     def _handle_tool_end(self, event, deltas) -> None:
+        """Handle tool end by stripping whitespace from the
+        tool name."""
         idx = event.tool_index
         if 0 <= idx < len(self._tool_slots):
             self._tool_slots[idx].name = self._tool_slots[idx].name.strip()
         super()._handle_tool_end(event, deltas)
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
+        """Check if reasoning has ended. If thinking is disabled,
+        returns True."""
         if not self.thinking_enabled:
             return True
         return super().is_reasoning_end(input_ids)
 
     def extract_content_ids(self, input_ids: list[int]) -> list[int]:
+        """Extract content token IDs after reasoning end if
+        thinking is enabled."""
         if not self.thinking_enabled:
             return input_ids
         return super().extract_content_ids(input_ids)
@@ -221,6 +236,8 @@ class Glm47MoeParser(ParserEngine):
         model_output: str,
         request: ChatCompletionRequest | ResponsesRequest,
     ) -> tuple[str | None, str | None]:
+        """Extract reasoning from model output. Returns None if
+        thinking is disabled."""
         if not self.thinking_enabled:
             return None, model_output
         return super().extract_reasoning(model_output, request)

@@ -43,6 +43,12 @@ logger = init_logger(__name__)
 
 
 def _get_dflash_layer_types(config) -> tuple[str, ...]:
+    """Validate and return the uniform layer types for the DFlash drafter.
+
+    Raises:
+        ValueError: If layer_types is missing or has the wrong length.
+        NotImplementedError: If layer_types contains mixed attention flavors.
+    """
     layer_types = getattr(config, "layer_types", None)
     if layer_types is None:
         raise ValueError("Laguna DFlash config requires `layer_types`.")
@@ -62,6 +68,12 @@ def _get_dflash_layer_types(config) -> tuple[str, ...]:
 
 @support_torch_compile
 class DFlashLagunaModel(DFlashQwen3Model, EagleModelMixin):
+    """DFlash drafter model for Laguna targets with uniform layer types.
+
+    Inserts verifier-context K/V at absolute cache slots and disables
+    sliding-window attention to support absolute cache placement.
+    """
+
     def __init__(
         self,
         *,
@@ -95,7 +107,7 @@ class DFlashLagunaModel(DFlashQwen3Model, EagleModelMixin):
             ),
             persistent=False,
         )
-        self.has_separate_mask_embedding = False
+        self.has_separate_mask_embedding = False  # Shares embedding with target
 
         self.layer_types = _get_dflash_layer_types(self.config)
         target_layer_count = self.config.target_layer_count
@@ -242,6 +254,12 @@ class DFlashLagunaModel(DFlashQwen3Model, EagleModelMixin):
 
 
 class DFlashLagunaForCausalLM(nn.Module, SupportsEagle3):
+    """Laguna DFlash speculative decoder wrapper.
+
+    Shares the target model's token embedding and lm_head weights.
+    Requires draft_vocab_size to match the target vocabulary.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
         self.config = vllm_config.speculative_config.draft_model_config.hf_config

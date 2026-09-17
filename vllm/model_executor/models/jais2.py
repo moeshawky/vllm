@@ -66,6 +66,8 @@ from .utils import (
 
 
 class Jais2MLP(nn.Module):
+    """Two-layer MLP with ReLU squared activation."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -100,6 +102,8 @@ class Jais2MLP(nn.Module):
 
 
 class Jais2Attention(nn.Module):
+    """Attention layer with QKV projection and optional sliding window."""
+
     def __init__(
         self,
         config: Jais2Config,
@@ -194,6 +198,7 @@ class Jais2Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply QKV projection, rotary embeddings, attention, and output projection."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -203,6 +208,8 @@ class Jais2Attention(nn.Module):
 
 
 class Jais2DecoderLayer(nn.Module):
+    """Decoder layer with attention, MLP, and residual layer norms."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -284,6 +291,8 @@ class Jais2DecoderLayer(nn.Module):
 
 @support_torch_compile
 class Jais2Model(nn.Module):
+    """Jais2 transformer model with decoder layers and embedding."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -364,6 +373,8 @@ class Jais2Model(nn.Module):
 
 
 class Jais2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """Causal LM head with weight tying and logit scaling."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -415,6 +426,7 @@ class Jais2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         return Jais2Model(vllm_config=vllm_config, prefix=prefix)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input tokens using the model's embedding layer."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -433,6 +445,7 @@ class Jais2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states using the LM head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 

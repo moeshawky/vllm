@@ -54,11 +54,15 @@ if TYPE_CHECKING:
 # Gate / expert selection
 # ---------------------------------------------------------------------------
 
+# Maximum tokens for the LL BF16 fast path in _linear_with_fp32_out.
 _INKLING_LL_BF16_MAX_TOKENS = 64
+# Denominator for MXFP4 input scale computation.
 _MXFP4_INPUT_SCALE_DENOMINATOR = torch.finfo(torch.float8_e4m3fn).max * 6.0
 
 
 def _linear_with_fp32_out(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """Linear layer with FP32 output, using a fast Triton path
+    for small BF16 tensors on SM90+."""
     leading = list(x.shape[:-1])
     flat = x.flatten(0, -2)
     if (
@@ -96,6 +100,7 @@ def _inkling_gate_select_kernel(
     HAS_GSCALE: tl.constexpr,
     BLOCK_G: tl.constexpr,
 ):
+    """Triton kernel for sigmoid gate selection with bias, top-k, log-sigmoid renorm."""
     pid = tl.program_id(0).to(tl.int64)
     if pid >= T:
         return
@@ -235,6 +240,7 @@ class InklingGate(nn.Module):
 
     @staticmethod
     def _load_weight(param: Parameter, loaded_weight: torch.Tensor) -> None:
+        """Loads a gate weight tensor by zeroing and copying into the parameter."""
         param.data.zero_()
         param.data[: loaded_weight.shape[0]].copy_(loaded_weight)
 
@@ -381,6 +387,8 @@ class InklingSinkExpertsLinear(nn.Module):
         self._col_expert: torch.Tensor | None = None
 
     def _gamma_expand(self, gammas: torch.Tensor) -> torch.Tensor:
+        """Expands gamma values to match the TP-sharded column
+        layout for the w2 projection."""
         if self._col_expert is None or self._col_expert.device != gammas.device:
             local = self._w2_input_pp
             start = get_tensor_model_parallel_rank() * local
@@ -401,6 +409,8 @@ class InklingSinkExpertsLinear(nn.Module):
         return ["w2.weight"]
 
     def forward(self, x: torch.Tensor, gammas: torch.Tensor) -> torch.Tensor:
+        """Forward pass applying w13 gate/up, silu, gamma
+        expansion, and w2 projection."""
         gate_up, _ = self.w13(x)
         gate, up = gate_up.chunk(2, dim=-1)
         hidden_states = torch.nn.functional.silu(gate) * up
@@ -410,6 +420,9 @@ class InklingSinkExpertsLinear(nn.Module):
 
 
 class InklingMoE(nn.Module):
+    """MoE layer on vLLM's MoERunner with sigmoid gate, top-k
+    routing, and sink experts."""
+
     def __init__(
         self,
         config: InklingModelConfig,
@@ -417,6 +430,8 @@ class InklingMoE(nn.Module):
         prefix: str = "",
         quant_config: QuantizationConfig | None = None,
     ) -> None:
+        """Initializes InklingGate, routed experts via FusedMoEFactory,
+        and sink experts."""
         super().__init__()
         # Overfit to the served checkpoint: sigmoid gate renormalized after
         # top-k, shared sink experts, interleaved gate/up checkpoint rows.
@@ -473,6 +488,8 @@ class InklingMoE(nn.Module):
         # The decoder layer reduce-scatters the MoE delta into the sconv
         # stream itself (RS -> shard sconv -> AG); the runner must return the
         # per-rank partial sum instead of all-reducing.
+        # Skip final all-reduce: decoder layer reduce-scatters the MoE
+        # delta into the sconv stream.
         self.experts.moe_config.skip_final_all_reduce = True
 
         self._routed_sel: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
@@ -520,6 +537,8 @@ class InklingMoE(nn.Module):
         return weights[:, :topk].contiguous(), ids[:, :topk].contiguous()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor | None:
+        """Forward pass computing gate selection, running routed
+        experts and sink experts in parallel."""
         router_logits = self.gate.compute_logits(x)
         num_tokens = x.shape[0]
         # One gate select per layer: the routed slice is stashed for the

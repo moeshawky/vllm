@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""SPDX-licensed Whisper causal attention implementation with block
+pooling for vLLM.
+"""
+
 import copy
 import functools
 import logging
@@ -47,7 +51,7 @@ from .utils import make_layers
 
 logger = logging.getLogger(__name__)
 
-CausalRMSNorm = partial(RMSNorm, eps=1e-5)
+CausalRMSNorm = partial(RMSNorm, eps=1e-5)  # Factory creating partial RMSNorm instances with eps=1e-5.
 
 
 def _pad1d(
@@ -78,6 +82,10 @@ def _pad1d(
 
 
 class WhisperCausalConv1d(nn.Conv1d):
+    """1D convolutional layer for Whisper causal attention with stride-based
+    frame length computation.
+    """
+
     def __init__(
         self,
         in_channels: int,
@@ -100,6 +108,7 @@ class WhisperCausalConv1d(nn.Conv1d):
         self._padding_total = self._effective_kernel_size - self._stride
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with stride-based frame length computation."""
         n_frames = (
             x.shape[-1] - self._effective_kernel_size + self._padding_total
         ) / self._stride + 1
@@ -117,6 +126,9 @@ def create_whisper_attention_backend_with_block_pooling(
     block_pool_size: int,
     sliding_window: int | None = None,
 ) -> type[AttentionBackend]:
+    """Creates a WhisperCausalAttentionWithBlockPooling attention backend
+    subclass with block pooling support.
+    """
     prefix = "WhisperCausalAttentionWithBlockPooling_"
     underlying_builder = underlying_attn_backend.get_builder_cls()
     underlying_impl = underlying_attn_backend.get_impl_cls()
@@ -321,6 +333,7 @@ class WhisperCausalAttentionWithBlockPooling(Attention):
         )
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig):
+        """Returns the KV cache spec with block pooling adjustments."""
         kv_cache_spec = super().get_kv_cache_spec(vllm_config)
         assert isinstance(kv_cache_spec, AttentionSpec)
         kv_cache_spec = replace(
@@ -339,6 +352,10 @@ class WhisperCausalAttentionWithBlockPooling(Attention):
 
 
 class WhisperCausalAttention(nn.Module):
+    """Causal attention module combining QKV projection, rotary embedding,
+    and block-pooled attention.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -434,6 +451,7 @@ class WhisperCausalAttention(nn.Module):
         hidden_states: torch.Tensor,
         positions: torch.Tensor | None = None,
     ):
+        """Forward pass computing causal attention with rotary embedding."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
 
@@ -448,6 +466,10 @@ class WhisperCausalAttention(nn.Module):
 
 
 class WhisperCausalEncoderLayer(nn.Module):
+    """Single encoder layer for Whisper causal attention with sliding window
+    and block pooling.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -489,6 +511,7 @@ class WhisperCausalEncoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         positions: torch.Tensor | None = None,
     ):
+        """Forward pass through the encoder layer."""
         residual = hidden_states
         hidden_states = self.self_attn_layer_norm(hidden_states)
         hidden_states = self.self_attn(hidden_states=hidden_states, positions=positions)
@@ -502,6 +525,8 @@ class WhisperCausalEncoderLayer(nn.Module):
 
 
 class WhisperCausalEncoder(nn.Module):
+    """Encoder stack for Whisper causal attention."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -530,6 +555,7 @@ class WhisperCausalEncoder(nn.Module):
     def forward_conv(
         self, input_features: torch.Tensor | list[torch.Tensor]
     ) -> torch.Tensor:
+        """Forward pass through the convolutional layer."""
         hidden_states = []
         for features in input_features:
             embeds = nn.functional.gelu(self.conv1(features))
@@ -546,6 +572,7 @@ class WhisperCausalEncoder(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, positions: torch.Tensor
     ) -> torch.Tensor:
+        """Forward pass through the encoder."""
         for encoder_layer in self.layers:
             hidden_states = encoder_layer(hidden_states, positions)
 

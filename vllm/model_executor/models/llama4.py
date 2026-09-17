@@ -71,6 +71,8 @@ logger = init_logger(__name__)
 
 
 class Llama4MoE(nn.Module):
+    """Shared-expert MoE block with sigmoid routing for Llama4."""
+
     @staticmethod
     def custom_routing_function(
         hidden_states: torch.Tensor,
@@ -167,6 +169,8 @@ class Llama4MoE(nn.Module):
 
 
 class Llama4Attention(nn.Module):
+    """RoPE attention with optional QK norm and temperature tuning for Llama4."""
+
     def __init__(
         self,
         config: Llama4TextConfig,
@@ -204,6 +208,7 @@ class Llama4Attention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
+        # Temperature tuning applies only to NoPE layers for long-context scaling
         self.attn_temperature_tuning = self.nope and config.attn_temperature_tuning
 
         self.floor_scale = getattr(config, "floor_scale", 8192.0)
@@ -310,6 +315,8 @@ class Llama4Attention(nn.Module):
 
 
 class Llama4DecoderLayer(nn.Module):
+    """Pre-norm decoder layer with optional MoE FFN for Llama4 models."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -323,6 +330,7 @@ class Llama4DecoderLayer(nn.Module):
         quant_config = vllm_config.quant_config
 
         self.layer_idx = extract_layer_index(prefix)
+        # Global layer flag: true when no_rope_layers indicates rotary embedding
         self.global_layer = config.no_rope_layers[self.layer_idx] == 0
         self.hidden_size = config.hidden_size
         max_position_embeddings = config.max_position_embeddings
@@ -384,6 +392,8 @@ class Llama4DecoderLayer(nn.Module):
 
 @support_torch_compile
 class Llama4Model(LlamaModel):
+    """Llama4 transformer backbone with MoE and dense layer interleaving."""
+
     def __init__(
         self,
         *,
@@ -707,6 +717,8 @@ class Llama4Model(LlamaModel):
 
 
 class Llama4ForCausalLM(LlamaForCausalLM, MixtureOfExperts):
+    """Llama4 causal language model with mixture-of-experts layers."""
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],

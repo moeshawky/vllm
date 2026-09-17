@@ -90,6 +90,11 @@ class FalconH1MLP(nn.Module):
 
     def forward(self, x):
         x, _ = self.gate_up_proj(x)
+        # Only the first intermediate_size // tp_size columns (the gate
+        # portion) are scaled by gate_multiplier. The up portion is not
+        # scaled. After activation, the entire output is scaled by
+        # down_multiplier. This matches the FalconH1 model specification
+        # where gate and up have different multipliers.
         x[:, : self.intermediate_size // self.tp_size] *= self.gate_multiplier
         x = self.act_fn(x)
         x, _ = self.down_proj(x)
@@ -217,6 +222,9 @@ class FalconH1AttentionDecoderLayer(nn.Module):
         prefix: str = "",
     ) -> None:
         super().__init__()
+        # FalconH1 uses a much larger default rope_theta (1e11) compared to
+        # the standard 1000000. This is a model-specific configuration that
+        # affects the rotary embedding frequencies.
         set_default_rope_theta(config, default_theta=1e11)
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         self.hidden_size = config.hidden_size
@@ -255,6 +263,9 @@ class FalconH1AttentionDecoderLayer(nn.Module):
             dtype=None,  # see impl of get_rope
         )
 
+        # The QKV projection uses bias=False, which differs from the base
+        # Falcon model that uses config.bias. The key_multiplier is
+        # applied to keys after splitting.
         self.qkv_proj = QKVParallelLinear(
             config.hidden_size,
             self.head_dim,

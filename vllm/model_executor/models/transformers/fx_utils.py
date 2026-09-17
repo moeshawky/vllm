@@ -63,11 +63,13 @@ class _MetaProxy(fx.Proxy):
     meta: object = _UNKNOWN
 
     def __len__(self) -> int:
+        """Return the length of the meta tensor if available."""
         if self.meta is not _UNKNOWN:
             return len(self.meta)
         return super().__len__()  # type: ignore[misc]
 
     def __getattr__(self, k: str) -> "_MetaAttribute":
+        """Return a _MetaAttribute proxy for the given attribute name."""
         return _MetaAttribute(self, k)
 
 
@@ -78,6 +80,7 @@ class _MetaAttribute(_MetaProxy, fx.proxy.Attribute):
     `Tracer.proxy`, so the meta value must be grafted on here too."""
 
     def __init__(self, root: fx.Proxy, attr: str):
+        """Initialize _MetaAttribute with root proxy and attribute name."""
         super().__init__(root, attr)
         root_meta = getattr(root, "meta", _UNKNOWN)
         if root_meta is not _UNKNOWN:
@@ -99,13 +102,16 @@ class _AllLeafTracer(fx.Tracer):
     """Name of the traced forward's `**kwargs` parameter, if any."""
 
     def is_leaf_module(self, m: nn.Module, module_qualified_name: str) -> bool:
+        """Always returns True to treat all submodules as leaf modules."""
         return True
 
     def proxy(self, node: fx.Node) -> fx.Proxy:
+        """Return a _MetaProxy for the given node."""
         return _MetaProxy(node, self)
-
     def create_proxy(self, kind, target, args, kwargs, *extra, **extra_kwargs):
-        proxy = super().create_proxy(kind, target, args, kwargs, *extra, **extra_kwargs)
+        """Create a proxy and infer meta if unknown."""
+        proxy = super().create_proxy(kind, target, args, kwargs, *extra,
+                                     **extra_kwargs)
         if isinstance(proxy, _MetaProxy) and proxy.meta is _UNKNOWN:
             # A failure stays _UNKNOWN; only fatal if a shape question is asked.
             with contextlib.suppress(Exception):
@@ -163,6 +169,7 @@ class _AllLeafTracer(fx.Tracer):
         return _UNKNOWN
 
     def _is_varkw(self, node: object) -> bool:
+        """Check if node is the kwargs parameter placeholder."""
         return (
             isinstance(node, fx.Node)
             and node.op == "placeholder"
@@ -170,6 +177,7 @@ class _AllLeafTracer(fx.Tracer):
         )
 
     def iter(self, obj: fx.Proxy):
+        """Iterate over meta tensor values for shape unpacking."""
         # Assume kwargs is always empty to simplify tracing.
         node = obj.node
         if self._is_varkw(node) or (

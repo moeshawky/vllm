@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 
 
 class DeepseekV4XPUSparseBackend(DeepseekV4SparseMLABackend):
+    """XPU-specific sparse MLA backend variant.
+
+    Registers the XPU_V4_MLA_SPARSE backend name via get_name.
+    """
     @staticmethod
     def get_name() -> str:
         return "XPU_V4_MLA_SPARSE"
@@ -56,6 +60,10 @@ class DeepseekV4XPUAttention(DeepseekV4Attention):
             torch.cuda.Event = _orig_event  # type: ignore[misc]
 
     def _fused_qnorm_rope_kv_insert(self, q, kv, positions, attn_metadata):
+        """Fuse Q-norm, RoPE, and KV-cache insert into a single kernel
+        call for XPU. During profile runs returns q unchanged without
+        padding.
+        """
         from typing import cast
 
         if not isinstance(attn_metadata, dict):
@@ -89,6 +97,10 @@ class DeepseekV4XPUAttention(DeepseekV4Attention):
         return num_heads
 
     def _o_proj(self, o: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        """Apply fused inverse RoPE and FP8 quantization to the
+        output projection, then perform XPU bmm with the wo_a
+        weights and scales.
+        """
         from vllm.models.deepseek_v4.common.ops.fused_inv_rope_fp8_quant import (
             fused_inv_rope_fp8_quant,
         )
@@ -128,6 +140,10 @@ class DeepseekV4XPUAttention(DeepseekV4Attention):
         positions: torch.Tensor,
         output: torch.Tensor,
     ) -> None:
+        """Dispatch XPU sparse MLA attention between prefill and decode
+        batches, routing to _forward_prefill and _forward_decode
+        based on the number of decodes present.
+        """
         assert output.shape == q.shape, (
             f"output buffer shape {output.shape} must match q shape {q.shape}"
         )
@@ -202,6 +218,10 @@ class DeepseekV4XPUAttention(DeepseekV4Attention):
         swa_only: bool,
         output: torch.Tensor,
     ) -> None:
+        """Execute XPU sparse decode: computes global topk indices
+        for C4A/C128A modes, then calls xpu_sparse_decode_fp8
+        with the assembled indices and lengths.
+        """
         num_decodes = swa_metadata.num_decodes
         num_decode_tokens = swa_metadata.num_decode_tokens
 
@@ -259,6 +279,10 @@ class DeepseekV4XPUAttention(DeepseekV4Attention):
         attn_metadata: DeepseekV4FlashMLAMetadata | None,
         swa_metadata: "DeepseekSparseSWAMetadata",
     ) -> None:
+        """Execute XPU sparse prefill: gathers compressed and SWA
+        KV caches, combines topk and SWA indices, then calls
+        the triton BF16 sparse MLA interface in a chunked loop.
+        """
         swa_only = attn_metadata is None
 
         num_prefills = swa_metadata.num_prefills

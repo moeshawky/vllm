@@ -57,6 +57,8 @@ from .utils import (
 
 
 class JambaMoE(nn.Module):
+    """Mixture of experts block with router and fused MoE experts."""
+
     def __init__(
         self,
         config: JambaConfig,
@@ -97,6 +99,7 @@ class JambaMoE(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Route hidden states through router and MoE experts."""
         orig_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, self.hidden_size)
         # router_logits: (batch * sequence_length, n_experts)
@@ -113,6 +116,8 @@ class JambaMoE(nn.Module):
 
 
 class JambaMambaDecoderLayer(nn.Module):
+    """Mamba decoder layer with Mamba mixer and MoE/MLP feed-forward."""
+
     def __init__(
         self,
         config: JambaConfig,
@@ -168,6 +173,7 @@ class JambaMambaDecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         **kwargs,
     ):
+        """Apply input norm, Mamba mixer, and feed-forward with residual norms."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -183,6 +189,8 @@ class JambaMambaDecoderLayer(nn.Module):
 
 
 class JambaAttentionDecoderLayer(nn.Module):
+    """Attention decoder layer with QKV projection and MoE/MLP feed-forward."""
+
     def __init__(
         self,
         config: JambaConfig,
@@ -264,6 +272,7 @@ class JambaAttentionDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        """Apply QKV projection, attention, and output projection."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         attn_output = self.attn(q, k, v)
@@ -277,6 +286,7 @@ class JambaAttentionDecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         **kwargs,
     ):
+        """Apply input norm, self-attention, and feed-forward with residual norms."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -301,6 +311,8 @@ ALL_DECODER_LAYER_TYPES = {
 
 @support_torch_compile
 class JambaModel(nn.Module):
+    """Jamba transformer with mixed Mamba and attention decoder layers."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -352,6 +364,7 @@ class JambaModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Process input through mixed decoder layers with pipeline parallel support."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -384,6 +397,8 @@ class JambaForCausalLM(
     IsHybrid,
     SupportsMambaPrefixCaching,
 ):
+    """Causal LM head with Mamba state management and CUDA graph support."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={".self_attn.": ".", ".A_log": ".A"},
         orig_to_new_stacked={
@@ -454,9 +469,11 @@ class JambaForCausalLM(
         return hidden_states
 
     def copy_inputs_before_cuda_graphs(self, input_buffers, **kwargs):
+        """Copy Mamba input buffers before CUDA graph capture."""
         return self.mamba_cache.copy_inputs_before_cuda_graphs(input_buffers, **kwargs)
 
     def get_seqlen_agnostic_capture_inputs(self, batch_size: int):
+        """Get sequence-length-agnostic CUDA graph capture inputs from Mamba cache."""
         return self.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
     @classmethod
@@ -494,6 +511,7 @@ class JambaForCausalLM(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states using the LM head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
@@ -503,6 +521,8 @@ class JambaForCausalLM(
 
 
 class JambaForSequenceClassification(JambaForCausalLM):
+    """Sequence classification head with score linear and dispatch pooler."""
+
     is_pooling_model = True
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):

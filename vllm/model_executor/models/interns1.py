@@ -6,6 +6,13 @@
 # Copyright (c) 2025 Shanghai AI Lab
 # Licensed under The MIT License [see LICENSE for details]
 # --------------------------------------------------------
+"""InternS1 multimodal model with vision-language processing.
+
+Provides the InternS1 vision projector, image/video input schemas,
+processing info, dummy inputs builder, and multimodal processor
+for InternS1-style vision-language models.
+"""
+
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal, TypeAlias
 
@@ -66,6 +73,13 @@ from .utils import (
 
 
 class InternS1MultiModalProjector(nn.Module):
+    """Two-layer MLP projector from vision features to text hidden size.
+
+    Applies layer normalization, a linear layer, an activation function,
+    and a second linear layer to map vision features to the text model's
+    hidden dimension.
+    """
+
     def __init__(self, config):
         super().__init__()
         self.layer_norm = nn.LayerNorm(
@@ -98,7 +112,7 @@ class InternS1ImagePixelInputs(TensorSchema):
         - bn: Batch size * number of images
     """
 
-    type: Literal["pixel_values"] = "pixel_values"
+    type: Literal["pixel_values"] = "pixel_values"  # schema discriminator
     pixel_values: Annotated[torch.Tensor, TensorShape("bnp", 3, "h", "w")]
     num_patches: Annotated[torch.Tensor, TensorShape("bn")]
 
@@ -154,6 +168,8 @@ def resolve_interns1_min_max_num(
     dynamic_image_size: bool,
     use_thumbnail: bool,
 ) -> tuple[int, int]:
+    # Clamp to [1, max] when dynamic_image_size is False; add a thumbnail
+    # slot when use_thumbnail is true and max_dynamic_patch != 1.
     min_dynamic_patch = min_dynamic_patch if dynamic_image_size else 1
     max_dynamic_patch = max_dynamic_patch if dynamic_image_size else 1
 
@@ -167,6 +183,7 @@ def get_interns1_target_ratios(
     min_num: int,
     max_num: int,
 ) -> list[tuple[int, int]]:
+    # Generate all (i,j) pairs where min_num <= i*j <= max_num, sorted by product.
     target_ratios = {
         (i, j)
         for n in range(min_num, max_num + 1)
@@ -181,6 +198,7 @@ class InternS1ProcessingInfo(BaseProcessingInfo):
     """ProcessingInfo for InternS1-style models."""
 
     def get_hf_processor(self, **kwargs: object) -> InternVLProcessor:
+        """Get the HF processor and replace its video processor with a cached one."""
         hf_processor = self.ctx.get_hf_processor(InternVLProcessor, **kwargs)
         hf_processor.video_processor = cached_video_processor_from_config(
             self.ctx.model_config,
@@ -212,6 +230,7 @@ class InternS1ProcessingInfo(BaseProcessingInfo):
         return processor.image_seq_length * num_image_patches
 
     def resolve_target_ratios(self, use_thumbnail: bool | None = None):
+        """Resolve target aspect ratios from processor config and patch limits."""
         image_processor = self.get_hf_processor().image_processor
         min_dynamic_patch = image_processor.min_patches
         max_dynamic_patch = image_processor.max_patches
@@ -229,6 +248,7 @@ class InternS1ProcessingInfo(BaseProcessingInfo):
         return get_interns1_target_ratios(min_num, max_num)
 
     def get_image_size_with_most_features(self) -> ImageSize:
+        """Find the aspect ratio that produces the largest feature size."""
         processor = self.get_hf_processor()
 
         hf_config = self.ctx.get_hf_config()
@@ -271,6 +291,7 @@ class InternS1ProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> int:
+        """Compute the max frames per video given the sequence length budget."""
         max_images = mm_counts.get("image", 0)
         max_videos = mm_counts.get("video", 0)
 
@@ -287,6 +308,7 @@ class InternS1DummyInputsBuilder(BaseDummyInputsBuilder[InternS1ProcessingInfo])
     """DummyInputsBuilder for InternS1-style models."""
 
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Build dummy prompt text with image and video tokens."""
         num_images = mm_counts.get("image", 0)
         num_videos = mm_counts.get("video", 0)
         image_token = self.info.get_hf_processor().image_token
@@ -338,6 +360,7 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> BatchFeature:
+        """Process images and videos through the HF processor and assemble outputs."""
         valid_mm_items = mm_items.select(
             {k for k, c in mm_items.get_all_counts().items() if c > 0}
         )
@@ -437,6 +460,7 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
+        """Build field configuration mapping for image and video modalities."""
         image_num_patches = hf_inputs.get("image_num_patches", torch.empty(0))
         video_num_patches = hf_inputs.get("video_num_patches", torch.empty(0))
         num_images = len(image_num_patches)
@@ -549,6 +573,12 @@ class InternS1MultiModalProcessor(BaseMultiModalProcessor[InternS1ProcessingInfo
 class InternS1ForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
 ):
+    """InternS1 multimodal model with vision tower, projector, and language model.
+
+    Supports image and video inputs, with dynamic patch sizing and thumbnail
+    generation for efficient feature extraction.
+    """
+
     # To ensure correct weight loading and mapping.
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
@@ -629,6 +659,7 @@ class InternS1ForConditionalGeneration(
         return InternS1MultiModalProjector(config)
 
     def pixel_shuffle(self, x, scale_factor=0.5):
+        """Reshape and permute tensor dimensions to rearrange pixels."""
         n, w, h, c = x.size()
         # N, W, H, C --> N, W, H * scale, C // scale
         x = x.view(n, w, int(h * scale_factor), int(c / scale_factor))
@@ -644,6 +675,7 @@ class InternS1ForConditionalGeneration(
         return x
 
     def extract_feature(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """Extract vision features via ViT, pixel shuffle, and projection."""
         vit_embeds = self.vision_tower(pixel_values=pixel_values)
         vit_embeds = vit_embeds[:, 1:, :]
 
@@ -658,6 +690,7 @@ class InternS1ForConditionalGeneration(
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> InternS1ImageInputs | None:
+        """Parse and validate image input, returning pixel or embedding inputs."""
         pixel_values = kwargs.pop("pixel_values", None)
         image_num_patches = kwargs.pop("image_num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -776,6 +809,7 @@ class InternS1ForConditionalGeneration(
         self.visual_token_mask = None
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Process multimodal inputs and return vision embeddings."""
         modalities = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not modalities:
             return []

@@ -92,11 +92,15 @@ from .vision import is_vit_use_data_parallel, run_dp_sharded_mrope_vision_model
 # For dummy input only
 @dataclass
 class MaxImageTokenMeta:
+    """Dimensions for maximum-resolution dummy image input."""
+
     width: int = 1024
     height: int = 1024
 
 
 class KimiVLMultiModalProjector(nn.Module):
+    """Projects 2x2 patch-merged visual features to language model dimension."""
+
     def __init__(
         self,
         config: KimiVLConfig,
@@ -159,6 +163,8 @@ KimiVLImageInputs = KimiVLImagePixelInputs
 
 
 class KimiVLProcessingInfo(BaseProcessingInfo):
+    """Processing info for Kimi-VL image inputs."""
+
     def get_hf_config(self):
         return self.ctx.get_hf_config(KimiVLConfig)
 
@@ -208,6 +214,8 @@ class KimiVLProcessingInfo(BaseProcessingInfo):
 
 
 class KimiVLDummyInputsBuilder(BaseDummyInputsBuilder[KimiVLProcessingInfo]):
+    """Generates dummy text and image data for shape inference."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
 
@@ -237,6 +245,8 @@ class KimiVLDummyInputsBuilder(BaseDummyInputsBuilder[KimiVLProcessingInfo]):
 
 
 class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
+    """Multimodal processor replacing image tokens with placeholder tokens."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -298,6 +308,8 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
 class KimiVLForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsEncoderCudaGraph, SupportsPP
 ):
+    """Kimi-VL vision-language model with MoonViT vision tower."""
+
     supports_encoder_tp_data = True
 
     @classmethod

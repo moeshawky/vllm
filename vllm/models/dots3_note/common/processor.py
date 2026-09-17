@@ -44,7 +44,7 @@ IMAGE_END = "<|endofimg|>"
 AUDIO_START = "<|audio_comp_start|>"
 AUDIO_PAD = "<|audio_comp_pad|>"
 AUDIO_END = "<|audio_comp_end|>"
-VIDEO_PLACEHOLDER = "<|video_pad|>"
+VIDEO_PLACEHOLDER = "×"
 
 _HOP_LENGTH = 160
 _DEFAULT_SAMPLE_RATE = 16000
@@ -55,6 +55,10 @@ def load_note_config_section(
     revision: str | None,
     section: str,
 ) -> dict[str, Any] | None:
+    """Loads a named JSON section from the model's config.json
+    on HuggingFace hub, returning None if the section is absent
+    or not a dict.
+    """
     config = get_hf_file_to_dict("config.json", model, revision)
     value = (config or {}).get(section)
     return value if isinstance(value, dict) else None
@@ -80,6 +84,9 @@ class Dots3NoteImageProcessor:
 
     @property
     def factor(self) -> int:
+        """Returns the total patch-to-merge ratio used for
+        pixel-shuffle grid computation.
+        """
         return self.patch_size * self.merge_size
 
     @staticmethod
@@ -105,6 +112,10 @@ class Dots3NoteImageProcessor:
         target_height: int | None = None,
         target_width: int | None = None,
     ) -> tuple[int, int]:
+        """Computes factor-aligned resized dimensions that
+        respect both min/max pixel budgets, adjusting aspect
+        ratio when necessary.
+        """
         detail_config = self.image_details.get(detail, {})
         min_pixels = int(
             min_pixels
@@ -353,6 +364,10 @@ class Dots3NoteProcessor:
         }
 
     def __call__(self, text: str, **kwargs: object) -> BatchFeature:
+        """Processes a text prompt with images, audios, and
+        videos, expanding placeholders and building a BatchFeature
+        with multimodal tensors.
+        """
         modality_order = [
             key for key in kwargs if key in ("images", "audios", "videos")
         ]
@@ -551,6 +566,10 @@ class Dots3NoteProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
+        """Computes the maximum multimodal token budget per item
+        for each modality based on the image processor factor
+        and audio chunk configuration.
+        """
         result: dict[str, int] = {}
         if self.image_processor is not None:
             factor = self.image_processor.factor

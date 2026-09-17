@@ -69,6 +69,7 @@ FalconConfig: TypeAlias = HF_FalconConfig | RWConfig
 
 
 def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
+    """Computes ALiBi slope values for the given number of attention heads using a geometric progression based on the nearest power of two."""
     closest_power_of_2 = 2 ** math.floor(math.log2(total_num_heads))
     base = torch.tensor(
         2 ** (-(2 ** -(math.log2(closest_power_of_2) - 3))), dtype=torch.float32
@@ -92,6 +93,7 @@ def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
 
 
 class FalconAttention(nn.Module):
+    """Multi-head attention supporting rotary embeddings, ALiBi, or neither. Handles new decoder config and multi-query attention variants."""
     def __init__(
         self,
         config: FalconConfig,
@@ -223,6 +225,7 @@ class FalconAttention(nn.Module):
 
 
 class FalconMLP(nn.Module):
+    """Two-layer MLP with 4x expansion using column-parallel input projection, gelu activation, and row-parallel output projection."""
     def __init__(
         self,
         config: FalconConfig,
@@ -265,6 +268,7 @@ class FalconMLP(nn.Module):
 
 
 class FalconDecoderLayer(nn.Module):
+    """Decoder layer with attention and MLP, supporting parallel attention with configurable per-branch or shared layer normalization."""
     def __init__(
         self,
         config: FalconConfig,
@@ -315,6 +319,7 @@ class FalconDecoderLayer(nn.Module):
         residual = hidden_states
 
         if self.config.num_ln_in_parallel_attn == 2:
+        # Uses separate layer norms for attention and MLP when num_ln_in_parallel_attn == 2, otherwise shares the input norm.
             attention_layernorm_out = self.ln_attn(hidden_states)
             mlp_layernorm_out = self.ln_mlp(hidden_states)
         else:
@@ -364,6 +369,7 @@ class FalconDecoderLayer(nn.Module):
 
 @support_torch_compile
 class FalconModel(nn.Module):
+    """Full Falcon model with embedding, stacked decoder layers, and final layer norm. Handles custom query_key_value weight reshaping during loading."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -479,6 +485,7 @@ class FalconModel(nn.Module):
 
 
 class FalconForCausalLM(nn.Module, SupportsPP):
+    """Causal language model wrapping FalconModel with optional weight tying between embeddings and LM head."""
     packed_modules_mapping = {
         "query_key_value": ["query_key_value"],
     }

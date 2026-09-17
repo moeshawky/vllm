@@ -28,6 +28,13 @@ from .utils import maybe_prefix
 
 
 class LongCatMultiTokenPredictorLayer(nn.Module):
+    """Single MTP (Multi-Token Prediction) layer for LongCat speculative decoding.
+
+    Combines current token embeddings with the previous layer's hidden states
+    through two separate RMSNorm layers and a replicated linear projection,
+    then processes through a DeepseekV2 decoder block.
+    """
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -56,6 +63,12 @@ class LongCatMultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Process one speculative decoding step.
+
+        Normalizes the current token embeddings and previous hidden states
+        separately, concatenates and projects them, then runs through the
+        decoder block and final layernorm.
+        """
         assert inputs_embeds is not None
         inputs_embeds = self.enorm(inputs_embeds)
         previous_hidden_states = self.hnorm(previous_hidden_states)
@@ -72,6 +85,12 @@ class LongCatMultiTokenPredictorLayer(nn.Module):
 
 
 class LongCatMultiTokenPredictor(nn.Module):
+    """Multi-Token Predictor module for LongCat speculative decoding.
+
+    Manages a single MTP layer with token embeddings. Routes speculative
+    decoding steps to the appropriate MTP layer based on the step index.
+    """
+
     def __init__(
         self,
         *,
@@ -111,6 +130,11 @@ class LongCatMultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Dispatch speculative decoding to the appropriate MTP layer.
+
+        Embeds input tokens if no embeddings provided, computes the current
+        MTP layer index from the step index, and delegates to that layer.
+        """
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         current_step_idx = spec_step_idx % self.num_mtp_layers
@@ -124,6 +148,12 @@ class LongCatMultiTokenPredictor(nn.Module):
 
 
 class LongCatFlashMTP(nn.Module):
+    """LongCat MTP (Multi-Token Prediction) model for speculative decoding.
+
+    Uses a single MTP layer with token embeddings to predict multiple tokens
+    in parallel.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         # LongCat MTP has no MoE layers: clear n_routed_experts so the predictor

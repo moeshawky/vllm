@@ -367,6 +367,13 @@ class CustomQwen2VLVE(Qwen2VisionTransformer):
 
 
 class KananaVProcessingInfo(BaseProcessingInfo):
+    """Processing info for Kanana-V image inputs.
+
+    Computes vision grid dimensions (T, H, W) and the resulting
+    token count by resizing the image and dividing by the patch
+    and merge sizes.
+    """
+
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"image": None}
 
@@ -437,6 +444,12 @@ class KananaVProcessingInfo(BaseProcessingInfo):
 
 
 class KananaVDummyInputsBuilder(BaseDummyInputsBuilder[KananaVProcessingInfo]):
+    """Generates dummy text and image data for shape inference.
+
+    Produces a text string of "<image>" tokens and dummy image
+    data for each requested image count.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
         return "<image>" * num_images
@@ -581,6 +594,12 @@ class KananaVMultiModalProcessor(BaseMultiModalProcessor[KananaVProcessingInfo])
     dummy_inputs=KananaVDummyInputsBuilder,
 )
 class KananaVForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
+    """Kanana-V vision-language model.
+
+    Uses a CustomQwen2VLVE vision tower followed by a DynamicCAbstractor
+    projector, with a LlamaForCausalLM language model backend.
+    """
+
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
         if modality.startswith("image"):

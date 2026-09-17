@@ -68,6 +68,7 @@ class CompletionOutput:
     spec_decode_metrics: RequestSpecDecodeMetrics | None = None
 
     def finished(self) -> bool:
+        """Return True if the completion has a finish_reason set."""
         return self.finish_reason is not None
 
     def __repr__(self) -> str:
@@ -152,6 +153,8 @@ class RequestOutput:
         **kwargs: Any,
     ) -> None:
         if kwargs:
+            # Extra kwargs in RequestOutput.__init__ trigger a warning_once
+            # instead of raising, providing forward compatibility.
             logger.warning_once(
                 "RequestOutput: Ignoring extra arguments: %s", str(kwargs)
             )
@@ -295,6 +298,8 @@ class EmbeddingOutput:
 
 
 class EmbeddingRequestOutput(PoolingRequestOutput[EmbeddingOutput]):
+    """Pooling request output for embedding results."""
+
     @staticmethod
     def from_base(
         request_output: PoolingRequestOutput,
@@ -337,6 +342,8 @@ class ClassificationOutput:
 
 
 class ClassificationRequestOutput(PoolingRequestOutput[ClassificationOutput]):
+    """Pooling request output for classification results."""
+
     @staticmethod
     def from_base(
         request_output: PoolingRequestOutput,
@@ -376,6 +383,8 @@ class ScoringOutput:
 
 
 class ScoringRequestOutput(PoolingRequestOutput[ScoringOutput]):
+    """Pooling request output for scoring results."""
+
     @staticmethod
     def from_base(
         request_output: PoolingRequestOutput,

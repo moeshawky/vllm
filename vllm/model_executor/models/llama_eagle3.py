@@ -33,6 +33,15 @@ logger = init_logger(__name__)
 
 
 class LlamaDecoderLayer(LlamaDecoderLayer):
+    """EAGLE3 decoder layer with draft-specific qkv projection.
+
+    The first layer (layer_idx=0) concatenates input embeddings with the
+    target model's hidden states (2x hidden size), while subsequent layers
+    process only hidden states. Adds a hidden_norm RMSNorm for the residual
+    connection, with optional norm-before-residual or norm-after-residual
+    ordering.
+    """
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -78,6 +87,7 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
     def _norm_before_residual(
         self, hidden_states: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply RMSNorm then split into hidden and residual."""
         hidden_states = self.hidden_norm(hidden_states)
         residual = hidden_states
         return hidden_states, residual
@@ -85,6 +95,7 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
     def _norm_after_residual(
         self, hidden_states: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split into residual first, then apply RMSNorm to hidden."""
         residual = hidden_states
         hidden_states = self.hidden_norm(hidden_states)
         return hidden_states, residual
@@ -128,6 +139,14 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
     }
 )
 class LlamaModel(nn.Module):
+    """EAGLE3 draft model with auxiliary hidden state projection.
+
+    Accepts input token IDs and the target model's hidden states, processes
+    them through EAGLE3 decoder layers, and optionally projects concatenated
+    auxiliary hidden states through a dense FC layer. Supports both
+    norm-before-FC and per-chunk FC norm variants.
+    """
+
     def __init__(
         self,
         *,
@@ -231,6 +250,13 @@ class LlamaModel(nn.Module):
         hidden_states: torch.Tensor,
         input_embeds: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run the draft model forward pass.
+
+        Embeds input tokens (or uses provided embeddings), concatenates with
+        target hidden states at the first layer, processes through all
+        decoder layers, and returns the final hidden states along with the
+        auxiliary output (post-norm if norm_output, else pre-norm).
+        """
         if input_embeds is None:
             input_embeds = self.embed_input_ids(input_ids)
         torch._assert(
@@ -253,6 +279,7 @@ class LlamaModel(nn.Module):
 
         return hidden_states, aux_output
 
+    # Weight mapping from HF EAGLE3 naming to vLLM stacked/renamed layout
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={"midlayer.": "layers.0."},
         orig_to_new_stacked={
@@ -270,6 +297,14 @@ class LlamaModel(nn.Module):
 
 
 class Eagle3LlamaForCausalLM(LlamaForCausalLM):
+    """EAGLE3 draft model with parallel drafting support.
+
+    Wraps the EAGLE3 draft model with a draft vocab head and optional
+    draft-to-target ID mapping. Supports parallel drafting with hidden
+    state masking. Draft vocab IDs are offset by learnable deltas to
+    align with the target model's vocabulary.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
@@ -336,6 +371,12 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute draft logits and expand to target vocab if ID mapping is set.
+
+        If draft_id_to_target_id is configured, creates a full target-vocab
+        logits tensor initialized to -inf and copies draft logits at the
+        mapped target positions.
+        """
         logits = self.logits_processor(self.lm_head, hidden_states)
         if self.draft_id_to_target_id is None:
             assert logits.shape[1] == self.config.vocab_size, (
@@ -360,6 +401,12 @@ class Eagle3LlamaForCausalLM(LlamaForCausalLM):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Project concatenated auxiliary hidden states to draft model input size.
+
+        Applies optional input_norm, then per-chunk fc_norm if configured,
+        and finally the dense FC projection. Returns a tensor with the
+        draft model's hidden dimension.
+        """
         if not self.model.use_aux_hidden_state:
             return hidden_states
         # combine multiple auxiliary hidden states returned by eagle3

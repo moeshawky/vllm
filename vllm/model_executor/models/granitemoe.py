@@ -139,6 +139,12 @@ class GraniteMoeMoE(nn.Module):
 
 
 class GraniteMoeAttention(nn.Module):
+    """Multi-head attention with per-layer sliding window and optional RoPE.
+
+    Queries granite_layer_attn_params for sliding window size, RoPE base
+    theta, and sink presence per layer. Uses NeoX-style rotary embeddings.
+    """
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -238,6 +244,12 @@ class GraniteMoeAttention(nn.Module):
 
 
 class GraniteMoeDecoderLayer(nn.Module):
+    """Transformer decoder layer with MoE and residual scaling.
+
+    Applies attention and MoE sub-layers with RMSNorm pre-normalization.
+    Residual connections are scaled by residual_multiplier from config.
+    """
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -302,6 +314,8 @@ class GraniteMoeDecoderLayer(nn.Module):
 
 @support_torch_compile
 class GraniteMoeModel(nn.Module):
+    """Transformer backbone with MoE layers and vocab embedding."""
+
     hf_to_vllm_mapper: WeightsMapper = WeightsMapper(
         orig_to_new_suffix={
             # Legacy names to new names
@@ -380,6 +394,9 @@ class GraniteMoeModel(nn.Module):
 
 
 class GraniteMoeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+    """Causal language model with MoE transformer backbone."""
+
+    # Flag indicating model does not fall back to PyTorch during weight loading.
     fall_back_to_pt_during_load = False
 
     packed_modules_mapping = {

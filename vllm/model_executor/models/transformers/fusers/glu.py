@@ -118,6 +118,7 @@ class GLUFuser(StackedFuser):
 
     @classmethod
     def match(cls, graph: fx.Graph, module: nn.Module) -> "GLUFuser | None":
+        """Match the GLU pattern in graph and return a GLUFuser if found."""
         if (glu_nodes := cls._get_glu_nodes(graph, module)) is None:
             return None
         act_node, gate_node, up_node, mul_node = glu_nodes
@@ -166,6 +167,7 @@ class GLUFuser(StackedFuser):
         self.fused_forward = compile_forward(funcdef, fn)
 
     def validate(self, module: nn.Module, vllm_config: "VllmConfig") -> bool:
+        """Check if the activation module has an AndMul equivalent."""
         act = module.get_submodule(self.act_name)
         if self._get_act_and_mul_name(act) is None:
             logger.debug("No AndMul equivalent for %s; skipping fusion", type(act))
@@ -175,6 +177,7 @@ class GLUFuser(StackedFuser):
     def update_attrs(
         self, module: nn.Module, prefix: str, vllm_config: "VllmConfig"
     ) -> None:
+        """Replace GLU projection submodules with merged linear and activation."""
         quant_config = vllm_config.quant_config
         act_fn = self._get_act_and_mul(module.get_submodule(self.act_name))
         gate = module.get_submodule(self.gate_name)
