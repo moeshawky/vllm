@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-# Adapted from https://github.com/fixie-ai/ultravox/blob/ecd58c4041030bae2ad15aa6bcf04ab43199ea02/ultravox/model/ultravox_model.py
+# Adapted from
+#  https://github.com/fixie-ai/ultravox/blob/ecd58c4041030bae2ad15aa6bcf04ab43199ea02/u
+#   ltravox/model/ultravox_model.py
 """PyTorch Ultravox model."""
 
 import math
@@ -115,7 +117,9 @@ UltravoxAudioInputs: TypeAlias = (
 
 
 class UltravoxProcessingInfo(BaseProcessingInfo):
-    """ProcessingInfo for Ultravox audio models; configures the audio token replacement, retrieves the Whisper feature extractor, and provides data parser configuration."""
+    """ProcessingInfo for Ultravox audio models; configures the audio token
+        replacement, retrieves the Whisper feature extractor, and provides data parser
+        configuration."""
 
     def get_hf_processor(self, **kwargs: object) -> ProcessorMixin:
         config = self.ctx.model_config.hf_config
@@ -132,7 +136,9 @@ class UltravoxProcessingInfo(BaseProcessingInfo):
     def get_feature_extractor(self, **kwargs: object) -> WhisperFeatureExtractor:
         hf_processor = self.get_hf_processor(**kwargs)
 
-        # Changed in https://huggingface.co/fixie-ai/ultravox-v0_5-llama-3_2-1b/commit/9a3c571b8fdaf1e66dd3ea61bbcb6db5c70a438e
+# Changed in
+#  https://huggingface.co/fixie-
+#   ai/ultravox-v0_5-llama-3_2-1b/commit/9a3c571b8fdaf1e66dd3ea61bbcb6db5c70a438e
         audio_processor = hf_processor.audio_processor  # type: ignore
         if isinstance(audio_processor, WhisperFeatureExtractor):
             return audio_processor
@@ -162,7 +168,8 @@ class UltravoxProcessingInfo(BaseProcessingInfo):
 
 
 class UltravoxDummyInputsBuilder(BaseDummyInputsBuilder[UltravoxProcessingInfo]):
-    """Dummy input builder for Ultravox; generates audio placeholder tokens and dummy audio data for testing."""
+    """Dummy input builder for Ultravox; generates audio placeholder tokens and dummy
+        audio data for testing."""
 
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_audios = mm_counts.get("audio", 0)
@@ -195,7 +202,9 @@ class UltravoxDummyInputsBuilder(BaseDummyInputsBuilder[UltravoxProcessingInfo])
 
 
 class UltravoxMultiModalProcessor(BaseMultiModalProcessor[UltravoxProcessingInfo]):
-    """Multi-modal processor for Ultravox; handles HF processor calls with patched truncation, audio feature post-processing, and field configuration for chunked audio."""
+    """Multi-modal processor for Ultravox; handles HF processor calls with patched
+        truncation, audio feature post-processing, and field configuration for chunked
+        audio."""
 
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
@@ -435,7 +444,8 @@ def _load_whisper_layer_weights(
 
 
 class UltravoxFeedForwardProjector(nn.Module):
-    """Feed-forward projector for Ultravox; applies StackAudioFrames, RMSNorm, and two ReplicatedLinear layers with optional MulAndSilu activation."""
+    """Feed-forward projector for Ultravox; applies StackAudioFrames, RMSNorm, and
+        two ReplicatedLinear layers with optional MulAndSilu activation."""
 
     def __init__(
         self,
@@ -498,7 +508,9 @@ class UltravoxFeedForwardProjector(nn.Module):
 
 
 class UltravoxTransformerProjector(nn.Module):
-    """Transformer-based projector for Ultravox; applies stacked audio frames, linear projection, positional embeddings, and WhisperEncoder layers with chunk attention metadata."""
+    """Transformer-based projector for Ultravox; applies stacked audio frames, linear
+        projection, positional embeddings, and WhisperEncoder layers with chunk
+        attention metadata."""
 
     def __init__(
         self,
@@ -658,7 +670,8 @@ class UltravoxWhisperEncoder(WhisperEncoder):
     dummy_inputs=UltravoxDummyInputsBuilder,
 )
 class UltravoxModel(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA):
-    """Ultravox model class combining WhisperEncoder tower, multi-modal projector, and language model; supports audio modality with LoRA on the tower/connector."""
+    """Ultravox model class combining WhisperEncoder tower, multi-modal projector,
+        and language model; supports audio modality with LoRA on the tower/connector."""
 
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],

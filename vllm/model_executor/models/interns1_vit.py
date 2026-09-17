@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-# adapted from https://huggingface.co/OpenGVLab/InternVL2-4B/blob/main/modeling_intern_vit.py
+# adapted from
+#  https://huggingface.co/OpenGVLab/InternVL2-4B/blob/main/modeling_intern_vit.py
 # --------------------------------------------------------
 # InternVL
 # Copyright (c) 2023 OpenGVLab
@@ -155,7 +156,8 @@ class InternS1VisionEmbeddings(nn.Module):
         pixel_values: torch.Tensor,
         bool_masked_pos: torch.BoolTensor | None = None,
     ) -> torch.Tensor:
-        """Embed pixel values with patch embeddings, cls token, and position encoding."""
+        """Embed pixel values with patch embeddings, cls token, and position
+            encoding."""
         _, _, height, width = pixel_values.shape
         embeddings, (patch_height, patch_width) = self.patch_embeddings(pixel_values)
         batch_size, seq_len, _ = embeddings.size()

@@ -215,7 +215,8 @@ class VoxtralRealtimeBuffer:
 )
 @support_torch_compile
 class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtime):
-    """Voxtral real-time generation model combining Whisper encoder with streaming audio processing."""
+    """Voxtral real-time generation model combining Whisper encoder with streaming
+        audio processing."""
 
     requires_raw_input_tokens = True
     # transformers' currently has limited support for MistralCommon backend
@@ -244,7 +245,8 @@ class VoxtralRealtimeGeneration(VoxtralForConditionalGeneration, SupportsRealtim
         input_stream: asyncio.Queue[list[int]],
         model_config: ModelConfig,
     ) -> AsyncGenerator[PromptType, None]:
-        """Buffers real-time audio stream and generates prompt tokens for streaming transcription."""
+        """Buffers real-time audio stream and generates prompt tokens for streaming
+            transcription."""
 
         tokenizer = cached_tokenizer_from_config(model_config)
         audio_encoder = tokenizer.instruct.audio_encoder

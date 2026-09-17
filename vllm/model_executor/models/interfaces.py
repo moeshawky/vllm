@@ -953,7 +953,7 @@ def is_hybrid(model: type[object]) -> TypeIs[type[IsHybrid]]: ...
 def is_hybrid(
     model: type[object] | object,
 ) -> TypeIs[type[IsHybrid]] | TypeIs[IsHybrid]:
-    """Check if a model has both attention and mamba blocks."""
+    """Marker for models declaring hybrid layer configuration."""
     return getattr(model, "is_hybrid", False)
 
 

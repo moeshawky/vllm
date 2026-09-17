@@ -31,8 +31,8 @@ _AUDIO_CHUNK_SECONDS = 30
 
 @dataclass(frozen=True)
 class Dots3NoteVideoPart:
-    """Dataclass representing a single decoded video component:
-    text, image, or audio, with a timestamp and media value.
+    """Dataclass for a single decoded video component: text,
+    image, or audio, with a media value.
     """
     kind: Literal["text", "image", "audio"]
     value: str | Image.Image | np.ndarray

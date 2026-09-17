@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Inference-only FireRedASR2 speech-to-text model compatible with HuggingFace weights."""
+"""Inference-only FireRedASR2 speech-to-text model compatible with HuggingFace
+    weights."""
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, cast

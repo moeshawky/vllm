@@ -137,7 +137,8 @@ class WeightsMapper:
     def apply(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[tuple[str, torch.Tensor]]:
-        """Applies the weight name mapping to an iterable of (name, tensor) pairs, yielding mapped names and optionally setting shard_id on the tensor."""
+        """Applies the weight name mapping to an iterable of (name, tensor) pairs,
+            yielding mapped names and optionally setting shard_id on the tensor."""
 
         for name, data in weights:
             result = self._map_name_with_shard(name)
@@ -350,7 +351,9 @@ class AutoWeightsLoader:
         module: nn.Module,
         weights: Iterable[tuple[str, torch.Tensor]],
     ) -> Iterable[str]:
-        """Recursively loads weights into a module by matching child modules and parameters, handling weight tying, unexpected prefixes/suffixes, and raising errors for missing parameters."""
+        """Recursively loads weights into a module by matching child modules and
+            parameters, handling weight tying, unexpected prefixes/suffixes, and
+            raising errors for missing parameters."""
 
         if isinstance(module, (StageMissingLayer, PPMissingLayer)):
             return
@@ -428,7 +431,9 @@ class AutoWeightsLoader:
         mapper: WeightsMapper | None = None,
     ) -> set[str]:
         # Ignore unexpected biases (typically from GPTQ models)
-        """Loads weights into the module using a mapper, filtering skipped aliases, applying quant_config cache scale mappers, and checking for skipped aliases after loading."""
+        """Loads weights into the module using a mapper, filtering skipped aliases,
+            applying quant_config cache scale mappers, and checking for skipped
+            aliases after loading."""
 
         self.ignore_unexpected_suffixes.append(".bias")
 
@@ -678,7 +683,9 @@ def _embedding_count_expression(embeddings: NestedTensors) -> str:
 
 
 def split_list_into_ranges(lst: torch.Tensor, interval: int) -> list[list[int]]:
-    """Splits a list of indices into ranges based on a given interval, returning a list of lists where each inner list contains indices falling within a single interval."""
+    """Splits a list of indices into ranges based on a given interval, returning a
+        list of lists where each inner list contains indices falling within a single
+        interval."""
 
     ranges: list[list[int]] = [[] for _ in range((max(lst) // interval) + 1)]
     for num in lst:
@@ -727,10 +734,12 @@ def _merge_multimodal_embeddings(
 
 
 class StageMissingLayer(nn.Module):
-    """Placeholder module for missing stages in pipeline parallel models; prevents weight loading for unavailable layers and raises RuntimeError if called."""
+    """Placeholder module for missing stages in pipeline parallel models; prevents
+        weight loading for unavailable layers and raises RuntimeError if called."""
 
     def __init__(self, stage_name: str, module: nn.Module | None = None) -> None:
-        """Initializes the stage placeholder with a stage name and optional module, storing the module in __dict__ to avoid registering it as a child module."""
+        """Initializes the stage placeholder with a stage name and optional module,
+            storing the module in __dict__ to avoid registering it as a child module."""
 
         super().__init__()
 
@@ -744,7 +753,8 @@ class StageMissingLayer(nn.Module):
         return getattr(self.__dict__["module"], name)
 
     def __call__(self, *args, **kwargs):
-        """Raises RuntimeError to prevent the stage placeholder from being called as a normal module."""
+        """Raises RuntimeError to prevent the stage placeholder from being called as
+            a normal module."""
 
         raise RuntimeError(f"{self} should not be called")
 
@@ -829,9 +839,12 @@ def no_init_weights(
 
 
 class LayerFn(Protocol):
-    """Protocol defining the interface for layer-creation functions used by make_layers; subclasses must implement __call__ returning a torch.nn.Module given a prefix string."""
+    """Protocol defining the interface for layer-creation functions used by
+        make_layers; subclasses must implement __call__ returning a torch.nn.Module
+        given a prefix string."""
 
-    """Creates a torch.nn.Module for a given layer prefix; must be implemented by subclasses."""
+    """Creates a torch.nn.Module for a given layer prefix; must be implemented by
+        subclasses."""
 
     def __call__(self, prefix: str) -> torch.nn.Module: ...
 
@@ -918,7 +931,9 @@ def is_pp_missing_parameter(name: str, model: torch.nn.Module) -> bool:
 
 
 def make_empty_intermediate_tensors_factory(keys: list[str], hidden_size: int):
-    """Creates a factory function that returns IntermediateTensors of zeros for the given keys and hidden size, useful for initializing empty intermediate tensors in model layers."""
+    """Creates a factory function that returns IntermediateTensors of zeros for the
+        given keys and hidden size, useful for initializing empty intermediate tensors
+        in model layers."""
 
     def make_empty_intermediate_tensors(
         batch_size: int,
@@ -1005,7 +1020,8 @@ def extract_layer_index(layer_name: str, num_attn_module: int = 1) -> int:
 
 
 def cast_overflow_tensors(tensors: torch.Tensor, offset: float = 1000) -> torch.Tensor:
-    """Clamps tensor values to prevent overflow by clamping to the maximum representable value minus an offset."""
+    """Clamps tensor values to prevent overflow by clamping to the maximum
+        representable value minus an offset."""
 
     clamp_value = torch.finfo(tensors.dtype).max - offset
     return torch.clamp(tensors, min=-clamp_value, max=clamp_value)
@@ -1042,13 +1058,15 @@ def fast_topk(
 # The output tensor can have a sequence length 0 at small input sequence lengths
 # even though we explicitly pad to avoid this.
 def sequence_parallel_chunk(x: torch.Tensor) -> torch.Tensor:
-    """Wrapper that calls the vLLM custom op for sequence-parallel chunking along the num_tokens axis."""
+    """Wrapper that calls the vLLM custom op for sequence-parallel chunking along the
+        num_tokens axis."""
 
     return torch.ops.vllm.sequence_parallel_chunk_impl(x)
 
 
 def sequence_parallel_chunk_impl(x: torch.Tensor) -> torch.Tensor:
-    """Chunks a tensor along the sequence dimension for sequence parallelism, padding to be divisible by tp_size and narrowing to the appropriate shard."""
+    """Chunks a tensor along the sequence dimension for sequence parallelism, padding
+        to be divisible by tp_size and narrowing to the appropriate shard."""
 
     tp_size = get_tensor_model_parallel_world_size()
     tp_rank = get_tensor_model_parallel_rank()
@@ -1071,7 +1089,8 @@ def sequence_parallel_chunk_impl(x: torch.Tensor) -> torch.Tensor:
 
 
 def sequence_parallel_chunk_impl_fake(x: torch.Tensor) -> torch.Tensor:
-    """Provides a fake implementation of sequence_parallel_chunk_impl for dtype-only tracing, returning an empty tensor with the correct shape."""
+    """Provides a fake implementation of sequence_parallel_chunk_impl for dtype-only
+        tracing, returning an empty tensor with the correct shape."""
 
     tp_size = get_tensor_model_parallel_world_size()
     seq_len = cdiv(x.size(0), tp_size)
@@ -1141,7 +1160,8 @@ def scatter_output_slices(
 
 
 def parse_diarized_timestamp(marker: str) -> float | None:
-    """Parses a diarization timestamp marker string, returning the float value or None if the marker is invalid."""
+    """Parses a diarization timestamp marker string, returning the float value or
+        None if the marker is invalid."""
 
     if (
         not marker
@@ -1154,7 +1174,8 @@ def parse_diarized_timestamp(marker: str) -> float | None:
 
 
 def parse_diarized_speaker(speaker: str) -> str | None:
-    """Parses a diarization speaker marker string, returning the speaker ID or None if invalid."""
+    """Parses a diarization speaker marker string, returning the speaker ID or None
+        if invalid."""
 
     if (
         len(speaker) < 2

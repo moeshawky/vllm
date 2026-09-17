@@ -62,7 +62,8 @@ from .utils import (
 
 
 class Exaone4GatedMLP(nn.Module):
-    """Gated MLP with optional swiglu_limit clamping for numerical stabilization and data-parallel mode support."""
+    """Gated MLP with optional swiglu_limit clamping for numerical stabilization and
+        data-parallel mode support."""
     def __init__(
         self,
         hidden_size: int,
@@ -99,7 +100,8 @@ class Exaone4GatedMLP(nn.Module):
             )
         self.act_fn = (
             SiluAndMul() if swiglu_limit is None else SiluAndMulWithClamp(swiglu_limit)
-            # Clamps the silu activation when swiglu_limit is set to prevent large values that can destabilize large-scale MoE models.
+# Clamps the silu activation when swiglu_limit is set to prevent large values that can
+#  destabilize large-scale MoE models.
         )
 
     def forward(self, x):
@@ -110,7 +112,8 @@ class Exaone4GatedMLP(nn.Module):
 
 
 class Exaone4Attention(nn.Module):
-    """Multi-head attention with per-head Q/K RMSNorm, optional sliding window, and conditional rotary embedding application."""
+    """Multi-head attention with per-head Q/K RMSNorm, optional sliding window, and
+        conditional rotary embedding application."""
     def __init__(
         self,
         config: Exaone4Config,
@@ -177,7 +180,8 @@ class Exaone4Attention(nn.Module):
 
         # apply rotary embeddings to every layer in full attention models
         self.apply_rope_all_layers = "sliding_attention" not in config.layer_types
-        # Applies rotary embeddings to every layer when the model uses only full attention. Otherwise rotary is applied only to sliding-window layers.
+# Applies rotary embeddings to every layer when the model uses only full attention.
+#  Otherwise rotary is applied only to sliding-window layers.
 
         set_default_rope_theta(config, default_theta=1000000)
         self.rotary_emb = get_rope(
@@ -220,7 +224,8 @@ class Exaone4Attention(nn.Module):
 
 
 class Exaone4DecoderLayer(nn.Module):
-    """Decoder layer using post-LN normalization (post_attention and post_feedforward norms) instead of pre-LN."""
+    """Decoder layer using post-LN normalization (post_attention and post_feedforward
+        norms) instead of pre-LN."""
     def __init__(
         self,
         config: Exaone4Config,
@@ -296,7 +301,8 @@ class Exaone4DecoderLayer(nn.Module):
 
 @support_torch_compile
 class Exaone4Model(nn.Module):
-    """Full Exaone 4 model with embedding, stacked decoder layers using the .layers prefix, and pipeline-parallel support."""
+    """Full Exaone 4 model with embedding, stacked decoder layers using the .layers
+        prefix, and pipeline-parallel support."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -375,7 +381,8 @@ class Exaone4Model(nn.Module):
 
 
 class Exaone4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
-    """Causal language model wrapping Exaone4Model. Maps .gate_proj/.up_proj to gate_up_proj shards for the merged column-parallel structure."""
+    """Causal language model wrapping Exaone4Model. Maps .gate_proj/.up_proj to
+        gate_up_proj shards for the merged column-parallel structure."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -383,7 +390,8 @@ class Exaone4ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
             ".k_proj": (".qkv_proj", "k"),
             ".v_proj": (".qkv_proj", "v"),
             ".gate_proj": (".gate_up_proj", 0),
-            # Maps .gate_proj and .up_proj to gate_up_proj shards 0 and 1. Uses different checkpoint names than exaone.py (.c_fc_0/.c_fc_1).
+# Maps .gate_proj and .up_proj to gate_up_proj shards 0 and 1. Uses different
+#  checkpoint names than exaone.py (.c_fc_0/.c_fc_1).
             ".up_proj": (".gate_up_proj", 1),
         }
     )

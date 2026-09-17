@@ -51,7 +51,7 @@ from .utils import make_layers
 
 logger = logging.getLogger(__name__)
 
-CausalRMSNorm = partial(RMSNorm, eps=1e-5)  # Factory creating partial RMSNorm instances with eps=1e-5.
+CausalRMSNorm = partial(RMSNorm, eps=1e-5)  # partial RMSNorm with eps=1e-5
 
 
 def _pad1d(

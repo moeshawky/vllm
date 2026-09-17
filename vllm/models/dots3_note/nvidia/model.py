@@ -65,8 +65,8 @@ def _padded_mlp_size(
     quant_config: QuantizationConfig | None,
     is_sequence_parallel: bool = False,
 ) -> int:
-    """Computes the block-padded MLP intermediate size for sequence parallel
-    training, aligning blocks to the tensor parallel group size."""
+    """Computes the block-padded MLP intermediate size. Returns
+    intermediate_size unpadded when sequence parallel is enabled."""
     block_size = getattr(quant_config, "weight_block_size", None)
     if block_size is None or is_sequence_parallel:
         return intermediate_size
@@ -146,8 +146,8 @@ def _forward_note_mla(
     kv_lora_scale: float,
     llama_4_scaling: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Forward pass for NOTE MLA attention: splits qkv into q_c, kv_c, k_pe,
-    applies RoPE, runs the MLA attention with optional gating."""
+    """Forward pass for NOTE MLA: splits qkv_lora into q_c and kv_lora,
+    applies RoPE and runs the MLA attention with optional gating."""
     qkv_lora = attention.fused_qkv_a_proj(hidden_states)[0]
     q_c, kv_lora = qkv_lora.split(
         [

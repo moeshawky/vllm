@@ -42,7 +42,8 @@ from .utils import AutoWeightsLoader, WeightsMapper, maybe_prefix
 
 
 class ErnieMultiTokenPredictorLayer(nn.Module):
-    """Single MTP layer that concatenates normalized token embeddings and previous hidden states, projects them, and passes through a decoder block."""
+    """Single MTP layer that concatenates normalized token embeddings and previous
+        hidden states, projects them, and passes through a decoder block."""
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -85,7 +86,8 @@ class ErnieMultiTokenPredictorLayer(nn.Module):
 
 
 class ErnieMultiTokenPredictor(nn.Module):
-    """Multi-token predictor that dispatches to per-step MTP layers by index. Each layer produces one predicted token's hidden states."""
+    """Multi-token predictor that dispatches to per-step MTP layers by index. Each
+        layer produces one predicted token's hidden states."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -143,7 +145,8 @@ class ErnieMultiTokenPredictor(nn.Module):
 
 
 class ErnieMTP(nn.Module):
-    """Top-level Ernie MTP model that rewrites flat checkpoint MTP prefixes into layered format and delegates to ErnieMultiTokenPredictor."""
+    """Top-level Ernie MTP model that rewrites flat checkpoint MTP prefixes into
+        layered format and delegates to ErnieMultiTokenPredictor."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -154,7 +157,8 @@ class ErnieMTP(nn.Module):
         self.hf_to_vllm_mapper = WeightsMapper(
             orig_to_new_substr={
                 "model.mtp_emb_norm.0.": f"model.layers.{spec_layer}.mtp_emb_norm.",
-                # Maps flat checkpoint prefixes (mtp_emb_norm.0., mtp_hidden_norm.0., etc.) into the layered model.layers.{spec_layer}.* format.
+# Maps flat checkpoint prefixes (mtp_emb_norm.0., mtp_hidden_norm.0., etc.) into the
+#  layered model.layers.{spec_layer}.* format.
                 "model.mtp_hidden_norm.0.": (
                     f"model.layers.{spec_layer}.mtp_hidden_norm."
                 ),

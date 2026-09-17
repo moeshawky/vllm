@@ -479,7 +479,10 @@ class OpenPanguVisionTransformer(nn.Module):
         return cos, sin
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
-        # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_5_vl/modular_qwen2_5_vl.py for details. #L209 # noqa: E501
+# see
+#  https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_
+#   5_vl/modular_qwen2_5_vl.py
+#  for details. #L209 # noqa: E501
         pos_ids = []
         for t, h, w in grid_thw:
             hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -512,7 +515,10 @@ class OpenPanguVisionTransformer(nn.Module):
         return rotary_pos_emb
 
     def get_window_index(self, grid_thw):
-        # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_5_vl/modular_qwen2_5_vl.py for details. #L238 # noqa: E501
+# see
+#  https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2_
+#   5_vl/modular_qwen2_5_vl.py
+#  for details. #L238 # noqa: E501
         window_index: list = []
         cu_window_seqlens: list = [0]
         window_index_id = 0

@@ -27,11 +27,7 @@ class ParserManager:
         enable_auto_tools: bool = False,
         model_name: str | None = None,
     ) -> type[ToolParser] | None:
-        """Get the tool parser class by name.
-
-        Logs a warning for Llama-3.2 models with pythonic tool choice.
-        Raises TypeError if the parser is not registered.
-        """
+        """Get the tool parser based on the name."""
         from vllm.tool_parsers import ToolParserManager
 
         parser: type[ToolParser] | None = None
@@ -62,10 +58,7 @@ class ParserManager:
         cls,
         reasoning_parser_name: str | None,
     ) -> type[ReasoningParser] | None:
-        """Get the reasoning parser class by name.
-
-        Raises TypeError if the parser is not registered.
-        """
+        """Get the reasoning parser based on the name."""
         from vllm.reasoning import ReasoningParserManager
 
         parser: type[ReasoningParser] | None = None

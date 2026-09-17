@@ -67,7 +67,7 @@ def compress_norm_rope_store_triton(
     if head_dim == 512:
         kernel = _fused_kv_compress_norm_rope_insert_sparse_attn
         num_warps = 4
-        kernel_kwargs = {"SANITIZE_CACHE_NANS": _ON_GFX950}  # SANITIZE_CACHE_NANS = True on gfx950 (ROCm) to clamp NaN scales; disabled elsewhere to preserve max encoded scale at 255.
+        kernel_kwargs = {"SANITIZE_CACHE_NANS": _ON_GFX950}  # NaN clamp on gfx950
     elif use_fp4_cache:
         kernel = _fused_kv_compress_norm_rope_insert_indexer_mxfp4_attn
         num_warps = 1
@@ -639,7 +639,7 @@ def compress_norm_rope_store_two_stage_triton(
             cos_sin_cache=cos_sin_cache,
             kv_cache=kv_cache,
             kv_slot_mapping=k_cache_metadata.slot_mapping[num_decodes:],
-            rms_norm_weight=rms_norm_weight,  # decode path uses the single-pass launcher;
+            rms_norm_weight=rms_norm_weight,  # decode path uses single-pass launcher;
             # prefill path uses the two-stage split for occupancy.
             rms_norm_eps=rms_norm_eps,
             quant_block=quant_block,
@@ -1016,7 +1016,7 @@ def _fused_kv_compress_norm_rope_insert_indexer_mxfp4_attn(
     # ── MXFP4 quant: tile even/odd halves into (N_BLOCKS, HALF_BLOCK) ──
     # Each MXFP4 block of QUANT_BLOCK elements = HALF_BLOCK consecutive pairs,
     # so (N_BLOCKS, HALF_BLOCK) rows of even/odd each land exactly one block.
-    N_QUANT_BLOCKS: tl.constexpr = HEAD_SIZE // QUANT_BLOCK  # Static assertions enforce MXFP4 layout invariants:
+    N_QUANT_BLOCKS: tl.constexpr = HEAD_SIZE // QUANT_BLOCK  # Enforce MXFP4 layout
     # head_dim divisible by QUANT_BLOCK, TOKEN_STRIDE = head_dim // 2,
     # SCALE_DIM = num_quant_blocks.
     HALF_BLOCK: tl.constexpr = QUANT_BLOCK // 2

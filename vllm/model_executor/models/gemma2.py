@@ -99,7 +99,8 @@ class Gemma2MLP(nn.Module):
 
 
 class Gemma2Attention(nn.Module):
-    """Multi-head attention with QKV projections, rotary embeddings, and optional sliding window."""
+    """Multi-head attention with QKV projections, rotary embeddings, and optional
+        sliding window."""
 
     def __init__(
         self,

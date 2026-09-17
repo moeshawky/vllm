@@ -157,7 +157,8 @@ Gemma3nImageInputs = Gemma3nImagePixelInputs
 
 
 class Gemma3nProcessingInfo(BaseProcessingInfo):
-    """Processing info for Gemma3n multimodal model, handling image and audio modalities."""
+    """Processing info for Gemma3n multimodal model, handling image and audio
+        modalities."""
 
     def get_hf_config(self):
         """Get the HuggingFace config for the model."""
@@ -282,7 +283,8 @@ class Gemma3nDummyInputsBuilder(BaseDummyInputsBuilder[Gemma3nProcessingInfo]):
 
 
 class Gemma3nMultiModalProcessor(BaseMultiModalProcessor[Gemma3nProcessingInfo]):
-    """Processor for Gemma3n multimodal inputs, handling image and audio token replacement."""
+    """Processor for Gemma3n multimodal inputs, handling image and audio token
+        replacement."""
 
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
@@ -578,7 +580,8 @@ class Gemma3nMultimodalEmbedder(nn.Module):
         input_ids: torch.LongTensor | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Embeds token ids or soft tokens for multimodal content into language model space.
+        """Embeds token ids or soft tokens for multimodal content into language model
+            space.
 
         Args:
             input_ids: A torch.LongTensor containing the token ids to embed. Values should be in the range

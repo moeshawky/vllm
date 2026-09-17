@@ -30,7 +30,8 @@ KVCache = tuple[torch.Tensor, torch.Tensor]
 
 @support_torch_compile
 class ExaoneMoeMultiTokenPredictor(nn.Module):
-    """MTP predictor using ExaoneMoeDecoderLayer with is_mtp=True to force dense MLP usage for all MTP layers."""
+    """MTP predictor using ExaoneMoeDecoderLayer with is_mtp=True to force dense MLP
+        usage for all MTP layers."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -76,7 +77,8 @@ class ExaoneMoeMultiTokenPredictor(nn.Module):
                 quant_config=quant_config,
                 prefix=f"{prefix}.layers.{idx}",
                 is_mtp=True,
-                # Passes is_mtp=True to force the dense MLP path in the decoder layer, even when the config specifies sparse MLP types.
+# Passes is_mtp=True to force the dense MLP path in the decoder layer, even when the
+#  config specifies sparse MLP types.
             )
             for idx in range(self.num_mtp_layers)
         )
@@ -114,7 +116,8 @@ class ExaoneMoeMultiTokenPredictor(nn.Module):
             residual = intermediate_tensors["residual"]
 
         current_step_idx = spec_step_idx % self.num_mtp_layers
-        # Cycles through available MTP layers using modulo to support variable step indices with a fixed layer set.
+# Cycles through available MTP layers using modulo to support variable step indices
+#  with a fixed layer set.
         hidden_states, residual = self.layers[current_step_idx](
             positions=positions,
             hidden_states=hidden_states,
@@ -136,7 +139,8 @@ class ExaoneMoeMultiTokenPredictor(nn.Module):
 
 @support_torch_compile
 class ExaoneMoeMTP(nn.Module):
-    """Top-level MoE MTP model that delegates to ExaoneMoeMultiTokenPredictor and remaps mtp-prefixed weights to model-prefixed format."""
+    """Top-level MoE MTP model that delegates to ExaoneMoeMultiTokenPredictor and
+        remaps mtp-prefixed weights to model-prefixed format."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         config = vllm_config.model_config.hf_config
         self.vllm_config = vllm_config
@@ -199,7 +203,8 @@ class ExaoneMoeMTP(nn.Module):
                 if name.startswith("mtp."):
                     name = name.replace("mtp.", "model.")
                 elif not any(key in name for key in shared_weight_names):
-                # Yields only mtp-prefixed and shared-weight names, skipping all other parameters. Uses 'not any' condition, opposite of exaone4_5_mtp.py.
+# Yields only mtp-prefixed and shared-weight names, skipping all other parameters. Uses
+#  'not any' condition, opposite of exaone4_5_mtp.py.
                     continue
                 yield name, weight
 

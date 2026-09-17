@@ -64,7 +64,8 @@ from .utils import (
 
 
 class ExaoneGatedMLP(nn.Module):
-    """Gated MLP using merged column-parallel gate/up projections with silu activation and separate row-parallel output projection."""
+    """Gated MLP using merged column-parallel gate/up projections with silu
+        activation and separate row-parallel output projection."""
     def __init__(
         self,
         hidden_size: int,
@@ -103,7 +104,8 @@ class ExaoneGatedMLP(nn.Module):
 
 
 class ExaoneAttention(nn.Module):
-    """Multi-head attention with rotary embeddings, tensor-parallel QKV projection, and separate output projection."""
+    """Multi-head attention with rotary embeddings, tensor-parallel QKV projection,
+        and separate output projection."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -134,7 +136,8 @@ class ExaoneAttention(nn.Module):
         self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
         # MistralConfig has an optional head_dim introduced by Mistral-Nemo
         self.head_dim = getattr(config, "head_dim", None)
-        # Falls back to hidden_size // total_num_heads when head_dim is not explicitly set in the config.
+# Falls back to hidden_size // total_num_heads when head_dim is not explicitly set in
+#  the config.
         if self.head_dim is None:
             self.head_dim = self.hidden_size // self.total_num_heads
         self.q_size = self.num_heads * self.head_dim
@@ -230,7 +233,8 @@ class ExaoneBlockAttention(nn.Module):
 
 
 class ExaoneDecoderLayer(nn.Module):
-    """Decoder layer with pre-LN normalization, attention, and gated MLP. Supports both attention_bias and generic bias config attributes."""
+    """Decoder layer with pre-LN normalization, attention, and gated MLP. Supports
+        both attention_bias and generic bias config attributes."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -294,7 +298,8 @@ class ExaoneDecoderLayer(nn.Module):
 
 @support_torch_compile
 class ExaoneModel(nn.Module):
-    """Full Exaone model with embedding, stacked decoder layers, and pipeline-parallel support using wte embedding and ln_f final norm."""
+    """Full Exaone model with embedding, stacked decoder layers, and
+        pipeline-parallel support using wte embedding and ln_f final norm."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -374,7 +379,8 @@ class ExaoneModel(nn.Module):
 
 
 class ExaoneForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
-    """Causal language model wrapping ExaoneModel with LoRA and pipeline-parallel support. Maps HuggingFace checkpoint weights via hf_to_vllm_mapper."""
+    """Causal language model wrapping ExaoneModel with LoRA and pipeline-parallel
+        support. Maps HuggingFace checkpoint weights via hf_to_vllm_mapper."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)
@@ -382,7 +388,8 @@ class ExaoneForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
             ".k_proj": (".qkv_proj", "k"),
             ".v_proj": (".qkv_proj", "v"),
             ".c_fc_0": (".gate_up_proj", 0),
-            # Maps .c_fc_0 and .c_fc_1 to gate_up_proj shards 0 and 1 for the merged column-parallel structure.
+# Maps .c_fc_0 and .c_fc_1 to gate_up_proj shards 0 and 1 for the merged
+#  column-parallel structure.
             ".c_fc_1": (".gate_up_proj", 1),
         }
     )

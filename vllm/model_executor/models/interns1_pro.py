@@ -238,7 +238,8 @@ class InternS1ProMoeSparseMoeBlock(nn.Module):
         return topk_weights, topk_ids
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Route hidden states through gate and experts with sequence parallel support."""
+        """Route hidden states through gate and experts with sequence parallel
+            support."""
         assert hidden_states.dim() <= 2, (
             "InternS1ProMoeSparseMoeBlock only supports 1D or 2D inputs"
         )

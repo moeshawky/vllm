@@ -439,7 +439,7 @@ class Idefics3Connector(nn.Module):
 class Idefics3Model(nn.Module):
     """Idefics3 vision-language model core.
 
-    Combines an Idefics2 vision transformer, a pixel-shuffle connector,
+    Combines an Idefics3 vision transformer, a pixel-shuffle connector,
     and a Llama text model for multimodal inference.
     """
 

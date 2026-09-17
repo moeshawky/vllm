@@ -47,8 +47,8 @@ _ARG_RE = re.compile(
     re.DOTALL,
 )
 _PARTIAL_ARG_RE = re.compile(
-    r"<arg_key>(?P<key>.*?)£\s*"
-    r"</think>(?P<value>.*)$",
+    r"<arg_key>(?P<key>.*?)</arg_key>\s*"
+    r"<arg_value>(?P<value>.*)$",
     re.DOTALL,
 )
 # _ARG_RE and _PARTIAL_ARG_RE match GLM-4.7's XML-like

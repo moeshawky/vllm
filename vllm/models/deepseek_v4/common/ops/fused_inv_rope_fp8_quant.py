@@ -62,7 +62,7 @@ def _fused_inv_rope_fp8_quant_per_head(
         tl.extra.cuda.gdc_wait()
     # Padding rows in the TMA-aligned scale buffer: fill with zero and skip quant.
     if pid_token >= num_tokens:
-        if TMA_ALIGNED_SCALES:  # TMA_ALIGNED_SCALES packs 4 scale blocks into one INT32 for SM100; non-aligned stores FP32 scales directly.
+        if TMA_ALIGNED_SCALES:  # TMA packs 4 scales into INT32 for SM100
             scale_addr = (
                 scale_ptr
                 + g * scale_stride_group
@@ -88,13 +88,13 @@ def _fused_inv_rope_fp8_quant_per_head(
     offsets = tl.arange(0, HEAD_DIM)
     x = tl.load(input_base + offsets).to(tl.float32)
 
-    rope_abs_start: tl.constexpr = (CHUNKS_PER_HEAD - 1) * QUANT_GROUP_SIZE + ROPE_START  # start offset of RoPE within the head: last chunk start plus rope_start
+    rope_abs_start: tl.constexpr = (CHUNKS_PER_HEAD - 1) * QUANT_GROUP_SIZE + ROPE_START
     pos = tl.load(positions_ptr + pid_token)
     cache_base = cos_sin_cache_ptr + pos * cache_stride_pos
     is_rope = offsets >= rope_abs_start
     rope_local = offsets - rope_abs_start
 
-    x_partner = tl.load(input_base + (offsets ^ 1), mask=is_rope, other=0.0).to(  # loads adjacent element for RoPE rotation: even/odd pairs are interleaved
+    x_partner = tl.load(input_base + (offsets ^ 1), mask=is_rope, other=0.0).to(
         tl.float32
     )
     cs_idx = tl.maximum(rope_local >> 1, 0)
@@ -256,7 +256,7 @@ def _fused_inv_rope_fp8_quant_kernel_impl(
         (scale_inner * tma_aligned_T, 1, tma_aligned_T),
     )
     grid = (tma_aligned_T, n_groups * heads_per_group)
-    use_gdc = current_platform.is_arch_support_pdl()  # use_gdc flag turns on GDC/PDL support for memory bandwidth optimization
+    use_gdc = current_platform.is_arch_support_pdl()  # GDC/PDL bandwidth opt
     _fused_inv_rope_fp8_quant_per_head[grid](
         o,
         positions,

@@ -50,7 +50,7 @@ from .utils import AutoWeightsLoader, PPMissingLayer, WeightsMapper, maybe_prefi
 
 class Glm4Attention(nn.Module):
     """Attention module with QKV projection, rotary embeddings, and
-    optional Q/K norms. Uses partial rotary factor of 0.5.
+    Uses partial rotary factor of 0.5.
     """
 
     def __init__(
@@ -134,7 +134,8 @@ class Glm4Attention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute attention with QKV projection, rotary embeddings, and output projection."""
+        """Compute attention with QKV projection, rotary embeddings, and output
+            projection."""
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)

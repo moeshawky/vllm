@@ -141,7 +141,9 @@ class LlavaOnevisionProcessingInfo(LlavaNextProcessingInfo):
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"image": None, "video": None}
 
-    # Based on: https://github.com/huggingface/text-generation-inference/blob/v3.0.1/server/text_generation_server/models/vlm_causal_lm.py#L86
+# Based on:
+#  https://github.com/huggingface/text-generation-
+#   inference/blob/v3.0.1/server/text_generation_server/models/vlm_causal_lm.py#L86
     # with additional logic afterwards taken from LlavaOnevisionProcessor
     def _get_num_unpadded_features(
         self,

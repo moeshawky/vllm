@@ -547,7 +547,7 @@ class InternS2MobiusForConditionalGeneration(InternS2PreviewForConditionalGenera
         num_physical_experts: int,
         num_local_physical_experts: int,
     ) -> None:
-        """Update physical expert metadata for elastic load balancing."""
+        """Refresh cached physical-expert counts from the parallel config."""
         assert self.num_local_physical_experts == num_local_physical_experts
         self.num_physical_experts = num_physical_experts
         self.num_local_physical_experts = num_local_physical_experts

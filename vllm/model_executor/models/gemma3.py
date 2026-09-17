@@ -63,7 +63,8 @@ logger = init_logger(__name__)
 
 
 class Gemma3MLP(nn.Module):
-    """Feedforward network with configurable activation and separate gate and up projections."""
+    """Feedforward network with configurable activation and separate gate and up
+        projections."""
 
     def __init__(
         self,
@@ -100,7 +101,8 @@ class Gemma3MLP(nn.Module):
 
 
 class Gemma3Attention(nn.Module):
-    """Multi-head attention with QKV projections, QK normalization, and rotary embeddings."""
+    """Multi-head attention with QKV projections, QK normalization, and rotary
+        embeddings."""
 
     def __init__(
         self,

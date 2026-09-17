@@ -215,10 +215,7 @@ def _build_sliding_window_metadata(
     workspace_size: int,
     device: torch.device,
 ) -> _SlidingWindowMetadata:
-    """Plans per-request latent-cache gathers for SWA varlen
-    attention by partitioning requests into chunks that fit
-    the workspace budget.
-    """
+    """Plan per-request latent-cache gathers for SWA varlen attention."""
     query_lens_cpu = (query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]).to(
         dtype=torch.int32
     )

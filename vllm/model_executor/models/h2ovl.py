@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-# adapted from https://huggingface.co/h2oai/h2ovl-mississippi-2b/blob/main/modeling_h2ovl_chat.py
+# adapted from
+#  https://huggingface.co/h2oai/h2ovl-mississippi-2b/blob/main/modeling_h2ovl_chat.py
 # https://huggingface.co/h2oai/h2ovl-mississippi-2b/blob/main/image_process.py
 # --------------------------------------------------------
 # H2OVL-Mississippi

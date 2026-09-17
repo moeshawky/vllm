@@ -308,8 +308,8 @@ def make_deepseek_v4_expert_params_mapping(
 
 
 class DeepseekV4MegaMoEExperts(nn.Module):
-    """DeepSeek V4 MegaMoE expert module with DeepGEMM integration
-    for fp8/fp4 expert computation.
+    """DeepSeek V4 MegaMoE expert module. XPU path not implemented;
+    raises NotImplementedError.
     """
     _symm_buffer_cache: dict[tuple[int, int, int, int, int, int, int], object] = {}
 

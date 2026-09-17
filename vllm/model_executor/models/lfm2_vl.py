@@ -621,7 +621,8 @@ class Lfm2VLForConditionalGeneration(
     SupportsPP,
     IsHybrid,
 ):
-    """LFM2-VL multimodal model combining SigLIP2 vision encoder with LFM2 text model."""
+    """LFM2-VL multimodal model combining SigLIP2 vision encoder with LFM2 text
+        model."""
 
     supports_tower_connector_lora = True
     merge_by_field_config = True

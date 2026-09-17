@@ -300,7 +300,9 @@ class SiglipEncoderInfo(VisionEncoderInfo[SiglipVisionConfig]):
         return image_size // patch_size
 
 
-# Adapted from https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/siglip/modeling_siglip.py#L216
+# Adapted from
+#  https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/sig
+#   lip/modeling_siglip.py#L216
 class SiglipVisionEmbeddings(nn.Module):
     """Implements patch embedding, position embedding, and positional encoding
     interpolation for SigLIP vision inputs.
@@ -972,7 +974,9 @@ class SiglipVisionModel(nn.Module):
         )
 
 
-# Adapted from: https://github.com/huggingface/transformers/blob/v4.54.1/src/transformers/models/siglip/modeling_siglip.py#L200
+# Adapted from:
+#  https://github.com/huggingface/transformers/blob/v4.54.1/src/transformers/models/sig
+#   lip/modeling_siglip.py#L200
 class SiglipTextEmbeddings(nn.Module):
     """Implements token and position embeddings for the SigLIP text model with
     registered position_ids buffer.

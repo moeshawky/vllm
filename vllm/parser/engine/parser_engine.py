@@ -179,7 +179,7 @@ class ParserEngine(Parser):
     def vocab(self) -> dict[str, int]:
         return self.model_tokenizer.get_vocab()
 
-    # ── Engine lifecycle ──────────────────────────────────────
+    # ── Engine lifecycle ──────────────────────────────────────────────
 
     @property
     def skip_tool_parsing(self) -> bool:
@@ -257,7 +257,7 @@ class ParserEngine(Parser):
         delta_text, delta_token_ids = self._preprocess_feed(delta_text, delta_token_ids)
         return self._engine.feed(delta_text, delta_token_ids)
 
-    # ── Schema-aware type correction ──────────────────────────
+    # ── Schema-aware type correction ─────────────────────────────────
 
     @staticmethod
     def _coerce_value(value: object, schema: dict) -> tuple[object, bool]:
@@ -438,7 +438,7 @@ class ParserEngine(Parser):
         """Return True if the tool name is non-empty and valid."""
         return bool(name) and self._is_valid_tool_name(name)
 
-    # ── Private helpers ─────────────────────────────────────
+    # ── Private helpers ─────────────────────────────────────────────
 
     def _check_skip_tool_parsing(
         self,
@@ -470,7 +470,7 @@ class ParserEngine(Parser):
                 content = ""
         return content or None
 
-    # ── Streaming: parse_delta ────────────────────────────────
+    # ── Streaming: parse_delta ────────────────────────────────────────
 
     def parse_delta(
         self,
@@ -536,7 +536,7 @@ class ParserEngine(Parser):
             self._deferred_reasoning = ""
         return delta
 
-    # ── Non-streaming: extract_reasoning ──────────────────────
+    # ── Non-streaming: extract_reasoning ──────────────────────────────
 
     def extract_reasoning(
         self,
@@ -569,7 +569,7 @@ class ParserEngine(Parser):
         content = "".join(content_parts) or None
         return reasoning, content
 
-    # ── Non-streaming: extract_reasoning_streaming ────────────
+    # ── Non-streaming: extract_reasoning_streaming ────────────────────
 
     def extract_reasoning_streaming(
         self,
@@ -587,7 +587,7 @@ class ParserEngine(Parser):
         events = self._feed(delta_text, delta_token_ids)
         return self._strip_trailing_reasoning(self._events_to_delta(events))
 
-    # ── Non-streaming: extract_tool_calls ─────────────────────
+    # ── Non-streaming: extract_tool_calls ─────────────────────────────
 
     def extract_tool_calls(
         self,
@@ -654,7 +654,7 @@ class ParserEngine(Parser):
         events = self._feed(delta_text, delta_token_ids)
         return self._strip_trailing_reasoning(self._events_to_delta(events))
 
-    # ── Reasoning state queries ───────────────────────────────
+    # ── Reasoning state queries ───────────────────────────────────────
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
         """Check if reasoning has ended by scanning input_ids for
@@ -695,7 +695,7 @@ class ParserEngine(Parser):
         """
         return self._engine.reasoning_token_count
 
-    # ── Single-pass parse helper ────────────────────────────────
+    # ── Single-pass parse helper ────────────────────────────────────────
 
     def _single_pass_parse(
         self,
@@ -727,7 +727,7 @@ class ParserEngine(Parser):
 
         return reasoning, content, tool_call_info
 
-    # ── Non-streaming: parse ───────────────────────────────────
+    # ── Non-streaming: parse ───────────────────────────────────────────
 
     def parse(
         self,
@@ -759,7 +759,7 @@ class ParserEngine(Parser):
 
         return reasoning, content, tool_calls
 
-    # ── Event-to-delta conversion ─────────────────────────────
+    # ── Event-to-delta conversion ─────────────────────────────────────
 
     def _events_to_delta(
         self,
@@ -972,7 +972,7 @@ class ParserEngine(Parser):
                 )
             )
 
-    # ── Tool-call delta coalescing ──────────────────────────────
+    # ── Tool-call delta coalescing ──────────────────────────────────────
 
     @staticmethod
     def _coalesce_tool_call_deltas(
@@ -1006,7 +1006,7 @@ class ParserEngine(Parser):
             return deltas
         return list(merged.values())
 
-    # ── Arg conversion helpers ─────────────────────────────────
+    # ── Arg conversion helpers ─────────────────────────────────────────
 
     def _compute_arg_delta(self, idx: int, raw_delta: str) -> str | None:
         """Compute the arg delta for streaming by comparing the
@@ -1094,7 +1094,7 @@ class ParserEngine(Parser):
                 return name
         return None
 
-    # ── Build ExtractedToolCallInformation ─────────────────────
+    # ── Build ExtractedToolCallInformation ─────────────────────────────
 
     def _build_extracted_result(
         self,

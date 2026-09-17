@@ -31,13 +31,15 @@ if TYPE_CHECKING:
 
 
 class EmbeddingMixin(VllmModelForPooling):
-    """Mixin for embedding pooling models; initializes a DispatchPooler configured for embedding retrieval from the CLS token."""
+    """Mixin for embedding pooling models; initializes a DispatchPooler configured
+        for embedding retrieval from the CLS token."""
 
     default_seq_pooling_type = "CLS"
 
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
         # Skip VllmModelForPooling.__init__ and call the next class in MRO
-        """Initializes EmbeddingMixin by skipping VllmModelForPooling.__init__ and creating a DispatchPooler for embedding."""
+        """Initializes EmbeddingMixin by skipping VllmModelForPooling.__init__ and
+            creating a DispatchPooler for embedding."""
 
         super(VllmModelForPooling, self).__init__(
             vllm_config=vllm_config, prefix=prefix
@@ -50,13 +52,17 @@ class EmbeddingMixin(VllmModelForPooling):
 
 
 class SequenceClassificationMixin(SupportsCrossEncoding, VllmModelForPooling):
-    """Mixin for sequence classification pooling models; instantiates AutoModelForSequenceClassification on meta device and wraps the classifier with a reshape-capable subclass."""
+    """Mixin for sequence classification pooling models; instantiates
+        AutoModelForSequenceClassification on meta device and wraps the classifier
+        with a reshape-capable subclass."""
 
     default_seq_pooling_type = "CLS"
 
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
         # Skip VllmModelForPooling.__init__ and call the next class in MRO
-        """Initializes SequenceClassificationMixin by creating an AutoModelForSequenceClassification on meta device, extracting the classifier, and wrapping it with a ClassifierWithReshape subclass."""
+        """Initializes SequenceClassificationMixin by creating an
+            AutoModelForSequenceClassification on meta device, extracting the
+            classifier, and wrapping it with a ClassifierWithReshape subclass."""
 
         super(VllmModelForPooling, self).__init__(
             vllm_config=vllm_config, prefix=prefix

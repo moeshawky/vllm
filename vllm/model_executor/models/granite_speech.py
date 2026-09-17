@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 # Adapted from
-# https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/llama/modeling_llama.py
+# https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/llam
+#  a/modeling_llama.py
 # Copyright 2025 The vLLM team.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 #
@@ -259,7 +260,7 @@ class GraniteSpeechDummyInputsBuilder(
 class GraniteSpeechEncoderProjector(nn.Module):
     """Windowed QFormer projector mapping audio features to LLM embeddings.
 
-    Splits audio features into overlapping windows, queries a BLIP-2
+    non-overlapping fixed-size windows, queries a BLIP-2
     QFormer per window, and projects outputs to the language model's
     hidden dimension.
     """
@@ -938,7 +939,10 @@ class GraniteSpeechForConditionalGeneration(
             multi_modal_data={"audio": audio},
         )
 
-    # Adapted from https://github.com/huggingface/transformers/blob/v4.56.0/src/transformers/models/granite_speech/feature_extraction_granite_speech.py#L122 # noqa: E501
+# Adapted from
+#  https://github.com/huggingface/transformers/blob/v4.56.0/src/transformers/models/gra
+#   nite_speech/feature_extraction_granite_speech.py#L122
+#  # noqa: E501
     @classmethod
     def get_num_audio_tokens(
         cls,

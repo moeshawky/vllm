@@ -274,7 +274,8 @@ def all_gather_interleave(local_tensor, hidden_size: int, tp_size: int):
 
 
 class Glm4vVisionAttention(nn.Module):
-    """Vision attention with QKV projection, rotary embeddings, and MMEncoderAttention."""
+    """Vision attention with QKV projection, rotary embeddings, and
+        MMEncoderAttention."""
 
     def __init__(
         self,

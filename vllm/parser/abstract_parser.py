@@ -95,7 +95,7 @@ class Parser:
     a single interface for parsing model output.
 
     This class provides a unified way to handle both reasoning extraction
-    (e.g., chain-of-thought content in </think> tags) and tool call extraction
+    (e.g., chain-of-thought content in <think> tags) and tool call extraction
     (e.g., function calls in XML/JSON format) from model outputs.
 
     Subclasses can either:
@@ -384,8 +384,8 @@ class Parser:
         *,
         finished: bool,
     ) -> DeltaMessage | None:
-        """Parse a single streaming delta. Orchestrates reasoning
-        then tool call extraction via internal stream state.
+        """Parse a single streaming delta through reasoning, then tool
+        call extraction via internal stream state.
         """
 
     def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
@@ -934,7 +934,7 @@ class DelegatingParser(Parser):
                 current_token_ids = self.extract_content_ids(delta_token_ids)
                 # Flush whenever the reasoning parser is engine-based (not only
                 # when _engine_based is True): it buffers the post-marker text
-                # (e.g. the "<" of "</think>"), surfaced via finish_streaming().
+                # (e.g. the "<" of "<tool_call>"), surfaced via finish_streaming().
                 flush_delta = (
                     reasoning_parser.finish_streaming()  # type: ignore[union-attr, attr-defined]
                     if reasoning_parser is not None

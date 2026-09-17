@@ -66,7 +66,8 @@ logger = init_logger(__name__)
 
 
 class EXAONE4_5_VisionAttention(nn.Module):
-    """Vision multi-head attention with tensor-parallel QKV projection, rotary embeddings, and split-qkv dimension manipulation."""
+    """Vision multi-head attention with tensor-parallel QKV projection, rotary
+        embeddings, and split-qkv dimension manipulation."""
     def __init__(
         self,
         embed_dim: int,
@@ -139,7 +140,8 @@ class EXAONE4_5_VisionAttention(nn.Module):
         d = self.head_dim
 
         qkv = qkv.view(s, b, h + 2 * hk, d)
-        # Views the packed QKV tensor as [s, b, h + 2*hk, d] then slices the last two dimensions to separate h query heads from hk key/value heads.
+# Views the packed QKV tensor as [s, b, h + 2*hk, d] then slices the last two
+#  dimensions to separate h query heads from hk key/value heads.
 
         q = qkv[:, :, :h, :]
         k = qkv[:, :, h : h + hk, :]
@@ -208,7 +210,8 @@ class EXAONE4_5_VisionAttention(nn.Module):
     is_encoder=True,
 )
 class Exaone4_5_VisionBlock(nn.Module):
-    """Vision transformer block with attention, fused residual normalization, and gated MLP. Uses norm2(x, residual=x_attn) for fused normalization."""
+    """Vision transformer block with attention, fused residual normalization, and
+        gated MLP. Uses norm2(x, residual=x_attn) for fused normalization."""
     def __init__(
         self,
         dim: int,
@@ -270,7 +273,8 @@ class Exaone4_5_VisionBlock(nn.Module):
 
 
 class EXAONE4_5_VisionTransformer(Qwen2_5_VisionTransformer):
-    """Vision transformer that replaces Qwen2_5_VisionTransformer blocks with Exaone4_5_VisionBlock instances using RMSNorm."""
+    """Vision transformer that replaces Qwen2_5_VisionTransformer blocks with
+        Exaone4_5_VisionBlock instances using RMSNorm."""
     def __init__(
         self,
         vision_config: Exaone4_5_VisionConfig,
@@ -309,7 +313,8 @@ class EXAONE4_5_VisionTransformer(Qwen2_5_VisionTransformer):
 
 
 class Exaone4_5_ProcessingInfo(Qwen2VLProcessingInfo):
-    """Processing info for EXAONE-4.5 that delegates to Qwen2VLProcessingInfo with EXAONE-4.5 specific config and processor classes."""
+    """Processing info for EXAONE-4.5 that delegates to Qwen2VLProcessingInfo with
+        EXAONE-4.5 specific config and processor classes."""
     def get_hf_config(self):
         return self.ctx.get_hf_config(Exaone4_5_Config)
 
@@ -327,10 +332,12 @@ class Exaone4_5_ProcessingInfo(Qwen2VLProcessingInfo):
     dummy_inputs=Exaone4_5_DummyInputsBuilder,
 )
 class Exaone4_5_ForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
-    """Multimodal conditional generation model with vision tower and EXAONE-4 language model. Uses placeholder strings for image/video tokens."""
+    """Multimodal conditional generation model with vision tower and EXAONE-4
+        language model. Uses placeholder strings for image/video tokens."""
     hf_to_vllm_mapper = Qwen2_5_VLForConditionalGeneration.hf_to_vllm_mapper | (
         WeightsMapper(orig_to_new_prefix={"mtp.": None})
-        # Removes the 'mtp.' prefix from checkpoint names by mapping to None, allowing the parent Qwen2_5_VLForConditionalGeneration mapper to handle them.
+# Removes the 'mtp.' prefix from checkpoint names by mapping to None, allowing the
+#  parent Qwen2_5_VLForConditionalGeneration mapper to handle them.
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):

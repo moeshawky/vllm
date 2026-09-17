@@ -52,7 +52,8 @@ class LightOnOCRProcessingInfo(Mistral3ProcessingInfo):
 
 
 class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[LightOnOCRProcessingInfo]):
-    """Processes LightOnOCR inputs by removing image break/end tokens and unpadding pixels."""
+    """Processes LightOnOCR inputs by removing image break/end tokens and unpadding
+        pixels."""
 
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
@@ -144,7 +145,7 @@ class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[LightOnOCRProcessing
     dummy_inputs=Mistral3DummyInputsBuilder,
 )
 class LightOnOCRForConditionalGeneration(Mistral3ForConditionalGeneration):
-    """LightOnOCR multimodal model built on the Mistral3 vision-text architecture."""
+    """LightOnOCR multimodal model built on the Mistral3 vision-text design."""
 
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={

@@ -592,7 +592,9 @@ class InternS1ForConditionalGeneration(
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
         # transformers InternVLProcessor uses <IMG_CONTEXT> as the separator
-        # refer to https://github.com/huggingface/transformers/blob/f90de364c2484c7c325bbe05befdcf487bd75b63/src/transformers/models/internvl/processing_internvl.py#L116
+# refer to
+#  https://github.com/huggingface/transformers/blob/f90de364c2484c7c325bbe05befdcf487bd
+#   75b63/src/transformers/models/internvl/processing_internvl.py#L116
         if modality.startswith("image"):
             return "<IMG_CONTEXT>"
         if modality.startswith("video"):

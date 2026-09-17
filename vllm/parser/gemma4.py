@@ -49,7 +49,7 @@ logger = init_logger(__name__)
 # Gemma4 argument parser
 # ---------------------------------------------------------------------------
 
-_PARTIAL_DELIM_SUFFIXES = tuple(  # Pre-computed suffixes for stripping incomplete delimiters
+_PARTIAL_DELIM_SUFFIXES = tuple(  # Suffixes for stripping partial delimiters
     STRING_DELIM[:k] for k in range(len(STRING_DELIM), 0, -1)
 )
 

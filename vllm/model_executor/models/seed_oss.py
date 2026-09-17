@@ -104,7 +104,8 @@ class SeedOssMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
-        """Apply gate_up projection, SiLU activation, and down projection to the input."""
+        """Apply gate_up projection, SiLU activation, and down projection to the
+            input."""
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -359,7 +360,8 @@ class SeedOssModel(nn.Module):
             self.norm = PPMissingLayer()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
-        """Map input token IDs to embeddings via the vocabulary parallel embedding layer."""
+        """Map input token IDs to embeddings via the vocabulary parallel embedding
+            layer."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -470,11 +472,13 @@ class SeedOssForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
-        """Compute logits from hidden states using the logits processor and language model head."""
+        """Compute logits from hidden states using the logits processor and language
+            model head."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        """Load HuggingFace weights using AutoWeightsLoader with the hf_to_vllm_mapper."""
+        """Load HuggingFace weights using AutoWeightsLoader with the
+            hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

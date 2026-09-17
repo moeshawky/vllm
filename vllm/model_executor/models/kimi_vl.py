@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # ruff: noqa: E501
-# Adapted from https://huggingface.co/moonshotai/Kimi-VL-A3B-Instruct/blob/main/modeling_kimi_vl.py
-# Copyright 2025 The Moonshot AI Team, DeepSeek-AI, and HuggingFace Inc. team. All rights reserved.
+# Adapted from
+#  https://huggingface.co/moonshotai/Kimi-VL-A3B-Instruct/blob/main/modeling_kimi_vl.py
+# Copyright 2025 The Moonshot AI Team, DeepSeek-AI, and HuggingFace Inc. team. All
+#  rights reserved.
 #
-# The code is based on llava (llava/modeling_llava.py) and DeepSeek-V3 (DeepSeek-V3/modeling_deepseek.py), but modified for KimiVL.
+# The code is based on llava (llava/modeling_llava.py) and DeepSeek-V3
+#  (DeepSeek-V3/modeling_deepseek.py), but modified for KimiVL.
 #
 # Licensing Information:
-# - Code derived from llava (llava/modeling_llava.py) and DeepSeek-V3 (DeepSeek-V3/modeling_deepseek.py) is licensed under the Apache License, Version 2.0.
+# - Code derived from llava (llava/modeling_llava.py) and DeepSeek-V3
+#  (DeepSeek-V3/modeling_deepseek.py) is licensed under the Apache License, Version 2.0.
 # - Other parts of the code are licensed under the MIT License.
 #
 # Apache License, Version 2.0:

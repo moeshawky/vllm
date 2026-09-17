@@ -61,7 +61,8 @@ from .utils import (
 
 
 class ExaoneMoe(nn.Module):
-    """MoE layer with grouped top-k routing, optional shared experts, and expert-parallel distribution across devices."""
+    """MoE layer with grouped top-k routing, optional shared experts, and
+        expert-parallel distribution across devices."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -80,7 +81,8 @@ class ExaoneMoe(nn.Module):
         self.n_routed_experts = config.num_experts
 
         if self.tp_size > config.num_experts:
-        # Each expert must map to at least one tensor parallel group, so TP size cannot exceed the number of experts.
+# Each expert must map to at least one tensor parallel group, so TP size cannot exceed
+#  the number of experts.
             raise ValueError(
                 f"Tensor parallel size {self.tp_size} is greater than "
                 f"the number of experts {config.num_experts}."
@@ -112,7 +114,8 @@ class ExaoneMoe(nn.Module):
         self.n_redundant_experts = eplb_config.num_redundant_experts
         self.n_physical_experts = self.n_logical_experts + self.n_redundant_experts
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
-        # Divides physical experts by the EP group size to determine how many experts each device in the group handles.
+# Divides physical experts by the EP group size to determine how many experts each
+#  device in the group handles.
 
         self.shared_experts: ExaoneMoeGatedMLP | None
         if getattr(config, "num_shared_experts", 0) > 0:
@@ -165,7 +168,8 @@ class ExaoneMoe(nn.Module):
 
 
 class ExaoneMoeAttention(nn.Module):
-    """Multi-head attention with per-head Q/K RMSNorm, sliding window support, and GGUF-specific rotary embedding style override."""
+    """Multi-head attention with per-head Q/K RMSNorm, sliding window support, and
+        GGUF-specific rotary embedding style override."""
     def __init__(
         self,
         config,
@@ -227,7 +231,8 @@ class ExaoneMoeAttention(nn.Module):
 
         is_neox_style = True
         if quant_config is not None and quant_config.get_name() == "gguf":
-        # GGUF quantized models use a non-Neox rotary implementation, so the Neox style flag is disabled for them.
+# GGUF quantized models use a non-Neox rotary implementation, so the Neox style flag is
+#  disabled for them.
             is_neox_style = False
 
         layer_idx = extract_layer_index(prefix)
@@ -292,7 +297,8 @@ class ExaoneMoeAttention(nn.Module):
 
 
 class ExaoneMoeDecoderLayer(nn.Module):
-    """Decoder layer that selects between sparse MoE and dense MLP per layer based on mlp_layer_types config. MTP layers always use the dense MLP."""
+    """Decoder layer that selects between sparse MoE and dense MLP per layer based on
+        mlp_layer_types config. MTP layers always use the dense MLP."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -333,7 +339,8 @@ class ExaoneMoeDecoderLayer(nn.Module):
             swiglu_limit = None
 
         if config.mlp_layer_types[layer_idx] == "sparse" and not is_mtp:
-        # Uses the full MoE layer with routing for sparse layers, but always forces the dense MLP for MTP layers regardless of the config.
+# Uses the full MoE layer with routing for sparse layers, but always forces the dense
+#  MLP for MTP layers regardless of the config.
             self.mlp = ExaoneMoe(
                 config=config,
                 swiglu_limit=swiglu_limit,
@@ -382,7 +389,8 @@ class ExaoneMoeDecoderLayer(nn.Module):
 
 @support_torch_compile
 class ExaoneMoeModel(nn.Module):
-    """Full MoE model with embedding, stacked decoder layers, and EPLB redundant expert tracking from the parallel config."""
+    """Full MoE model with embedding, stacked decoder layers, and EPLB redundant
+        expert tracking from the parallel config."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -461,7 +469,8 @@ class ExaoneMoeModel(nn.Module):
 
 
 class ExaoneMoeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
-    """Causal language model wrapping ExaoneMoeModel with weight mapping for both dense MLP and shared expert projections."""
+    """Causal language model wrapping ExaoneMoeModel with weight mapping for both
+        dense MLP and shared expert projections."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)

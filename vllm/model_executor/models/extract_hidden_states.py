@@ -325,7 +325,9 @@ class CacheOnlyAttentionLayer(nn.Module, AttentionLayerBase):
 
 
 class ExtractHiddenStatesModel(nn.Module):
-    """Model that caches hidden states as KV pairs without computing attention. Uses a single cache-only attention layer with num_heads set to the number of hidden states to extract."""
+    """Model that caches hidden states as KV pairs without computing attention. Uses
+        a single cache-only attention layer with num_heads set to the number of hidden
+        states to extract."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
