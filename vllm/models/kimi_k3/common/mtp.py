@@ -36,6 +36,9 @@ def _fused_mtp_input_kernel(
 
     if input_idx == 0:
         position = tl.load(positions_ptr + token_idx)
+        # Zero out embedding rows at padding positions (position == 0) so
+        # the fused kernel writes zeros for those tokens in the
+        # input-embedding half of the output.
         values = tl.load(
             inputs_embeds_ptr + token_idx * inputs_embeds_stride + offsets,
             mask=mask & (position != 0),

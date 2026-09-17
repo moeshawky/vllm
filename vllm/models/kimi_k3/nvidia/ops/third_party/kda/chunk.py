@@ -7,7 +7,13 @@
 # the following copyright notice:
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 # ruff: noqa: E501
+"""Triton chunked forward kernels for KDA (Kimi Delta Attention) state computation.
 
+Computes chunk-level recurrent state via intra-chunk attention (chunk_kda_fwd_intra)
+and inter-chunk recurrence (chunk_gated_delta_rule_fwd_h). Contains a recompute
+pass that reconstructs per-chunk weighted keys/values from attention scores for
+downstream state updates.
+"""
 
 import torch
 
@@ -24,6 +30,9 @@ from vllm.utils.math_utils import RCP_LN2, cdiv, next_power_of_2
 
 from .chunk_intra import chunk_kda_fwd_intra
 
+# Block-time sizes the chunk_kda_fwd kernel autotunes across. Each value
+# is tried by triton.autotune to select the fastest configuration for the
+# given (H, K, V, BT, BK, BV, IS_VARLEN) key.
 BT_LIST_AUTOTUNE = [32, 64, 128]
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if is_amd else [4, 8, 16, 32]
 
@@ -197,6 +206,14 @@ def recompute_w_u_fwd(
     cu_seqlens: torch.Tensor | None = None,
     chunk_indices: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Recompute per-chunk weighted keys and values from attention scores.
+
+    Given chunked attention score matrix A and inputs k, v, beta (and optional
+    gating gk), reconstructs w (weighted keys) and u (weighted values) that
+    the inter-chunk recurrent pass needs. Supports both fixed-length and
+    variable-length (cu_seqlens) sequences. Returns (w, u) tuples matching
+    the input tensor shapes.
+    """
     B, T, H, K, V = *k.shape, v.shape[-1]
     BT = A.shape[-1]
     BK = 64

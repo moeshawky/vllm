@@ -666,6 +666,17 @@ class MiniMaxM3SparseAttention(nn.Module, AttentionLayerBase):
 
 
 class MiniMaxM3DecoderLayer(nn.Module):
+    """Single MiniMax M3 decoder layer with optional sparse attention.
+
+    Selects MiniMaxM3SparseAttention or MiniMaxM3Attention based on the
+    layer's position in the sparse attention frequency pattern. Uses
+    MiniMaxM3MoE for MoE layers and MiniMaxM3MLP for dense layers, with
+    Gemma-style RMSNorm for input and post-attention normalization.
+
+    Supports fused all-reduce into the input layernorm when the preceding
+    layer's FFN output was left un-reduced (ffn_all_reduce_deferred).
+    """
+
     def __init__(
         self,
         *,
@@ -789,6 +800,17 @@ class MiniMaxM3DecoderLayer(nn.Module):
 
 
 class MiniMaxM3Model(nn.Module, EagleModelMixin):
+    """MiniMax M3 text backbone: embedding, decoder layers, and final norm.
+
+    Creates the embedding layer (pipeline parallel aware), a stack of
+    MiniMaxM3DecoderLayer blocks, and the final Gemma-style RMSNorm.
+    Allocates a shared topk_indices_buffer for sparse attention layers.
+
+    Configures cross-layer all-reduce/RMSNorm fusion: layers whose FFN
+    output is left un-reduced have that all-reduce fused into the next
+    layer's input_layernorm or the final norm.
+    """
+
     fall_back_to_pt_during_load = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):

@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""NVIDIA CUDA KDA (Key-Dependent Attention) layer for Kimi-K3.
+
+Implements the full KDA attention module with fused kernel dispatch for
+prefill (flashkda or Triton fallback) and decode (fused CUDA or Triton).
+Handles weight loading with TP sharding, state shape/dtype calculation,
+and checkpointing for speculative decoding.
+"""
 
 from collections.abc import Callable
 from dataclasses import replace
@@ -153,6 +160,13 @@ def is_fused_kda_decode_supported(
     input_dtype: torch.dtype,
     conv_state_dtype: torch.dtype,
 ) -> bool:
+    """Check whether the fused CUDA KDA decode kernel is available.
+
+    Returns True only for specific head counts (12/24/48/96), head_dim 128,
+    conv_width 4, no speculative tokens, bfloat16 input and conv state,
+    and SM90/SM10x/SM12x platforms with the
+    torch.ops._C.fused_kda_decode binding.
+    """
     if (
         num_heads not in (12, 24, 48, 96)
         or head_dim != 128
@@ -177,6 +191,11 @@ def is_flashkda_supported(
     dtype: torch.dtype,
     lower_bound: float | None,
 ) -> bool:
+    """Check whether the flashkda prefill kernel is available.
+
+    Returns True only on CUDA devices with SM90/SM100/SM120, head_dim 128,
+    bfloat16 dtype, and a non-None lower_bound (gate bound).
+    """
     if not current_platform.is_cuda():
         return False
     capability = current_platform.get_device_capability()
@@ -302,6 +321,10 @@ def resolve_kda_prefill_backend(
     dtype: torch.dtype,
     lower_bound: float | None,
 ) -> str:
+    """Select the KDA prefill backend based on device capability.
+
+    Returns 'flashkda' when is_flashkda_supported passes, otherwise 'triton'.
+    """
     if backend not in ("auto", "triton", "flashkda"):
         raise ValueError(f"Unsupported KDA prefill backend: {backend}")
     supported = is_flashkda_supported(head_dim, dtype, lower_bound)
@@ -356,6 +379,15 @@ def _make_decode_norm_weight_loader(
 
 
 class KimiK3DeltaAttention(GatedDeltaNetAttention):
+    """KDA attention layer for Kimi-K3 on NVIDIA GPUs.
+
+    Extends GatedDeltaNetAttention with KDA-specific fused kernel dispatch.
+    The forward pass projects hidden states into q,k,v,g1,g2,f,a,b components,
+    applies conv1d and norm, then dispatches to flashkda (prefill) or fused
+    decode kernels based on capability checks. Supports speculative decoding
+    via state checkpointing and ReplaySSM.
+    """
+
     def get_attn_backend(self) -> type[AttentionBackend]:
         return KimiK3KDAAttentionBackend
 

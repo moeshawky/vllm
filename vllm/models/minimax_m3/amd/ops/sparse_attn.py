@@ -57,6 +57,9 @@ def _sparse_attn_prefill_kwargs() -> dict:
 # GQA block-sparse attention (paged). Main heads attend only to the selected
 # blocks. BLOCK_SIZE_K == 128 so each selected block is one page.
 # ---------------------------------------------------------------------------
+# Block-sparse GQA prefill kernel. One program per (q-block, kv-head,
+# batch); loops over top-k selected blocks with CDNA sub-tiling, causal
+# masking, fp8 dequant, and flash-softmax accumulation in fp32.
 # since prefill metadata is sliced from mixed batch metadata, seq_lens and prefix_lens
 # might lose pointer alignment, which trigger Triton recompiles. we don't actually
 # need pointer alignment for those tensors anyway because we do scalar load.

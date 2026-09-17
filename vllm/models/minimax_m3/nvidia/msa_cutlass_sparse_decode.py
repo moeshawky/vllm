@@ -28,6 +28,12 @@ _MIN_CUTLASS_BATCH_SIZE = 16
 
 @dataclass
 class MSACutlassDecodeMetadata:
+    """Runtime metadata for a single CUTLASS sparse decode step.
+
+    plan: fmha_sm100 plan tuple with stable tensor addresses for cudagraph replay.
+    page_table: flattened block table view passed to the fmha kernel.
+    """
+
     plan: Any
     page_table: torch.Tensor
 
@@ -41,6 +47,14 @@ def _update_runtime_metadata_kernel(
     decode_query_len: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
+    """Triton kernel that recomputes kv_segment_lens and qo_offset for each
+    query-head row from the current sequence lengths.
+
+    Each program updates BLOCK_SIZE rows. For row i belonging to request r with
+    local query position l, it stores seq_lens[r] into kv_segment_lens[i] and
+    (seq_lens[r] - decode_query_len + l) into qo_offset[i], implementing the
+    bottom-right causal offset for the decode step.
+    """
     offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < num_rows
     request = offsets // decode_query_len

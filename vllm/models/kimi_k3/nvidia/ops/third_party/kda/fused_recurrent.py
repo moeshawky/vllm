@@ -6,6 +6,14 @@
 # The original source was licensed under the MIT license.
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 # ruff: noqa: E501
+"""Fused recurrent KDA (Kimi Delta Attention) kernels for autoregressive decoding.
+
+Single-token-at-a-time forward pass that updates the recurrent state
+iteratively. Handles the full KDA recurrence: gated delta rule with
+softplus activation, beta sigmoid gating, and optional L2 normalization
+on query/key vectors. Supports speculative decoding (num_accepted_tokens)
+and PDL (program-dependent launch) scheduling.
+"""
 
 import torch
 
@@ -97,6 +105,13 @@ def _fused_kda_gate_beta(
     dt_bias: torch.Tensor | None,
     lower_bound: float | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute KDA gate values and beta sigmoid in a single fused Triton kernel.
+
+    Transforms raw gate values through the softplus activation (or lower-bound
+    sigmoid when USE_LOWER_BOUND is set) and applies sigmoid to raw beta.
+    Used by the fused recurrent decoder to prepare per-token gating values
+    before the recurrence loop.
+    """
     B, T, H, D = raw_g.shape
     assert B == 1
     assert raw_beta.shape == (B, T, H)

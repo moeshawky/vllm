@@ -47,6 +47,10 @@ from .short_conv import InklingShortConv
 def compute_log_scaling_tau(
     positions: torch.Tensor, n_floor: int, alpha: float
 ) -> torch.Tensor:
+    """Computes the Inkling log-scaling factor
+    tau = 1 + alpha * log(max(n / n_floor, 1)) for a batch of position
+    indices. Used by full-attention layers to scale attention logits as
+    sequence length grows, stabilizing softmax for long contexts."""
     effective_n = (positions + 1).to(torch.float32)
     return 1.0 + alpha * torch.log(torch.clamp(effective_n / float(n_floor), min=1.0))
 
@@ -66,6 +70,13 @@ class RelLogitsProj(nn.Module):
 
 
 class InklingAttention(nn.Module, AttentionLayerBase):
+    """Inkling multi-head attention layer with relative positional bias and
+    short convolution on K/V streams. Fuses the Q/K/V/relative projections
+    into one MergedColumnParallelLinear (qkvr), applies per-head RMS norm to
+    Q and K, and uses the FA4 relative-attention kernel for the attention
+    computation. Supports both full-attention and sliding-window (local)
+    variants."""
+
     def __init__(
         self,
         config: InklingModelConfig,

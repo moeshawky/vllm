@@ -20,7 +20,10 @@ from vllm.v1.attention.backends.gdn_attn import (
 
 logger = init_logger(__name__)
 
+# Chunk size (time steps per program block) for the metadata kernel grid.
 _BLOCK_T = 256
+# Lower bound for sequence-dimension block size; actual is next power
+# of two >= (num_seqs + 1).
 _MIN_BLOCK_N = 128
 
 
@@ -34,6 +37,14 @@ def _chunk_metadata_kernel(
     BLOCK_N: tl.constexpr,
     BLOCK_T: tl.constexpr,
 ):
+    """Triton kernel that builds FLA chunk_indices and chunk_offsets on device.
+
+    Each program instance handles one sequence (i_n). It computes the number of
+    chunks for that sequence, determines its chunk_offsets position by
+    prefix-summing chunk counts from earlier sequences, and writes interleaved
+    (seq_id, chunk_idx) pairs into chunk_indices. The final total is written to
+    chunk_offsets[N] by program 0.
+    """
     i_n = tl.program_id(0)
     offs_n = tl.arange(0, BLOCK_N)
     is_seq = offs_n < N
@@ -92,6 +103,12 @@ class KimiK3ROCmKDAMetadataBuilder(GDNAttentionMetadataBuilder):
         prefill_query_start_loc_cpu: torch.Tensor,
         device: torch.device,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Override that delegates to prepare_chunk_metadata_device with FLA_CHUNK_SIZE.
+
+        The base GDNAttentionMetadataBuilder builds this metadata on the host;
+        this ROCm specialization moves it to device to avoid a host-device
+        transfer in the prefill hot path.
+        """
         return prepare_chunk_metadata_device(
             prefill_query_start_loc,
             prefill_query_start_loc_cpu,
@@ -102,6 +119,7 @@ class KimiK3ROCmKDAMetadataBuilder(GDNAttentionMetadataBuilder):
 class KimiK3ROCmKDABackend(GDNAttentionBackend):
     @staticmethod
     def get_name() -> str:
+        """Return the backend identifier string "KIMI_K3_KDA_ROCM"."""
         return "KIMI_K3_KDA_ROCM"
 
     @staticmethod

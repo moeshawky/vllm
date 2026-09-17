@@ -25,6 +25,10 @@ from vllm.triton_utils import tl, triton
 # One sparse block == one KV page.
 SPARSE_BLOCK_SIZE = 128
 
+# Torch dtypes recognized as FP8 for KV cache dequantization. The sparse
+# attention kernels check kv_cache.dtype against this tuple to decide whether to
+# dequantize K/V on load. Includes the standard FP8 types plus the _fnuz and _fn
+# variants used by different vendors.
 _FP8_DTYPES = (
     torch.float8_e4m3fn,
     torch.float8_e4m3fnuz,
@@ -37,6 +41,11 @@ _FP8_DTYPES = (
 # GQA block-sparse attention (paged). Main heads attend only to the selected
 # blocks. BLOCK_SIZE_K == 128 so each selected block is one page.
 # ---------------------------------------------------------------------------
+# Generic block-sparse GQA prefill kernel (non-CDNA path). One program per
+# (q-block, kv-head, batch). Loads Q, loops over the top-k selected KV blocks,
+# computes QK in fp32 with causal masking, accumulates attention weights via
+# flash-softmax (online softmax reduction of m_i, lse_i), and multiplies by V.
+# Supports fp8 KV cache with configurable per-head or per-token scale modes.
 # since prefill metadata is sliced from mixed batch metadata, seq_lens and prefix_lens
 # might lose pointer alignment, which trigger Triton recompiles. we don't actually
 # need pointer alignment for those tensors anyway because we do scalar load.

@@ -36,6 +36,15 @@ from .sconv_swa_attn import InklingConvState, InklingSconvMetadata
 
 
 class InklingShortConv(nn.Module):
+    """Stateless Inkling short-convolution layer holding a depthwise conv
+    weight and an owner reference to the InklingConvState that manages the
+    paged conv-state cache. During forward, inserts current token inputs
+    into the cache, convolves against the W-tap window ending at each token's
+    absolute position, and returns the convolved result. Returns the input
+    unchanged when no attention metadata or bound cache is available
+    (profiling mode).
+    """
+
     def __init__(
         self, dim: int, kernel_size: int, owner: InklingConvState, stream_idx: int
     ) -> None:
@@ -51,12 +60,25 @@ class InklingShortConv(nn.Module):
         set_weight_attrs(self.weight, {"weight_loader": self.weight_loader})
 
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor) -> None:
+        """Load the depthwise conv weight, sharding along the channel
+        dimension for tensor parallelism when the loaded weight's channel
+        count exceeds the per-rank parameter size.
+        """
         if loaded_weight.shape[0] != param.shape[0]:
             shard = param.shape[0]
             loaded_weight = loaded_weight.narrow(0, self.tp_rank * shard, shard)
         param.data.copy_(loaded_weight)
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        """Insert current token inputs into the paged conv-state cache and
+        convolve each token against the W-tap window ending at its absolute
+        position. x has shape (num_tokens, dim) and positions has shape
+        (num_tokens,) of absolute positions. Returns x unchanged if attention
+        metadata or the bound cache is unavailable (e.g. during profiling
+        before KV allocation). The block size used for indexing is taken from
+        the owner's cache_block_size, which may be larger than the kernel
+        window due to page-size unification.
+        """
         # x: (num_tokens, dim); positions: (num_tokens,) absolute positions.
         attn_metadata = get_forward_context().attn_metadata
         if not isinstance(attn_metadata, dict):

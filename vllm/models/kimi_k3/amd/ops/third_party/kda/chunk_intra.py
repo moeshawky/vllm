@@ -7,6 +7,14 @@
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 # Forward-only adaptation of flash-linear-attention 0.5.0.
 # ruff: noqa: E501
+"""KDA intra-chunk attention kernels for AMD GPUs.
+
+Two-step computation: (1) compute diagonal sub-chunk blocks in fp32
+(either via the token-parallel kernel or the safe-gate sub-chunk kernel),
+then (2) compute off-diagonal blocks and perform forward substitution on
+the diagonals in a fused kernel. Ported from flash-linear-attention 0.5.0
+(forward-only).
+"""
 
 import torch
 
@@ -581,6 +589,15 @@ def chunk_kda_fwd_intra(
     chunk_indices: torch.LongTensor | None = None,
     safe_gate: bool = False,
 ):
+    """Compute the intra-chunk KDA attention and key-key matrices.
+
+    Step 1: compute the diagonal BCxBC blocks in fp32 (Akkd) using either
+    the token-parallel kernel (default) or the safe-gate sub-chunk kernel.
+    Step 2: compute off-diagonal Aqk blocks and merge with the diagonal
+    blocks in a fused kernel that performs forward substitution to produce
+    Akk (the inverted lower-triangular key-key matrix). Supports
+    fixed-length and variable-length (cu_seqlens) sequences.
+    """
     B, T, H, K, HV = *k.shape, gk.shape[2]
     BT = chunk_size
     BC = 16

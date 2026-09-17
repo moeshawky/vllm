@@ -86,6 +86,13 @@ def multimem_st_16B(dst: cute.Tensor, value: cute.Tensor, *, loc=None, ip=None) 
 
 
 class Sm100GemmRsArBF16:
+    """SM100 BF16 GEMM with fused tensor-parallel reduce-scatter or all-reduce.
+
+    Uses CUTLASS CuTeDSL with TMA transfers, tcgen05 matrix multiply, and
+    multimem instructions for the collective. Requires TP rank and world
+    size; supports 128x128x64 CTA tiles with optional 2-CTA grouping.
+    """
+
     def __init__(
         self,
         rank: int,

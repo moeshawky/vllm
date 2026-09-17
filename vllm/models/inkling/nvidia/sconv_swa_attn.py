@@ -75,6 +75,13 @@ class InklingSconvMetadataBuilder(AttentionMetadataBuilder[InklingSconvMetadata]
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> InklingSconvMetadata:
+        """Build per-forward sconv metadata from common attention metadata.
+
+        Uses sconv_seq_metadata to compute per-token seq_idx and query_start in one
+        kernel launch. query_start tells the fused sconv kernel which taps to read
+        from x (same-forward) vs the paged cache (pre-forward). Returns slices of
+        persistent cudagraph buffers.
+        """
         num_reqs = common_attn_metadata.num_reqs
         num_actual_tokens = int(common_attn_metadata.query_start_loc_cpu[-1])
         num_padded_tokens = common_attn_metadata.slot_mapping.shape[0]
@@ -130,6 +137,13 @@ class InklingConvState(nn.Module, AttentionLayerBase):
         kernel_size: int,
         prefix: str,
     ) -> None:
+        """Initialize the per-layer conv-state owner with the packed stream layout.
+
+        Computes the per-head width as K + V + attn-output chunk + mlp-output chunk,
+        padded to a power of two so every layer's conv page is the same size and an
+        exact multiple of the attention page. Stores the per-stream (offset, width)
+        sub-ranges. Asserts tp_size <= num_kv_heads and bfloat16 dtype.
+        """
         super().__init__()
         self.prefix = prefix
         # Bound to the manager-allocated paged cache by bind_kv_cache; a
@@ -177,12 +191,31 @@ class InklingConvState(nn.Module, AttentionLayerBase):
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
 
-    def forward(self): ...
+    def forward(self):
+        """Register this conv-state owner in the forward context.
+
+        Called from the decoder layer's forward so the runner enumerates this
+        owner as an attention layer and allocates its KV cache. Returns None.
+        """
+        ...
 
     def get_attn_backend(self) -> type[AttentionBackend]:
+        """Return the custom sconv attention backend class.
+
+        The backend has no attention implementation; the conv runs out-of-band via
+        the fused_sconv kernel. The backend exists only to register the conv state
+        as an attention layer so the KV cache manager allocates its paged cache.
+        """
         return InklingSconvBackend
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
+        """Return the sliding-window KV cache spec for this conv-state owner.
+
+        Emits one SlidingWindowSpec with the packed per-head width, window size
+        equal to the conv kernel size, and block size also equal to the kernel
+        size. The conv reads/writes this cache out-of-band via the custom sconv
+        backend.
+        """
         return SlidingWindowSpec(
             block_size=self.block_size,
             num_kv_heads=self.num_kv_heads,

@@ -20,6 +20,15 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
+    """Lazy platform dispatch for Qwen4Exp model classes.
+
+    Resolves Qwen4ExpForCausalLM, Qwen4ExpForConditionalGeneration, and
+    Qwen4ExpMTP to the correct platform-specific implementation at first
+    attribute access. XPU and default paths use the NVIDIA implementation.
+    TPU uses the common device-agnostic module (with optional MTP). ROCm
+    uses the AMD implementation. This avoids importing platform-specific
+    dependencies until the class is actually requested.
+    """
     if name in {
         "Qwen4ExpForCausalLM",
         "Qwen4ExpForConditionalGeneration",

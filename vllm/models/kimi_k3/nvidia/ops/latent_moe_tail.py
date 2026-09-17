@@ -57,6 +57,14 @@ class KimiK3LatentMoETailOp:
         rms_eps: float,
         experts_per_token: int = 0,
     ) -> tuple[KimiK3LatentMoETailContract, dist.ProcessGroup]:
+        """Build the cache contract key and resolve the TP process group.
+
+        Constructs a frozen KimiK3LatentMoETailContract from the provided
+        parameters and the current TP group. The contract is used as a
+        process-wide cache key so that identical configurations share a
+        single compiled kernel instance. Validates that the input device
+        matches the TP group device.
+        """
         tp = get_tp_group()
         group = tp.device_group
         device = torch.device(device)
@@ -91,6 +99,13 @@ class KimiK3LatentMoETailOp:
         rms_eps: float,
         experts_per_token: int = 0,
     ) -> "KimiK3LatentMoETailOp":
+        """Obtain or create a process-wide cached tail operation for the given contract.
+
+        Returns an existing KimiK3LatentMoETailOp if one has already been
+        created for this configuration, otherwise creates and caches a new
+        one. The cache is keyed by the frozen contract tuple, so identical
+        configurations across layers share a single instance.
+        """
         contract, group = cls._contract_and_group(
             hidden_size=hidden_size,
             latent_size=latent_size,
@@ -169,6 +184,13 @@ class KimiK3LatentMoETailOp:
         register_cutedsl_warmup_provider(self)
 
     def get_cutedsl_warmup_compile_units(self) -> tuple[CuTeDSLCompileUnit, ...]:
+        """Register warmup compile units for all CuTe DSL kernels in this operation.
+
+        Produces one compile unit for each skinny M size (1 through
+        skinny_max_m) plus one for the dynamic-M path. Warmup compilation
+        prevents first-request latency spikes by compiling all kernel
+        variants during model warmup.
+        """
         contract = self.contract
         skinny_units = tuple(
             CuTeDSLCompileUnit(
@@ -203,6 +225,15 @@ class KimiK3LatentMoETailOp:
         rms_weight: torch.Tensor,
         up_weight: torch.Tensor,
     ) -> torch.Tensor:
+        """Execute the fused K3 latent-MoE tail: collective, up-projection,
+        Lamport copy.
+
+        Takes the routed and shared expert outputs, applies the fused
+        collective operation (AllReduce/RMSNorm or ReduceScatter depending
+        on batch size), launches the up-projection GEMM with multicast, and
+        copies the multicast mailbox to a fresh local tensor. Returns the
+        final up-projected hidden states.
+        """
         self._validate_inputs(
             routed_output,
             shared_output,

@@ -9,6 +9,13 @@
 # ruff: noqa: E501
 
 # Token-parallel implementation of KDA intra chunk kernel
+"""Token-parallel intra-chunk KDA attention computation.
+
+Each token gets its own thread block, reducing wasted computation on
+padding compared to chunk-level parallelism. Computes only the diagonal
+sub-chunk blocks of the attention score matrices (Aqk and Akk) which
+are then combined with off-diagonal blocks by chunk_intra.py.
+"""
 
 import torch
 

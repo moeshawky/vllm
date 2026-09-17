@@ -27,6 +27,11 @@ SPARSE_BLOCK_SIZE = 128
 # ---------------------------------------------------------------------------
 # Bitonic top-k helpers (layout-agnostic).
 # ---------------------------------------------------------------------------
+# Bitonic sort compare-and-swap primitive. Reshapes the array so pairs to compare
+# are adjacent, swaps values (and their tracking IDs) if out of order. flip
+# inverts the comparison direction for descending/ascending alternation in the
+# bitonic merge. Uses bitcasting for comparison so the sort works on any numeric
+# dtype.
 @triton.jit
 def _compare_and_swap(x, ids, flip, i: tl.constexpr, n_dims: tl.constexpr):
     n_outer: tl.constexpr = x.numel >> n_dims
@@ -52,6 +57,10 @@ def _compare_and_swap(x, ids, flip, i: tl.constexpr, n_dims: tl.constexpr):
     return ret.to(x.dtype, bitcast=True), new_ids
 
 
+# Bitonic merge of a bitonic sequence. Takes a bitonic (first ascending, then
+# descending) subsequence and merges it into a fully sorted sequence using the
+# compare-and-swap network. stage controls the subsequence length (2^stage);
+# order controls ascending (0) or descending (1) output.
 @triton.jit
 def _bitonic_merge(
     x, ids, stage: tl.constexpr, order: tl.constexpr, n_dims: tl.constexpr

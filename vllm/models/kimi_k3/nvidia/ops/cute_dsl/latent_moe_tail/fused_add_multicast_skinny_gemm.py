@@ -38,6 +38,13 @@ class SkinnyConfig:
 
 
 def config_for_m(num_rows: int, shard_dim: int = 896) -> SkinnyConfig:
+    """Select a SkinnyConfig tuned for a given token count and shard dimension.
+
+    Uses empirical thresholds to balance block occupancy and register pressure.
+    For shard_dim=448, small batches get wide blocks (448 threads) with fewer
+    outputs per block; shard_dim=896 uses a single block of 224 threads with
+    more outputs per block for very small M.
+    """
     if shard_dim == 448:
         if num_rows >= 6:
             return SkinnyConfig(

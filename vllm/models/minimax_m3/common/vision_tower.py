@@ -1,5 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Vision tower components for MiniMax M3: patch embedding, attention with
+partial 3D RoPE, transformer encoder, and projector layers.
+
+Implements the CLIP-style vision transformer with temporal, height, and
+width position embeddings decomposed across the rotary dimensions.
+Handles ROCm-specific kernel launch limits via per-segment RoPE application
+when the total sequence length exceeds the grid dimension cap.
+"""
+
 from collections.abc import Iterable
 
 import numpy as np
@@ -185,6 +194,15 @@ class MiniMaxVLAttention(nn.Module):
         rotary_segment_lengths: list[int] | None = None,
         sequence_lengths: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Compute multi-head attention with partial 3D RoPE.
+
+        Applies QKV projection, reshapes to attention layout, applies rotary
+        position embeddings to query and key (rotating only the first rot_dim
+        dimensions), runs flash attention, and projects the output back.
+
+        Parameters rotary_segment_lengths is ROCm-only: when provided, RoPE
+        is applied per segment to avoid exceeding the HIP kernel grid limit.
+        """
         # x: (N, 1, embed_dim)  [seq=N, batch=1, chan=embed_dim]
         x_qkv, _ = self.qkv_proj(x)  # (N, 1, 3 * heads_per_part * head_dim)
         seq_len, batch_size, _ = x_qkv.shape
@@ -292,6 +310,13 @@ class MiniMaxVLEncoderLayer(nn.Module):
 
 
 class MiniMaxVLEncoder(nn.Module):
+    """Stack of MiniMaxVLEncoderLayer blocks.
+
+    Sequentially applies each layer to the input, passing through all
+    attention and RoPE parameters unchanged. The number of layers is
+    taken from config.num_hidden_layers unless overridden.
+    """
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -524,6 +549,14 @@ class MiniMaxVLVisionTransformer(nn.Module):
         pixel_values: torch.Tensor,
         grid_thw: list[list[int]],
     ) -> torch.Tensor:
+        """Run the full vision transformer on patch tokens.
+
+        Applies patch embedding, pre-layernorm, then the encoder stack with
+        3D rotary position embeddings. Handles the vision_segment_max_frames
+        limit by splitting long videos into frame-bounded segments. Assembles
+        backend-specific encoder metadata (cu_seqlens, max_seqlen) and applies
+        post-layernorm when the full layer count is used.
+        """
         # pixel_values: (total_N, C * temporal_patch_size * patch_size²)
         # Output:       (total_N, hidden_size)
 
@@ -631,6 +664,14 @@ class MiniMaxVLMultiModalProjector(nn.Module):
 
 
 class MiniMaxVLPatchMerger(nn.Module):
+    """Spatial patch merger: merges adjacent patches and projects to text
+    hidden size.
+
+    Reshapes input (N, text_hidden_size) into spatial_merge_size² groups,
+    then applies a two-layer MLP (linear_1 → activation → linear_2) to
+    produce (N // spatial_merge_size², text_hidden_size) merged tokens.
+    """
+
     def __init__(
         self,
         spatial_merge_size: int,

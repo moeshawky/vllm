@@ -117,6 +117,13 @@ class MiniMaxM3SparseBackend(AttentionBackend):
 
     @classmethod
     def supported_kv_cache_layouts(cls) -> tuple[KVCacheLayout, ...] | None:
+        """Return supported KV cache layouts, layout-dependent on the AITER path.
+
+        When the AITER page-16 sparse PA prototype is requested, only LHBNC
+        layout is supported (the AITER kernel unbinds K and V as separate
+        contiguous regions, requiring head dimension outside the block
+        dimension). Otherwise falls back to the parent's supported layouts.
+        """
         # AITER sparse PA unbinds K and V as separate contiguous regions, which
         # requires the head dimension to sit outside the block dimension.
         if _minimax_m3_aiter_sparse_pa_requested():
@@ -198,6 +205,15 @@ class MiniMaxM3SparseMetadataBuilder(AttentionMetadataBuilder[MiniMaxM3SparseMet
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> MiniMaxM3SparseMetadata:
+        """Build sparse attention metadata for the current batch.
+
+        Splits the batch into decode and prefill segments (decode-first
+        reorder), builds sub-metadata for each, and returns a
+        MiniMaxM3SparseMetadata object. Uses _build_decode_metadata and
+        _build_prefill_metadata for the segments. Handles the
+        reorder_batch_threshold (1 + num_speculative_tokens) for spec
+        decode compatibility.
+        """
         num_reqs = common_attn_metadata.num_reqs
         num_tokens = common_attn_metadata.num_actual_tokens
         query_start_loc = common_attn_metadata.query_start_loc

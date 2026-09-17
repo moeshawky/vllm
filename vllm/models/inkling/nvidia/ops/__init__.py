@@ -35,6 +35,12 @@ __all__ = [
 ]
 
 
+# PEP 562 lazy-module attribute hook: resolves the three lazy exports
+# (silu_and_mul_triton, sink_silu_mul_epilogue,
+# INKLING_FA4_REL_ATTENTION_KERNEL) on first access by importlib-importing
+# the owning submodule from _LAZY_EXPORTS. Eager exports (add_rmsnorm,
+# rmsnorm, fused_sconv) are imported at module load and never reach this
+# hook.
 def __getattr__(name: str):
     module = _LAZY_EXPORTS.get(name)
     if module is not None:

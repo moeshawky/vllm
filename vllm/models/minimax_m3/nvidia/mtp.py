@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Multi-token predictor (MTP) modules for MiniMax M3 speculative decoding.
+
+Implements the draft model layers that predict multiple future tokens in a
+single forward pass. Each MTP layer combines normalized token embeddings
+with normalized previous hidden states via a fused projection, then applies
+a sparse-attention MoE transformer block. The MTP shares its token embedding
+and LM head with the main model checkpoint.
+"""
 
 from collections.abc import Iterable
 
@@ -38,6 +46,14 @@ from .model import (
 
 
 class MiniMaxM3MultiTokenPredictorLayer(nn.Module):
+    """Single MTP predictor layer for speculative decoding.
+
+    Combines normalized current-token embeddings with normalized previous-layer
+    hidden states through a replicated linear projection (eh_proj), then passes
+    the result through a MiniMax M3 decoder layer (forced to sparse attention
+    and MoE). The output is the next-step hidden state for the prediction chain.
+    """
+
     def __init__(self, vllm_config: VllmConfig, prefix: str) -> None:
         super().__init__()
 
@@ -97,6 +113,14 @@ class MiniMaxM3MultiTokenPredictorLayer(nn.Module):
 
 
 class MiniMaxM3MultiTokenPredictor(nn.Module):
+    """Collection of MTP predictor layers for multi-step speculative decoding.
+
+    Maintains a ModuleDict of MiniMaxM3MultiTokenPredictorLayer instances indexed
+    by layer number. At each speculative step, cycles through the layers using
+    spec_step_idx % num_mtp_layers to select the active predictor. Owns the
+    shared token embedding table.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -143,6 +167,15 @@ class MiniMaxM3MultiTokenPredictor(nn.Module):
 
 
 class MiniMaxM3MTP(nn.Module):
+    """Top-level MiniMax M3 multi-token predictor with shared LM head.
+
+    Wraps the MiniMaxM3MultiTokenPredictor with a ParallelLMHead and
+    LogitsProcessor. The checkpoint weight loader maps MTP-specific weights
+    (*.mtp.layers.*) to the module's parameters while sharing embed_tokens
+    and lm_head with the main model. Validates that all MTP layers received
+    weights during loading.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 

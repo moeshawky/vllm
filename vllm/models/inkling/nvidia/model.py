@@ -61,6 +61,9 @@ InklingDelta: TypeAlias = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
 
 
 def _layer_id(name: str) -> int | None:
+    """Extracts the numeric layer index from a weight or module path of the
+    form ".layers.N.". Returns None if the pattern is not found. Used
+    during weight loading to map checkpoint names to layer indices."""
     m = re.search(r"\.layers\.(\d+)\.", name)
     return int(m.group(1)) if m else None
 
@@ -124,6 +127,13 @@ def _sconv_add_norm(
 
 
 class InklingDecoderLayer(nn.Module):
+    """One Inkling transformer decoder layer with attention and MLP/MoE
+    sublayers, plus short convolutions on both sublayer output streams.
+    Each layer owns an InklingConvState (paged SWA cache) shared by its
+    K/V/attn/mlp convolution streams. The forward pass accepts a pending
+    (pre-reduce, pre-sconv) delta from the previous sublayer and defers
+    its own MLP delta to the caller for fusion."""
+
     def __init__(
         self,
         config: InklingModelConfig,

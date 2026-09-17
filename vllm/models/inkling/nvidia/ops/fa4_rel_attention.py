@@ -29,6 +29,10 @@ def bucket_max_seqlen_q(max_seqlen_q: int) -> int:
 
 @cache
 def _use_sheared_bias() -> bool:
+    """Returns True on Blackwell GPUs (compute capability 10 or 11), where
+    the tml-fa4 library provides a more efficient sheared relative-bias
+    layout. On other platforms (e.g. Hopper), the standard score-mod
+    gather path is used instead."""
     capability = current_platform.get_device_capability()
     return capability is not None and capability.major in (10, 11)
 
@@ -110,6 +114,9 @@ def inkling_fa4_num_splits(
 
 
 def _num_warps_bucket(num_reqs: int) -> int:
+    """Maps request count to a power-of-two warp count for the split-KV
+    combine kernel. Caps at 32 warps; uses the formula
+    1 << ceil(log2((num_reqs+30)/31)) to bucket request sizes."""
     num_warps = min((num_reqs + 30) // 31, 32)
     return 1 << (num_warps - 1).bit_length()
 

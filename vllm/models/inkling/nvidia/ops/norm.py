@@ -12,6 +12,11 @@ _MAX_FUSED_SIZE = 65536
 
 
 def _get_num_warps_from_block_size(block_size: int) -> int:
+    """Map a kernel block size to a warp count.
+
+    Larger blocks get more warps (up to 32 for >=32768 elements); smaller blocks
+    use 4 warps. Used by the fused norm and MLP kernels to pick launch parameters.
+    """
     if block_size >= 32768:
         return 32
     if block_size >= 8192:
@@ -22,12 +27,22 @@ def _get_num_warps_from_block_size(block_size: int) -> int:
 
 
 def _largest_power_of_2(n: int) -> int:
+    """Return the largest power of two <= n.
+
+    Uses bit_length to find the highest set bit. Used by the mem-bandwidth
+    kernel grid sizing.
+    """
     assert n > 0, f"{n=}"
     return 1 << (n.bit_length() - 1)
 
 
 @lru_cache(maxsize=128)
 def _get_grid_size_for_mem_bw_kernel(device: torch.device, factor: int = 8) -> int:
+    """Compute a memory-bandwidth-bound kernel grid size for the device.
+
+    Returns largest_power_of_2(num_sms) * factor (default 8), cached per
+    (device, factor) pair.
+    """
     num_sms = torch.cuda.get_device_properties(device).multi_processor_count
     return _largest_power_of_2(num_sms) * factor
 

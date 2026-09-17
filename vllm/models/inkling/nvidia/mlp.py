@@ -21,6 +21,12 @@ from vllm.model_executor.layers.quantization import QuantizationConfig
 
 
 class InklingDenseMLP(nn.Module):
+    """Inkling dense SwiGLU MLP layer, also used as the MoE shared expert.
+    Uses a fused ColumnParallelLinear for the gate+up projection
+    (interleaved layout) and RowParallelLinear with reduce_results=False for
+    the down projection, so the output is a TP-partial sum consumed by the
+    layer-level reduce-scatter fallback."""
+
     def __init__(
         self,
         hidden_size: int,

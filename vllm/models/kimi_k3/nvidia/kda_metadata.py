@@ -44,11 +44,17 @@ if TYPE_CHECKING:
     )
 
 
+# Chunk size (16 tokens) used by the FlashKDA prefill kernel for block-aligned
+# state checkpointing.
 FLASHKDA_CHUNK_SIZE = 16
 
 
 @cache
 def _metadata_launch_pdl() -> bool:
+    """Check whether the current platform supports programmatic dependency
+    launch (PDL). Caches the result so the per-call cost is one dict lookup
+    after the first invocation.
+    """
     return current_platform.is_arch_support_pdl()
 
 
@@ -69,6 +75,12 @@ def _get_aligned_state_indices_kernel(
     BLOCK_ROWS: tl.constexpr,
     launch_pdl: tl.constexpr,
 ):
+    """Triton kernel computing aligned state slot indices from block tables.
+
+    For each request, loads its sequence length, computes
+    first_state_slot = max((seq_len - 1) // CACHE_BLOCK_SIZE, 0), then reads
+    NUM_STATE_SLOTS block IDs into state_indices.
+    """
     if launch_pdl:
         tl.extra.cuda.gdc_wait()
         tl.extra.cuda.gdc_launch_dependents()
@@ -107,6 +119,11 @@ def _mamba_get_block_table_tensor(
     kv_cache_spec: MambaSpec,
     mamba_cache_mode: str,
 ) -> torch.Tensor:
+    """Resolve the block-table tensor for Mamba state access.
+
+    Returns block_table directly for all/none cache modes; otherwise launches
+    the aligned-state kernel.
+    """
     if mamba_cache_mode in ("all", "none"):
         return block_table
 
@@ -160,6 +177,11 @@ def _stage_spec_decode_metadata_kernel(
     BLOCK_ROWS: tl.constexpr,
     launch_pdl: tl.constexpr,
 ):
+    """Triton kernel that stages speculative-decode metadata into CUDA-graph
+    buffers. Copies state_indices, query_start_loc, and num_accepted_tokens for
+    spec decode rows, and fills NULL_BLOCK_ID padding for rows beyond
+    num_spec_decodes.
+    """
     if launch_pdl:
         tl.extra.cuda.gdc_wait()
         tl.extra.cuda.gdc_launch_dependents()
@@ -247,6 +269,11 @@ def stage_spec_decode_metadata(
 
 @dataclass
 class KDARecoverSSMAlignMetadata:
+    """Metadata for KDA RecoverSSM alignment: block_table maps requests to KV
+    blocks, num_computed_tokens tracks per-request alignment offset, and
+    block_size is the KV cache block size in tokens.
+    """
+
     block_table: torch.Tensor
     num_computed_tokens: torch.Tensor
     block_size: int
@@ -254,6 +281,12 @@ class KDARecoverSSMAlignMetadata:
 
 @dataclass
 class KDARecoverSSMCommitMetadata:
+    """Metadata for committing RecoverSSM state after speculative decode:
+    state_indices and query_start_loc identify the source slots,
+    request_indices maps staged slots back to real request IDs, and align holds
+    optional alignment metadata.
+    """
+
     state_indices: torch.Tensor
     query_start_loc: torch.Tensor
     request_indices: torch.Tensor | None
@@ -262,12 +295,22 @@ class KDARecoverSSMCommitMetadata:
 
 @dataclass
 class KDACheckpointMetadata:
+    """Metadata for KDA state checkpointing during prefill: checkpoint_offsets
+    marks token positions where checkpoints are written, and state_indices
+    identifies the destination state slots.
+    """
+
     checkpoint_offsets: torch.Tensor
     state_indices: torch.Tensor
 
 
 @dataclass
 class KimiK3KDAMetadata(GDNAttentionMetadata, RecoverSSMMetadata):
+    """Kimi-K3 specialized KDA attention metadata. Extends GDNAttentionMetadata
+    and RecoverSSMMetadata with RecoverSSM commit metadata, a RecoverSSM commit
+    context for the kernel, and optional checkpoint metadata.
+    """
+
     recoverssm_commit: KDARecoverSSMCommitMetadata | None = None
     recoverssm_context: "KDARecoverSSMCommitContext | None" = field(
         default=None, repr=False, compare=False
@@ -277,6 +320,12 @@ class KimiK3KDAMetadata(GDNAttentionMetadata, RecoverSSMMetadata):
     def commit_recoverssm_state(
         self, num_accepted_tokens: torch.Tensor
     ) -> RecoverSSMPostprocessMetadata | None:
+        """Commit RecoverSSM state from a speculative-decode step.
+
+        Reads num_accepted_tokens to determine which draft tokens to retain,
+        then calls the kernel commit function with the source state slots and
+        query locations.
+        """
         commit = self.recoverssm_commit
         if commit is None:
             return None
@@ -306,6 +355,12 @@ class KimiK3KDAMetadata(GDNAttentionMetadata, RecoverSSMMetadata):
 
 
 class KimiK3KDAMetadataBuilder(GDNAttentionMetadataBuilder):
+    """Metadata builder for Kimi-K3 KDA attention layers. Extends
+    GDNAttentionMetadataBuilder with speculative-decode partitioning that
+    supports both native KDA spec decoding and the simplified RecoverSSM path
+    selected by --use-replayssm.
+    """
+
     mamba_aligned_state_indices: torch.Tensor | None = None
 
     def __init__(
@@ -334,6 +389,11 @@ class KimiK3KDAMetadataBuilder(GDNAttentionMetadataBuilder):
             )
 
     def _get_recoverssm_context(self) -> "KDARecoverSSMCommitContext":
+        """Lazy-initialize and return the KDARecoverSSMCommitContext.
+
+        Constructs the context from the attention layers in
+        static_forward_context on first call, then caches it.
+        """
         context = self.recoverssm_context
         if context is not None:
             return context
@@ -360,6 +420,13 @@ class KimiK3KDAMetadataBuilder(GDNAttentionMetadataBuilder):
         num_decode_draft_tokens_cpu: torch.Tensor | None = None,
         fast_build: bool = False,
     ) -> KimiK3KDAMetadata:
+        """Build KimiK3KDAMetadata from common attention metadata.
+
+        Partitions requests into spec decode, non-spec decode, and prefill
+        groups based on spec_sequence_masks. Handles the mamba_cache_mode=align
+        path by resolving aligned state indices, and computes separate
+        query_start_loc tensors for spec and non-spec groups.
+        """
         m = common_attn_metadata
         query_start_loc = m.query_start_loc
         query_start_loc_cpu = m.query_start_loc_cpu

@@ -72,6 +72,11 @@ def _pack_bf16_pairs(values):
 
 @triton.jit
 def _unpack_bf16_pairs(values):
+    """Reverse of _pack_bf16_pairs: extract two bf16 values from a published u32.
+
+    Low 16 bits become the first value, high 16 bits the second, interleaved
+    back to element order.
+    """
     lo = (values & 0xFFFF).to(tl.uint16).to(tl.bfloat16, bitcast=True)
     hi = (values >> 16).to(tl.uint16).to(tl.bfloat16, bitcast=True)
     return tl.interleave(lo, hi)
@@ -79,6 +84,11 @@ def _unpack_bf16_pairs(values):
 
 @triton.jit
 def _wait_pairs(ptr, offsets, mask):
+    """Spin-wait on volatile 32-bit loads until all masked slots are non-empty.
+
+    Reloads the whole masked set on each iteration; exits when no slot still
+    holds the 0x80008000 empty-pair sentinel. Returns the final loaded values.
+    """
     values = tl.load(ptr + offsets, mask=mask, other=0, volatile=True)
     while tl.max(tl.where(mask & (values == _EMPTY_PAIR), 1, 0)) != 0:
         values = tl.load(ptr + offsets, mask=mask, other=0, volatile=True)

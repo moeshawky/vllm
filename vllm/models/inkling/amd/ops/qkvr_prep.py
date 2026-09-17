@@ -1,14 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Triton kernels for Inkling relative-position projection and QKV
+preparation.
+
+Provides two kernel variants for projecting the per-head relative-position
+vector (16-dim) through the learned projection matrix: a low-latency path
+for small batch sizes and a throughput path for large ones (selected by
+use_rel_proj_throughput). qkvr_rel_proj dispatches between them. The
+qkvr_qkv path handles the full QKV split, RMSNorm, RoPE application, and
+KV-cache write in a single fused kernel.
+"""
 
 import torch
 
 from vllm.triton_utils import tl, triton
 from vllm.utils.torch_utils import aux_stream
 
+# Block dimensions and warp count for the low-latency relative projection
+# kernel (small batch sizes).
 LOW_BLOCK_M = 32
 LOW_BLOCK_N = 64
 LOW_NUM_WARPS = 4
+# Block dimensions, row-grouping factor, and warp count for the throughput
+# relative projection kernel (large batch sizes).
 THROUGHPUT_BLOCK_M = 32
 THROUGHPUT_BLOCK_N = 128
 THROUGHPUT_GROUP_M = 2
@@ -122,6 +136,15 @@ def _rel_proj_throughput_kernel(
 
 
 def use_rel_proj_throughput(rows: int, rel_extent: int) -> bool:
+    """Return True when the throughput kernel should be used for the given
+    shape.
+
+    The throughput kernel (grouped row processing, BLOCK_N=128) wins at
+    large token counts; below the threshold the low-latency kernel
+    (BLOCK_N=64, no grouping) has less launch overhead. The threshold
+    scales with rel_extent because a larger output width amortizes the
+    throughput kernel's higher fixed cost.
+    """
     min_rows = 8192 if rel_extent == 512 else 2048
     return rows >= min_rows
 
@@ -137,6 +160,16 @@ def qkvr_rel_proj(
     head_dim: int,
     d_rel: int,
 ) -> None:
+    """Project each token-head's relative-position vector through the
+    learned projection matrix.
+
+    Reads the d_rel=16 relative vector from each row of qkvr (offset
+    r_offset, packed after Q and KV), multiplies by rel_proj[16, rel_extent],
+    and writes the rel_extent-wide output to rel_out. When log_scaling is
+    provided, scales each row by its per-token log factor before projection.
+    Dispatches to the throughput kernel for large row counts, otherwise the
+    low-latency kernel.
+    """
     rows = qkvr.shape[0] * num_q_heads
     rel_extent = rel_proj.shape[1]
     assert d_rel == 16 and rel_proj.shape[0] == 16

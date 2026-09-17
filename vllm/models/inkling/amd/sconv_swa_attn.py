@@ -42,6 +42,13 @@ _K, _V, _ATTN, _MLP = 0, 1, 2, 3
 
 @dataclass
 class InklingSconvMetadata(AttentionMetadata):
+    """Per-forward metadata for the sconv sliding-window cache: the block
+    table mapping requests to physical blocks, slot mapping for each token,
+    the owning request index per token, and the first input-row of each
+    token's request (used by the fused kernel to distinguish same-forward
+    taps from pre-forward taps).
+    """
+
     block_table: torch.Tensor  # [num_reqs, max_blocks] physical blocks per req
     slot_mapping: torch.Tensor  # [T] int64 flat slot of each token (-1 => skip)
     seq_idx: torch.Tensor  # [T] int32 token -> batch request
@@ -49,6 +56,12 @@ class InklingSconvMetadata(AttentionMetadata):
 
 
 class InklingSconvMetadataBuilder(AttentionMetadataBuilder[InklingSconvMetadata]):
+    """AttentionMetadataBuilder subclass that constructs InklingSconvMetadata
+    by calling sconv_seq_metadata to fill per-token seq_idx and query_start
+    buffers in a single kernel launch. Maintains persistent per-token buffers
+    sized to max_num_batched_tokens for CUDA graph capture.
+    """
+
     _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
 
     def __init__(

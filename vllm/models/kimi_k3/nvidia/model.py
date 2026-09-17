@@ -155,6 +155,12 @@ def shard_sequence_parallel_mlp(
 
 
 def maybe_init_gemm_rs_ar(vllm_config: VllmConfig, use_sequence_parallel: bool) -> bool:
+    """Initialize the GEMM-RS/AR CuTeDSL singleton if feature flags and device
+    requirements are met.
+
+    Checks TP size 2-16, divisibility of 128, BF16 dtype, CUDA SM100, no
+    ubatching. Logs warning and returns False on failure.
+    """
     # Both feature flags may be enabled; the worker's static SP topology binds
     # its singleton to exactly one mode.
     all_reduce = not use_sequence_parallel

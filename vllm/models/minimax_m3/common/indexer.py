@@ -74,19 +74,40 @@ class MiniMaxM3IndexerBackend(AttentionBackend):
 
     @staticmethod
     def get_name() -> str:
+        """Return the backend's registry name.
+
+        Identifies this backend to the attention-backend registry and spec
+        decode. Must remain stable; other code references it by this string.
+        """
         return "MINIMAX_M3_SPARSE_INDEXER"
 
     @staticmethod
     def get_impl_cls() -> type["MiniMaxM3IndexerImpl"]:
+        """Return the default impl class for introspection.
+
+        The concrete implementation is selected per-backend by
+        select_indexer_impl_cls; this returns the base MiniMaxM3IndexerImpl
+        for backend-capability queries that run before impl selection.
+        """
         # Concrete impl chosen by select_indexer_impl_cls; base for introspection.
         return MiniMaxM3IndexerImpl
 
     @staticmethod
     def get_builder_cls() -> type["MiniMaxM3IndexerMetadataBuilder"]:
+        """Return the metadata builder class.
+
+        Always returns the Triton builder; the MSA builder is selected later
+        via get_attn_backend() when the MSA impl path is taken.
+        """
         return MiniMaxM3IndexerTritonMetadataBuilder
 
     @classmethod
     def get_supported_head_sizes(cls) -> list[int]:
+        """Return the supported index head sizes.
+
+        MiniMax M3 uses a fixed index head size of 128. This is validated
+        against the model config at cache allocation time.
+        """
         return [128]
 
     @staticmethod
@@ -95,6 +116,12 @@ class MiniMaxM3IndexerBackend(AttentionBackend):
 
     @classmethod
     def is_sparse(cls) -> bool:
+        """Report whether this is a sparse attention backend.
+
+        Returns True; the indexer is always sparse (scores all blocks,
+        selects top-k). Used by the attention backend dispatch to apply
+        sparse-specific logic (e.g., block table handling).
+        """
         return True
 
 
@@ -138,11 +165,24 @@ class MiniMaxM3IndexerCache(nn.Module, AttentionLayerBase):
         compilation_config.static_forward_context[prefix] = self
 
     def bind_kv_cache(self, kv_cache: torch.Tensor) -> None:
+        """Bind the allocated KV cache tensor to this cache.
+
+        Called by the KV cache manager after allocation. Squeezes the
+        head dimension (always 1 for the indexer) to produce a
+        [num_blocks, num_tokens, head_dim] tensor ready for kernel access.
+        """
         # [B, H=1, N, C] -> [B, N, C]
         self.kv_cache = kv_cache.squeeze(1)
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
-        # Key-only: MLAAttentionSpec budgets one vector/token (not 2x for K+V).
+        """Return the KV cache spec for this indexer cache.
+
+        Uses MLAAttentionSpec with num_kv_heads=1 to budget one vector
+        token (key-only), not 2x for K+V. The head size matches the
+        index query head size. This spec drives the KV cache manager's
+        memory allocation.
+        """
+        # Key-only: MLAAttentionSpec budgets one vector/token (not 2x for
         return MLAAttentionSpec(
             block_size=vllm_config.cache_config.block_size,
             num_kv_heads=1,

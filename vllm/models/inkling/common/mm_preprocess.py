@@ -50,6 +50,15 @@ MAX_AUDIO_TOKENS = 12_000
 
 
 class InklingMultiModalDataParser(MultiModalDataParser):
+    """Parser that rejects ambiguous 2D audio arrays.
+
+    Inkling audio must be either encoded (bytes/path) or a list of 1D mono
+    waveforms; a raw 2D array has an ambiguous channel layout (channels-first
+    vs channels-last) and is rejected with an explicit error. All other
+    parsing delegates to the default MultiModalDataParser with the target
+    sample rate and mono-channel constraints.
+    """
+
     def _parse_audio_data(self, data: Any) -> Any:
         if isinstance(data, (np.ndarray, torch.Tensor)) and data.ndim == 2:
             raise ValueError(
@@ -60,14 +69,35 @@ class InklingMultiModalDataParser(MultiModalDataParser):
 
 
 def inkling_vision_enabled(config: InklingMMConfig) -> bool:
+    """Return True when the checkpoint configures a vision tower.
+
+    Checks for a non-None decoder_dmodel on the vision_config sub-config;
+    the presence of decoder_dmodel is the marker that the vision tower is
+    instantiated rather than a null stub.
+    """
     return getattr(config.vision_config, "decoder_dmodel", None) is not None
 
 
 def inkling_audio_enabled(config: InklingMMConfig) -> bool:
+    """Return True when the checkpoint configures an audio tower.
+
+    Same decoder_dmodel marker check as inkling_vision_enabled but on the
+    audio_config sub-config.
+    """
     return getattr(config.audio_config, "decoder_dmodel", None) is not None
 
 
 class InklingProcessingInfo(BaseProcessingInfo):
+    """Processing-info provider for Inkling multimodal inputs.
+
+    Configures the HF processor (image processor + audio feature extractor),
+    the data parser (with audio resampling), and the supported MM limits
+    (image and audio unbounded per prompt). Returns None from
+    get_mm_max_tokens_per_item so vLLM profiles dummy inputs to determine
+    the maximum token counts; the dummy audio is sized at MAX_AUDIO_TOKENS
+    so audio is profiled at its allowed maximum.
+    """
+
     def get_hf_config(self) -> InklingMMConfig:
         return self.ctx.get_hf_config(InklingMMConfig)
 
@@ -129,6 +159,15 @@ class InklingProcessingInfo(BaseProcessingInfo):
 
 
 class InklingDummyInputsBuilder(BaseDummyInputsBuilder[InklingProcessingInfo]):
+    """Dummy multimodal inputs for memory profiling.
+
+    Generates square images (4x patch_size on each side) and audio clips at
+    the maximum allowed length (MAX_AUDIO_TOKENS * hop size) so that
+    profiling reflects the largest inputs vLLM will actually process. The
+    dummy text uses per-item marker tokens that the processor expands into
+    the correct number of placeholder rows.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         # One placeholder per media item; the processor expands each into N
         # copies once feature row counts are known.
@@ -179,6 +218,15 @@ class InklingDummyInputsBuilder(BaseDummyInputsBuilder[InklingProcessingInfo]):
 
 
 class InklingMultiModalProcessor(BaseMultiModalProcessor[InklingProcessingInfo]):
+    """HuggingFace processor wrapper for Inkling multimodal inputs.
+
+    Calls the HF processor on the raw media items, then expands each
+    placeholder marker token in the input_ids into the correct number of
+    media-token copies (one per feature row produced by the processor).
+    Returns a BatchFeature with the expanded input_ids and per-item feature
+    dictionaries (pixel_values for images, mel_features for audio).
+    """
+
     def _apply_hf_processor_main(
         self,
         mm_items: MultiModalDataItems,

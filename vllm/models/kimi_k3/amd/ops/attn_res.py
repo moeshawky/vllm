@@ -6,8 +6,17 @@
 # The original source code was licensed under the MIT license and included
 # the following copyright notice:
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
+"""Triton kernel for attention residual (AttnRes) mixing.
 
+Implements the softmax-weighted combination of per-block residual
+states with the running prefix sum, as described in the AttnRes
+paper. Adapted from the flash-linear-attention project.
 
+Each row is one token; the kernel loads the prefix, optionally adds
+a delta, optionally writes the block state, then computes the
+softmax over block states + prefix to produce the mixed output.
+Optionally applies a second RMSNorm before storing.
+"""
 import torch
 
 from vllm.triton_utils import tl, triton
@@ -38,6 +47,15 @@ def _attn_res_kernel(
     BLOCK_L: tl.constexpr,
     BLOCK_D: tl.constexpr,
 ):
+    """Triton kernel: per-token attention residual mixing.
+
+    For each row (token), loads the prefix state, adds delta if present,
+    optionally stores the updated prefix as a block state, then computes
+    a softmax-weighted combination of all block states plus the prefix.
+    The softmax scores are dot products of each source with the qk_weight,
+    normalized by the source's RMS. Applies optional output RMSNorm before
+    storing the result.
+    """
     row_idx = tl.program_id(0).to(tl.int64)
     d_offsets = tl.max_contiguous(tl.arange(0, BLOCK_D), BLOCK_D)
     d_mask = d_offsets < hidden_size
@@ -148,6 +166,13 @@ def attn_res(
     eps: float,
     output_norm_eps: float,
 ) -> torch.Tensor:
+    """Host wrapper for the AttnRes kernel.
+
+    Launches _attn_res_kernel with auto-selected tile size: small tile
+    (BLOCK_L=1, 4 warps) for large batches or few blocks (prefill),
+    larger tile (BLOCK_L=4, 8 warps) for small batches with many blocks
+    (decode). All input tensors must have contiguous last dimension.
+    """
     num_tokens, hidden_size = prefix.shape
     assert prefix.stride(-1) == 1
     assert delta is None or delta.stride(-1) == 1

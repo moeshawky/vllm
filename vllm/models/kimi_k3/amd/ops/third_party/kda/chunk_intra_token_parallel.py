@@ -9,6 +9,13 @@
 # ruff: noqa: E501
 
 # Token-parallel implementation of KDA intra chunk kernel
+"""Token-parallel KDA intra-chunk attention kernel for AMD GPUs.
+
+Each token gets its own thread block; the kernel computes the attention
+and key-key products for the diagonal sub-chunk block (the i_s-th
+sub-chunk of the i_c-th chunk). Supports fixed-length and variable-length
+(cu_seqlens) sequences. Ported from flash-linear-attention 0.5.0.
+"""
 
 import torch
 

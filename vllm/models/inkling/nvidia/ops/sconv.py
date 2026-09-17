@@ -63,6 +63,15 @@ def _fused_sconv_kernel(
     BT: tl.constexpr,
     BLOCK_C: tl.constexpr,
 ):
+    """Single-launch insert + depthwise causal conv1d over the paged conv state cache.
+
+    Each program owns a [BT tokens, BLOCK_C channels] tile. For each token it
+    writes the current input to its paged slot, then convolves the W taps ending at
+    its absolute position. Taps inside the current forward are read from the
+    immutable input x; pre-forward taps are read from the paged cache. The
+    just-written slot is never read back this step, so there is no write/read
+    hazard and no decode-vs-prefill split is needed.
+    """
     # Each program owns a [BT tokens, BLOCK_C channels] tile. The flat channel
     # index packs all H heads head-major (head = c // WS, in-stream offset =
     # c % WS), so one program spans heads -- no per-head launch and no

@@ -58,6 +58,10 @@ _NVFP4_INPUT_SCALE_DENOMINATOR = torch.finfo(torch.float8_e4m3fn).max * 6.0
 
 
 def _linear_with_fp32_out(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """Matrix multiply with fp32 output, preferring the low-latency ll_bf16
+    GEMM for small token counts (<=64) on Hopper GPUs. Falls back to
+    torch.mm with out_dtype=torch.float32 for larger batches or
+    non-Hopper platforms."""
     leading = list(x.shape[:-1])
     flat = x.flatten(0, -2)
     if (

@@ -31,6 +31,16 @@ from vllm.cute_utils import (
 
 @cute.jit
 def _fp8_to_f16_mma_fragments(src: cute.Tensor):
+    """Convert FP8 E4M3 register fragments to paired FP16 MMA k-fragments.
+
+    SM100 lacks native mma.sync.f8; ptxas lowers it to F2FP + HMMA. This
+    explicit conversion emits better codegen while keeping the lower/upper
+    FP16 k-fragments visible for the two separate MMA accumulations.
+
+    Takes a packed FP8 source tensor, converts via cvt.fp8x4_to_fp16x4, then
+    splits each 4-element group into lower (elements 0,1) and upper (elements
+    2,3) pairs for the two FP16 MMA operands.
+    """
     src_elems = cute.size(src)
     src_u32 = cute.recast_tensor(src, Uint32)
     src_f16 = cute.make_rmem_tensor(src_elems, Float16)
@@ -53,6 +63,16 @@ def _fp8_to_f16_mma_fragments(src: cute.Tensor):
 
 
 class IndexDecodeScoreKernel:
+    """CuteDSL kernel for MiniMax M3 index decode block scoring.
+
+    Computes max-similarity scores between query embeddings and cached KV
+    blocks using TMA bulk transfers and mma.sync matrix operations. The
+    kernel is designed for small N (BLOCK_Q <= 32) where CTA occupancy
+    matters more than tcgen05 pipeline depth. Uses a 2-stage TMA pipeline
+    with mbarrier synchronization between a dedicated TMA warp and 4 MMA
+    warps.
+    """
+
     BLOCK_K = 128
     BAR_MMA = 1
     num_stages = 2
@@ -460,6 +480,28 @@ def minimax_m3_index_decode_score_cutedsl(
     max_decode_query_len: int,
     score_out: torch.Tensor,
 ) -> torch.Tensor:
+    """Compute index block scores for MiniMax M3 sparse attention decode step.
+
+    Uses the CuteDSL kernel to compute max-similarity scores between the
+    index query and each cached KV block. Supports BF16 and FP8 E4M3 query
+    dtypes. The kernel is compiled lazily and cached per geometry.
+
+    Args:
+        idx_q: Index query tensor [total_tokens, num_heads, head_dim].
+        index_kv_cache: Paged index KV cache [num_pages, BLOCK_K, head_dim].
+        block_table: Block table mapping requests to physical pages.
+        seq_lens: Current sequence lengths per request.
+        max_seq_len: Maximum sequence length (unused by this kernel).
+        init_blocks: Number of initial blocks (unused by this kernel).
+        local_blocks: Number of local blocks (unused by this kernel).
+        num_kv_heads: Number of KV heads (unused by this kernel).
+        decode_query_len: Number of query tokens per request this step.
+        max_decode_query_len: Maximum decode query length for kernel compilation.
+        score_out: Output score tensor [num_heads, total_tokens, num_blocks].
+
+    Returns:
+        The score_out tensor filled with block scores (-inf for causally invalid).
+    """
     if idx_q.dtype not in (torch.bfloat16, torch.float8_e4m3fn):
         raise TypeError("CuteDSL index decode score supports BF16 and FP8 E4M3 only")
     total_tokens, num_heads, head_dim = idx_q.shape

@@ -36,6 +36,14 @@ from .sconv_swa_attn import InklingConvState, InklingSconvMetadata
 
 
 class InklingShortConv(nn.Module):
+    """Stateless short-convolution weight holder and kernel launcher.
+
+    Owns one depthwise conv weight tensor and the stream index within the owner
+    paged cache. forward() retrieves per-forward metadata and calls fused_sconv on
+    the appropriate cache slice. Falls back to identity when no metadata or cache
+    is available.
+    """
+
     def __init__(
         self, dim: int, kernel_size: int, owner: InklingConvState, stream_idx: int
     ) -> None:
@@ -51,12 +59,23 @@ class InklingShortConv(nn.Module):
         set_weight_attrs(self.weight, {"weight_loader": self.weight_loader})
 
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor) -> None:
+        """Load conv weight with TP sharding.
+
+        If checkpoint stores full-width weights, narrow to this rank shard before
+        copying.
+        """
         if loaded_weight.shape[0] != param.shape[0]:
             shard = param.shape[0]
             loaded_weight = loaded_weight.narrow(0, self.tp_rank * shard, shard)
         param.data.copy_(loaded_weight)
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        """Run depthwise causal conv1d over the paged conv state cache.
+
+        Retrieves sconv metadata from the forward context. Returns x unchanged if no
+        metadata or cache is available (profiling phase). Otherwise calls fused_sconv
+        with this stream cache slice.
+        """
         # x: (num_tokens, dim); positions: (num_tokens,) absolute positions.
         attn_metadata = get_forward_context().attn_metadata
         if not isinstance(attn_metadata, dict):

@@ -12,6 +12,13 @@ from transformers.configuration_utils import PretrainedConfig
 
 
 class InklingModelConfig(PretrainedConfig):
+    """PretrainedConfig for the Inkling text backbone (MoE or dense, with
+    optional sliding-window attention and short convolution layers).
+    Accepts the OG-thinkingmachines layout and the HuggingFace Transformers
+    field names and remaps intermediate/moe/conv field aliases to canonical
+    names in __init__.
+    """
+
     model_type = "inkling_model"
     keys_to_ignore_at_inference = ["past_key_values"]
 
@@ -216,6 +223,12 @@ class InklingModelConfig(PretrainedConfig):
 
 
 class InklingAudioConfig(PretrainedConfig):
+    """PretrainedConfig for the Inkling audio tower. When decoder_dmodel
+    is set, requires all dMel fields (n_mel_bins, mel_vocab_size,
+    dmel_min_value, dmel_max_value, use_audio_norm, audio_mode) to be
+    present; raises ValueError listing missing fields.
+    """
+
     model_type = "inkling_audio_model"
 
     def __init__(
@@ -256,6 +269,12 @@ class InklingAudioConfig(PretrainedConfig):
 
 
 class InklingVisionConfig(PretrainedConfig):
+    """PretrainedConfig for the Inkling vision tower. When decoder_dmodel
+    is set, requires vision_encoder_type, patch_size, temporal_patch_size,
+    n_channels, n_layers, and use_vision_norm; raises ValueError listing
+    missing fields.
+    """
+
     model_type = "inkling_vision_model"
 
     def __init__(
@@ -296,6 +315,12 @@ class InklingVisionConfig(PretrainedConfig):
 
 
 class InklingMMConfig(PretrainedConfig):
+    """PretrainedConfig for the full Inkling multimodal model, holding
+    text_config, audio_config, and vision_config sub-configs and delegating
+    text-backbone properties (vocab_size, hidden_size, etc.) through to
+    text_config.
+    """
+
     model_type = "inkling_mm_model"
     keys_to_ignore_at_inference = ["past_key_values"]
     sub_configs: ClassVar[dict[str, type[PretrainedConfig]]] = {
@@ -380,18 +405,31 @@ class InklingMMConfig(PretrainedConfig):
 
 @dataclass(kw_only=True, frozen=True)
 class TMLConvStateShape:
+    """Frozen dataclass describing the conv state shape: conv is a list of
+    (conv_len, dim) pairs per stream, temporal is a (0,0,0) placeholder
+    for future temporal state.
+    """
+
     conv: list[tuple[int, int]]
     temporal: tuple[int, int, int]
 
 
 @dataclass(kw_only=True, frozen=True)
 class TMLStateDType:
+    """Frozen dataclass holding the dtypes for conv and temporal state
+    (both bfloat16 by default).
+    """
+
     conv: torch.dtype = torch.bfloat16
     temporal: torch.dtype = torch.bfloat16
 
 
 @dataclass(kw_only=True, frozen=True)
 class TMLConvCacheParams:
+    """Frozen dataclass bundling conv cache shape, the layer IDs that use it,
+    and the dtype; returned by InklingModelConfig.mamba2_cache_params.
+    """
+
     shape: TMLConvStateShape
     layers: list[int]
     dtype: TMLStateDType = field(default_factory=TMLStateDType)

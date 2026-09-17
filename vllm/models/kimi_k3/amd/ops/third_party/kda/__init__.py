@@ -35,6 +35,9 @@ from .fused_recurrent import (
 )
 
 __all__ = [
+    # Public API: chunk-based (prefill) and fused-recurrent (decode) KDA kernels.
+    # chunk_kda* for prefill, fused_recurrent_kda* for decode, fused_kda_gate* for
+    # gating.
     "chunk_kda",
     "chunk_kda_fwd",
     "chunk_kda_with_fused_gate",

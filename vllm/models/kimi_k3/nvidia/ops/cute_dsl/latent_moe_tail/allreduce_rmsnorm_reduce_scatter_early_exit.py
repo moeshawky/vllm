@@ -44,6 +44,13 @@ def _mapping(
     latent_dim: int,
     hidden_dim: int,
 ) -> tuple[int, int, int, int]:
+    """Compute the CTA/shard/cluster/thread partitioning for the collective.
+
+    Returns (shard_dim, cluster_ctas, threads, shared_roles): shard_dim is the
+    per-TP-rank hidden slice, cluster_ctas is the number of CTAs cooperating
+    per destination, threads is the threads per CTA, and shared_roles is the
+    number of ReduceScatter-specialized CTA roles per destination group.
+    """
     shard_dim = hidden_dim // tp_size
     cluster_ctas = latent_dim // shard_dim
     threads = shard_dim // VEC_BF16

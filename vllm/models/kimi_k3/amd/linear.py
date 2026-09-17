@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Kimi-K3 linear attention model for ROCm (AMD GPUs).
 
+Contains the MLP, MoE, MLA attention, decoder layer, and full
+KimiLinearForCausalLM model implementation using GDN-based
+linear attention with optional latent MoE.
+"""
 from collections.abc import Iterable
 from typing import Any
 
@@ -72,6 +77,11 @@ logger = init_logger(__name__)
 
 
 class KimiMLP(nn.Module):
+    """Kimi MLP block with SiLU or SITU activation.
+
+    Implements the standard gate-up-down MLP pattern with a
+    merged gate+up projection and separate down projection.
+    """
     def __init__(
         self,
         hidden_size: int,
@@ -121,6 +131,11 @@ class KimiMLP(nn.Module):
 
 
 class KimiRoutedOutputTransform(nn.Module):
+    """Norm + replicated up-projection applied to routed expert outputs.
+
+    Used in latent MoE to transform the lower-dimensional routed
+    expert output back to the full hidden size.
+    """
     def __init__(
         self,
         norm: RMSNorm | None,
@@ -148,6 +163,12 @@ def _apply_attn_res(
     output_norm: RMSNorm | None = None,
     block_write_idx: int = -1,
 ) -> torch.Tensor:
+    """Apply attention residual mixing via the attn_res Triton kernel.
+
+    Computes a softmax-weighted mix of block residuals and the prefix
+    sum, with optional output norm. Used in decoder layers when
+    attn_res_block_size is set.
+    """
     return attn_res(
         prefix_sum,
         delta,
@@ -163,6 +184,13 @@ def _apply_attn_res(
 
 
 class KimiMoE(nn.Module):
+    """Kimi mixture-of-experts layer with optional latent MoE.
+
+    Routes tokens to experts via a fp32 gate, supports shared experts,
+    and uses latent MoE (down/up projection around expert dispatch)
+    when routed_expert_hidden_size is set. Pads intermediate size
+    for small TP partitions.
+    """
     def __init__(
         self,
         config: KimiLinearConfig,
@@ -463,6 +491,12 @@ class KimiMLAAttention(nn.Module):
 
 
 class KimiDecoderLayer(nn.Module):
+    """Single decoder layer with full attention or linear attention.
+
+    Layers use MLA (full attention) unless their 1-based index appears in
+    the config kda_layers list, in which case they use KDA linear attention.
+    Supports attention residual mixing via attn_res when configured.
+    """
     def __init__(
         self,
         config: KimiLinearConfig,
@@ -663,6 +697,12 @@ class KimiDecoderLayer(nn.Module):
 
 
 class KimiLinearModel(nn.Module, EagleModelMixin):
+    """Full Kimi-K3 language model with linear attention.
+
+    Stacks decoder layers, applies final norm, and provides state
+    save/restore for linear attention layers. Implements
+    EagleModelMixin for speculative decoding support.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -989,6 +1029,12 @@ class KimiLinearModel(nn.Module, EagleModelMixin):
 class KimiLinearForCausalLM(
     nn.Module, HasInnerState, SupportsPP, MixtureOfExperts, IsHybrid
 ):
+    """Kimi-K3 causal language model with LM head.
+
+    Wraps KimiLinearModel with a logit processor. Implements
+    MixtureOfExperts, IsHybrid, SupportsPP, SupportsQuant,
+    HasInnerState interfaces.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.model_config = vllm_config.model_config

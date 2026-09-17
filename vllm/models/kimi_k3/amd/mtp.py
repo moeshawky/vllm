@@ -35,6 +35,11 @@ logger = init_logger(__name__)
 
 
 class SharedHead(nn.Module):
+    """RMSNorm + ParallelLMHead pair for producing logits from hidden states.
+
+    The forward method applies only the norm; the head is applied
+    separately via LogitsProcessor in compute_logits.
+    """
     def __init__(
         self,
         config: KimiLinearConfig,
@@ -55,6 +60,13 @@ class SharedHead(nn.Module):
 
 
 class KimiK3MultiTokenPredictorLayer(nn.Module):
+    """Single MTP layer: input fusion + one KimiDecoderLayer block.
+
+    Fuses the previous token embedding (through enorm) with the
+    previous hidden state (through hnorm) via eh_proj, then passes
+    through a standard decoder layer. Disables attn-residual by
+    setting attn_res_block_size=None in a config copy.
+    """
     def __init__(
         self,
         config: KimiLinearConfig,
@@ -117,6 +129,12 @@ class KimiK3MultiTokenPredictorLayer(nn.Module):
 
 
 class KimiK3MultiTokenPredictor(nn.Module):
+    """Multi-layer MTP model with embedding table and logits processor.
+
+    Maintains a ModuleDict of MTP layers indexed by layer ID.
+    Routes to the correct layer based on spec_step_idx modulo
+    num_mtp_layers, cycling through layers for multi-step speculation.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config: KimiLinearConfig = vllm_config.model_config.hf_text_config
@@ -176,6 +194,13 @@ class KimiK3MultiTokenPredictor(nn.Module):
 
 
 class KimiK3MTP(nn.Module):
+    """Top-level MTP wrapper that adds load_weights to the predictor.
+
+    Delegates embed_input_ids, forward, and compute_logits to the
+    inner KimiK3MultiTokenPredictor. Implements load_weights for
+    both regular checkpoint loading and speculative decoding weight
+    remapping via get_pp_missing_layer_names.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_text_config

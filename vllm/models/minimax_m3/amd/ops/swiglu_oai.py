@@ -27,6 +27,9 @@ import torch
 from vllm.triton_utils import tl, triton
 
 
+# Fused SwiGLU-OAI activation kernel. Reads split-layout gate/up halves,
+# applies clamping, computes gate*sigmoid(alpha*gate)*(up+beta) in fp32,
+# and stores in the output dtype. One program per (row, inter-column-tile).
 @triton.jit
 def _swiglu_oai_kernel(
     g_ptr,

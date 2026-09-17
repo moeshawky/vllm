@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""ROCm MoE runner for latent MoE with replicated routed up-projection.
+
+Implements a column-parallel up-projection folded into the final reduce
+(Tier 2) for Kimi-K3. Falls back to the replicated up-projection when
+the tail is not shardable under the current config.
+"""
 from typing import cast
 
 import torch
@@ -29,6 +35,13 @@ class ROCmLatentMoERunner(MoERunner):
         *args,
         **kwargs,
     ) -> None:
+        """Initialize the runner and determine if the up-projection tail can be sharded.
+
+        Sets _tail_shardable to True only when: the transform has an up_proj,
+        tp_size > 1, up_proj rows divide evenly by tp_size, shared experts exist,
+        sequence parallel is off, and routed_scaling_factor is 1.0. Otherwise
+        logs a warning and uses the replicated up-projection path.
+        """
         super().__init__(*args, **kwargs)
 
         transform = self.routed_output_transform
@@ -99,6 +112,10 @@ class ROCmLatentMoERunner(MoERunner):
         input_ids: torch.Tensor | None = None,
         shared_experts_input: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Dispatch to the fused Tier 2 path when the tail is shardable.
+
+        Falls back to the base MoE runner otherwise.
+        """
         if self._tail_shardable and not self._fused_output_is_reduced:
             return self._fused_forward(
                 hidden_states, router_logits, input_ids, shared_experts_input
@@ -114,6 +131,13 @@ class ROCmLatentMoERunner(MoERunner):
         input_ids: torch.Tensor | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Tier 2 fused forward: apply routed input transform, run the base forward,
+        then fold the up-projection into the shared output.
+
+        When shared_experts_input is None, the caller has not pre-applied the
+        routed input transform, so it is applied here. The fused output is then
+        passed to _shard_up_proj_tail for the column-parallel up-projection.
+        """
         # When the caller pre-applies the routed input transform outside the
         # runner (e.g. to overlap it on a separate stream), it passes the
         # already-transformed routed input as ``hidden_states`` and the original

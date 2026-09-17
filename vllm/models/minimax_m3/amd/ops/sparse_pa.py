@@ -12,6 +12,9 @@ except ModuleNotFoundError:
 
 from vllm.models.minimax_m3.common.ops.sparse_attn import SPARSE_BLOCK_SIZE
 
+# Physical page size for the AITER shuffle KV layout. Sparse blocks
+# (128 tokens) are split into PAGES_PER_SPARSE_BLOCK (= 8) physical pages of this
+# size for the AITER PA kernel.
 ASM_PAGE_SIZE = 16
 PAGES_PER_SPARSE_BLOCK = SPARSE_BLOCK_SIZE // ASM_PAGE_SIZE
 
@@ -31,6 +34,11 @@ def _is_fp8_kv_cache_tensor(kv_cache: torch.Tensor) -> bool:
     return kv_cache.dtype in _FP8_DTYPES
 
 
+# Decodes top-k logical sparse block IDs into a dense physical page-16
+# block table for one batch. Separates full blocks from the tail block (partial),
+# maps each through the request's logical page table, and compacts the physical
+# pages into a contiguous table row. Computes the effective context length
+# accounting for the tail.
 @triton.jit
 def _build_sparse_block_table_kernel(
     topk_ptr,  # [1, batch, topk] int32, selected logical 128-block ids
@@ -121,6 +129,9 @@ def minimax_m3_build_sparse_block_table(
     return sparse_bt, sparse_ctx
 
 
+# Per-query-token variant of the sparse block table builder for prefill.
+# For each query position, applies causal masking (only blocks up to the query's
+# own block), maps to physical pages, and computes the per-position context length.
 @triton.jit
 def _build_sparse_block_table_prefill_kernel(
     topk_ptr,  # [1, total_q, topk]
@@ -360,6 +371,24 @@ def minimax_m3_sparse_attn_decode_aiter(
     v_scale: torch.Tensor | None = None,
     decode_query_len: int = 1,
 ) -> None:
+    """Decode-path AITER sparse paged attention.
+
+    Builds a physical page-16 block table from the top-k selected blocks
+    and dispatches to the AITER Gluon PA decode kernel. Requires
+    num_kv_heads == 1 per tensor-parallel rank.
+
+    Args:
+        q: [batch * decode_query_len, num_heads, head_dim] query.
+        k_cache/v_cache: AITER shuffle-layout K/V caches.
+        topk_idx: [1, batch * decode_query_len, topk] selected logical blocks.
+        block_table: [batch, max_blocks] logical page table.
+        seq_lens: [batch] sequence lengths.
+        num_kv_heads: must be 1.
+        sm_scale: softmax scale.
+        output: [batch * decode_query_len, num_heads, head_dim] output buffer.
+        k_scale/v_scale: fp8 scale tensors, or None.
+        decode_query_len: tokens per request (1, or 1 + speculative).
+    """
     sparse_bt, sparse_ctx = minimax_m3_build_sparse_block_table_decode(
         topk_idx, block_table, seq_lens, decode_query_len
     )
@@ -392,6 +421,24 @@ def minimax_m3_sparse_attn_prefill_aiter(
     k_scale: torch.Tensor | None = None,
     v_scale: torch.Tensor | None = None,
 ) -> None:
+    """Prefill-path AITER sparse paged attention.
+
+    Derives the per-token request ID and absolute position from the
+    query's cu_seqlens and prefix_lens, builds a per-token sparse block
+    table, and dispatches to the AITER Gluon PA kernel.
+
+    Args:
+        q: [total_q, num_heads, head_dim] query.
+        k_cache/v_cache: AITER shuffle-layout K/V caches.
+        topk_idx: [1, total_q, topk] selected logical blocks per token.
+        block_table: [batch, max_blocks] logical page table.
+        cu_seqlens_q: [batch+1] cumulative query lengths.
+        prefix_lens: [batch] context length before this chunk.
+        num_kv_heads: must be 1.
+        sm_scale: softmax scale.
+        output: [total_q, num_heads, head_dim] output buffer.
+        k_scale/v_scale: fp8 scale tensors, or None.
+    """
     total_q = q.shape[0]
     pos = torch.arange(total_q, dtype=torch.int32, device=q.device)
     query_req_id = torch.searchsorted(cu_seqlens_q[1:].contiguous(), pos, right=True)

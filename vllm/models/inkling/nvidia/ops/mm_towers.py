@@ -31,6 +31,12 @@ def _dmel_embed_sum_norm_kernel(
     D_P2: tl.constexpr,
     HAS_NORM: tl.constexpr,
 ):
+    """Sum dMel bin embeddings and apply RMSNorm in one launch.
+
+    For each output row, gathers one embedding row per mel bin (NB bins total),
+    sums them in fp32, optionally applies RMSNorm with a single-rounded bf16
+    weight multiply, and stores the result. No [T, NB, D] intermediate tensor.
+    """
     t = tl.program_id(0).to(tl.int64)
     offs = tl.arange(0, D_P2)
     mask = offs < D
@@ -108,6 +114,12 @@ def _rmsnorm_gelu_kernel(
     TF: tl.constexpr,
     HF: tl.constexpr,
 ):
+    """Fused RMSNorm + optional GELU with optional layout fold.
+
+    Computes rmsnorm(x, weight) in fp32 and optionally applies exact (erf) GELU
+    on the bf16-rounded norm output. When FOLD is set, scatters each row directly
+    into the fold_timespace_to_depth output layout, replacing a separate fold copy.
+    """
     pid = tl.program_id(0).to(tl.int64)
     rows = pid * BLOCK_M + tl.arange(0, BLOCK_M)
     rmask = rows < R

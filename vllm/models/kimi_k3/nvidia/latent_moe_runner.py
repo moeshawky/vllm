@@ -177,6 +177,11 @@ class LatentMoERunner(MoERunner):
         return buf[: hidden_states.numel()].view_as(hidden_states)
 
     def _use_fused_path(self) -> bool:
+        """Determine whether the fused latent+shared reduction path applies.
+
+        Requires tp_size>1, a shared expert, un-reduced combine output, and no
+        sequence parallelism.
+        """
         # The fused path merges the latent and shared reductions into one
         # all-reduce, so it needs actual TP parallelism, a shared expert (to
         # concat), an un-reduced combine output, and no sequence parallelism.
@@ -192,6 +197,12 @@ class LatentMoERunner(MoERunner):
         fused_output: torch.Tensor,
         shared_output: torch.Tensor,
     ) -> LatentTailTier:
+        """Select the LatentTailTier for this forward pass based on token count
+        and enabled capabilities.
+
+        Tier 0 if tail fusion is enabled and batch is small; tier 1 if below the
+        aux-stream threshold; tier 2 otherwise.
+        """
         num_tokens = fused_output.shape[0]
         # tier 0
         if self.enable_k3_latent_moe_tail_fusion and (
@@ -309,6 +320,9 @@ class LatentMoERunner(MoERunner):
         input_ids: torch.Tensor | None = None,
         shared_experts_input: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Route to the fused forward path when tp>1 with shared expert and
+        un-reduced output; otherwise delegate to the base MoERunner.
+        """
         if self._use_fused_path():
             return self._fused_forward(
                 hidden_states, router_logits, input_ids, shared_experts_input
@@ -324,6 +338,12 @@ class LatentMoERunner(MoERunner):
         input_ids: torch.Tensor | None = None,
         shared_experts_input: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Fused latent+shared MoE forward.
+
+        Applies the routed input transform, pads hidden states, runs the expert
+        computation, and dispatches to the appropriate tail tier based on token
+        count.
+        """
         # When the caller pre-applies the routed input transform outside the
         # runner (e.g. to overlap it on a separate stream), it passes the
         # already-transformed routed input as ``hidden_states`` and the original

@@ -14,9 +14,14 @@ from cutlass._mlir.dialects import llvm, vector
 from cutlass.cute.runtime import from_dlpack
 from cutlass.cutlass_dsl import T, dsl_user_op
 
+# Vector width for 128-bit packed memory operations (8 BF16 values per
+# load/store).
 VEC_BF16 = 8
 PACKED_BYTES = 16
+# Lamport buffer ring size: generation counters cycle 0/1/2 to distinguish
+# new from stale data.
 NUM_LAMPORT_BUFFERS = 3
+# Bit pattern for FP32 negative zero, used as the Lamport sentinel value.
 NEG_ZERO_F32_BITS = 0x80000000
 NEG_ZERO_BF16_BITS = 0x8000
 
@@ -130,6 +135,7 @@ def store_global_u32x2(
     loc=None,
     ip=None,
 ) -> None:
+    """Store two packed u32 words (64 bits) to global memory via st.global.v2.u32."""
     words = [packed[i].ir_value(loc=loc, ip=ip) for i in range(2)]
     llvm.inline_asm(
         None,
@@ -152,6 +158,7 @@ def store_global_u32(
     loc=None,
     ip=None,
 ) -> None:
+    """Store one u32 word (32 bits) to global memory via st.global.u32."""
     llvm.inline_asm(
         None,
         [
@@ -212,6 +219,8 @@ def red_async_release_gpu_add_u32(
 
 @dsl_user_op
 def load_volatile_u32(pointer: cute.Pointer, *, loc=None, ip=None) -> Uint32:
+    """Volatile 32-bit load from global memory; side-effects prevent compiler
+    reordering."""
     address = pointer.toint(loc=loc, ip=ip)
     return Uint32(
         llvm.inline_asm(
@@ -280,6 +289,8 @@ def store_shared_cluster_f32(
 
 @dsl_user_op
 def packed_u32x4_to_bf16x8(packed, *, loc=None, ip=None):
+    """Unpack four u32 words into eight BF16 values by splitting each u32
+    into two 16-bit halves."""
     target_type = ir.VectorType.get([VEC_BF16], BFloat16.mlir_type, loc=loc)
     values = llvm.bitcast(
         target_type,
@@ -292,6 +303,8 @@ def packed_u32x4_to_bf16x8(packed, *, loc=None, ip=None):
 
 @dsl_user_op
 def bf16x8_to_packed_u32x4(values, *, loc=None, ip=None):
+    """Pack eight BF16 values into four u32 words by combining pairs of 16-bit
+    values."""
     target_type = ir.VectorType.get([4], T.i32(), loc=loc)
     packed = llvm.bitcast(
         target_type,
@@ -304,6 +317,8 @@ def bf16x8_to_packed_u32x4(values, *, loc=None, ip=None):
 
 @dsl_user_op
 def bf16x4_to_packed_u32x2(values, *, loc=None, ip=None):
+    """Pack four BF16 values into two u32 words (64-bit variant of the 128-bit
+    pack)."""
     target_type = ir.VectorType.get([2], T.i32(), loc=loc)
     packed = llvm.bitcast(
         target_type,
@@ -316,6 +331,8 @@ def bf16x4_to_packed_u32x2(values, *, loc=None, ip=None):
 
 @dsl_user_op
 def bf16x2_to_u32(values, *, loc=None, ip=None):
+    """Pack two BF16 values into one u32 word (32-bit variant of the pack
+    operations)."""
     packed = llvm.bitcast(
         T.i32(),
         values.ir_value(loc=loc, ip=ip),
@@ -327,6 +344,9 @@ def bf16x2_to_u32(values, *, loc=None, ip=None):
 
 @cute.jit
 def sanitize_negative_zero_u32(word):
+    """FP16 negative-zero sanitization via u32 reinterpretation: clears
+    the sign bit of an FP16 value held in a u32 register when it is
+    negative zero."""
     low = Uint16(word & Uint32(0xFFFF))
     high = Uint16(word >> Uint32(16))
     if low == Uint16(NEG_ZERO_BF16_BITS):
@@ -338,6 +358,8 @@ def sanitize_negative_zero_u32(word):
 
 @cute.jit
 def sanitize_negative_zero_u32x2(packed):
+    """Vectorized FP16 negative-zero sanitization for two FP16 values packed
+    in a u32x2 vector."""
     result = cute.make_rmem_tensor(cute.make_layout((2,)), Uint32)
     for i in cutlass.range_constexpr(2):
         result[i] = sanitize_negative_zero_u32(packed[i])
@@ -416,7 +438,6 @@ def block_sum_specialized(
     last_warp_mask: cutlass.Constexpr[int],
 ) -> Float32:
     """Upstream-equivalent FP32 block reduction."""
-
     lane = cute.arch.lane_idx()
     warp_idx = cute.arch.warp_idx()
     value = warp_sum_specialized(

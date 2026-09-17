@@ -69,6 +69,13 @@ class MiniMaxM3SparseTritonBackend(MiniMaxM3SparseMSABackend):
 
 @dataclass
 class MiniMaxM3SparseMSADecodeMetadata(MiniMaxM3SparseDecodeMetadata):
+    """MSA decode metadata extending the base sparse decode metadata with
+    the CUTLASS fmha_sm100 plan.
+
+    msa_cutlass: the prepared fmha_sm100 decode plan (None when the CUTLASS
+    path is not available or not needed for this decode batch).
+    """
+
     msa_cutlass: MSACutlassDecodeMetadata | None = None
 
 
@@ -100,6 +107,14 @@ class MiniMaxM3SparseMSAMetadataBuilder(MiniMaxM3SparseMetadataBuilder):
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> MiniMaxM3SparseMetadata:
+        """Build sparse attention metadata with optional CUTLASS MSA decode plan.
+
+        Delegates to the base builder, then if CUTLASS decode is supported for
+        this batch shape and backend, prepares the fmha_sm100 decode plan via
+        prepare_decode_metadata. Wraps the decode metadata in
+        MiniMaxM3SparseMSADecodeMetadata with the plan attached. Returns the
+        metadata with the enriched decode field.
+        """
         metadata = super().build(
             common_prefix_len,
             common_attn_metadata,
@@ -180,6 +195,13 @@ class MiniMaxM3SparseMSAImpl(MiniMaxM3SparseImpl):
         )
 
     def should_use_msa_decode(self, layer_name: str) -> bool:
+        """Check whether the CUTLASS MSA decode path is available for this layer.
+
+        Returns True when CUTLASS decode is enabled and the current forward's
+        attention metadata contains a prepared MSA CUTLASS plan for this layer.
+        False when CUTLASS is not enabled, metadata is not available, or no plan
+        was prepared for this decode batch.
+        """
         if not self.use_cutlass_decode:
             return False
         attn_metadata = get_forward_context().attn_metadata
@@ -203,6 +225,14 @@ class MiniMaxM3SparseMSAImpl(MiniMaxM3SparseImpl):
         *,
         query_fp8: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass for MSA block-sparse attention with decode/prefill split.
+
+        Decodes use either the CUTLASS fmha_sm100 path (when a plan is available
+        and query_fp8 is provided) or the Triton sparse decode kernel. Prefills
+        use the MSA sparse FMHA over the selected top-k blocks via
+        build_k2q_csr and sparse_atten_func. Both paths consume the indexer's
+        top-k indices from the shared token-major buffer.
+        """
         attn_metadata = get_forward_context().attn_metadata
         if not isinstance(attn_metadata, dict):
             return output  # profiling run; caches unbound

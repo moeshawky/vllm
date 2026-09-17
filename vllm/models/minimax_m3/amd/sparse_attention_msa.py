@@ -26,6 +26,14 @@ class MiniMaxM3SparseAiterPAImpl(MiniMaxM3SparseImpl):
         *,
         query_fp8: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Dispatch MiniMax-M3 sparse attention through the AITER page-16 kernel.
+
+        Splits the batch into decode and prefill segments using the layer's
+        metadata, then calls minimax_m3_sparse_attn_decode_aiter and
+        minimax_m3_sparse_attn_prefill_aiter respectively. Requires num_kv_heads
+        == 1 per TP rank (AITER constraint). Extracts fp8 K/V scales when
+        present and passes them to the AITER kernel for dequantization.
+        """
         from vllm.models.minimax_m3.amd.ops.sparse_pa import (
             minimax_m3_sparse_attn_decode_aiter,
             minimax_m3_sparse_attn_prefill_aiter,

@@ -57,6 +57,12 @@ def _attn_res_kernel(
     BLOCK_D: tl.constexpr,
     launch_pdl: tl.constexpr,
 ):
+    """Triton kernel for attention residual mixing.
+
+    Adds delta to the prefix residual, optionally writes the updated prefix to
+    a block slot, computes a softmax-weighted mixture of the prefix and stored
+    blocks, and applies output RMSNorm if requested.
+    """
     row_idx = tl.program_id(0).to(tl.int64)
     d_offsets = tl.max_contiguous(tl.arange(0, BLOCK_D), BLOCK_D)
     d_mask = d_offsets < hidden_size
@@ -179,6 +185,12 @@ def attn_res(
     eps: float,
     output_norm_eps: float,
 ) -> torch.Tensor:
+    """Compute the attention residual mixture.
+
+    Tries the native fused kernel first (requires hidden_size=7168, SM100+,
+    CUDA 13+, and no block write); falls back to the Triton kernel for block
+    boundary cases or final pre-norm output.
+    """
     num_tokens, hidden_size = prefix.shape
     assert prefix.stride(-1) == 1
     assert delta is None or delta.stride(-1) == 1

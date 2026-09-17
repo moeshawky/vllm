@@ -138,6 +138,11 @@ class KimiK3ForConditionalGeneration(
     def _maybe_ignore_quant_config(
         self, quant_config: QuantizationConfig | None
     ) -> QuantizationConfig | None:
+        """Return None for CompressedTensors quant config; otherwise return as-is.
+
+        The vision tower and projector use their own quantization and should
+        not inherit the text model's CompressedTensors config.
+        """
         if isinstance(quant_config, compressed_tensors.CompressedTensorsConfig):
             return None
         return quant_config
@@ -145,6 +150,12 @@ class KimiK3ForConditionalGeneration(
     def _parse_and_validate_media_input(
         self, **kwargs: object
     ) -> KimiK25MediaPixelInputs | None:
+        """Extract and validate pixel_values and grid_thws from kwargs.
+
+        Flattens 5D or 3D pixel tensors to 4D (B*T, H, W, C), converts to the
+        vision tower's dtype, reshapes grid_thws to (-1, 3), and returns a
+        KimiK25MediaPixelInputs dict. Returns None when pixel_values is absent.
+        """
         pixel_values = kwargs.pop("pixel_values", None)
         grid_thws = kwargs.pop("grid_thws", None)
         if pixel_values is None:
@@ -182,6 +193,8 @@ class KimiK3ForConditionalGeneration(
     def _process_media_input(
         self, media_input: KimiK25MediaPixelInputs
     ) -> list[torch.Tensor]:
+        """Run the vision tower and projector on media input, returning
+        feature tensors."""
         media_features = vision_tower_forward(
             self.vision_tower,
             media_input["pixel_values"],
@@ -192,6 +205,7 @@ class KimiK3ForConditionalGeneration(
         return media_features
 
     def embed_multimodal(self, **kwargs: object) -> NestedTensors | None:
+        """Process multimodal inputs and return nested feature tensors for insertion."""
         media_input = self._parse_and_validate_media_input(**kwargs)
         if media_input is None:
             return None

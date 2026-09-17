@@ -23,6 +23,13 @@ _FA4_MAX_SPLITS = 128
 
 @dataclass(frozen=True)
 class KimiK3VisionFA4WarmupConfig:
+    """Frozen configuration for Kimi-K3 vision FA4 warmup compile units.
+
+    Captures the model dimensions and limits needed to generate the set
+    of shape-probe inputs that cover all FA4 dispatch keys the model
+    will encounter at runtime.
+    """
+
     num_heads: int
     head_dim: int
     dtype: torch.dtype
@@ -32,12 +39,27 @@ class KimiK3VisionFA4WarmupConfig:
 
 @dataclass(frozen=True)
 class _FA4WarmupProbe:
+    """Shape probe that drives one FA4 compile unit.
+
+    batch_size and max_seqlen determine tensor shapes passed to
+    flash_attn_varlen_func during warmup. dispatch_key is the FA4
+    compile-key tuple derived from these shapes; probes with identical
+    dispatch keys are deduplicated.
+    """
+
     batch_size: int
     max_seqlen: int
     dispatch_key: tuple[int, bool, int | None]
 
 
 def _combine_log_max_splits(head_dim: int, num_splits: int) -> int:
+    """Compute FA4's log_max_splits compile key for the combine kernel.
+
+    Returns ceiling of log2(num_splits) but never below FA4's minimum
+    (5 for tile_m=8, 4 for tile_m=16). tile_m is determined by head_dim:
+    head_dim <= 64 uses k_block_size=64 and tile_m=16; larger head_dim
+    uses k_block_size=128 and tile_m=8.
+    """
     k_block_size = 64 if head_dim <= 64 else 128
     tile_m = 8 if k_block_size == 128 else 16
     min_log_max_splits = 5 if tile_m == 8 else 4
@@ -51,6 +73,14 @@ def _get_dispatch(
     max_seqlen: int,
     num_sms: int,
 ) -> tuple[int, bool, int | None]:
+    """Derive FA4 shape-dependent compile key tuple (q_stage, is_split_kv, combine_key).
+
+    Computes the tile-based block counts for the given batch and sequence
+    lengths, then selects num_splits based on SM utilization. Returns the
+    tuple used as the compile key for FA4 forward and combine kernels.
+    num_splits=0 is passed to the actual flash_attn call so the production
+    selector makes the final decision at runtime.
+    """
     # These are the shape-dependent fields in FA4's forward and combine
     # compile keys for noncausal varlen MHA. Compile units still pass
     # num_splits=0 so the production selector makes the final decision.
@@ -81,6 +111,14 @@ def _get_warmup_probes(
     *,
     num_sms: int,
 ) -> tuple[_FA4WarmupProbe, ...]:
+    """Generate the set of shape probes needed to warm up all FA4 dispatch paths.
+
+    Covers single-batch small-sequence, tile-boundary, and split-KV paths.
+    Deduplicates probes by dispatch key so each unique compile path gets
+    exactly one warmup unit. The split-KV sweep iterates num_n_blocks from
+    5 upward (the minimum for split-KV) and computes the maximum batch
+    size that triggers splitting at that block count.
+    """
     if config.max_batch_size <= 0 or config.max_seqlen <= 0:
         return ()
 
@@ -191,5 +229,13 @@ _PROVIDER = _WarmupProvider()
 def register_kimi_k3_vision_fa4_warmup(
     config: KimiK3VisionFA4WarmupConfig,
 ) -> None:
+    """Register a warmup config and install the provider with the global
+    warmup registry.
+
+    Called once per model instance during startup. The config is added to the
+    provider set; if the provider is not already registered, it is registered
+    with the global CuTeDSL warmup system. Subsequent calls with the same or
+    different configs accumulate without re-registering the provider.
+    """
     _PROVIDER.configs.add(config)
     register_cutedsl_warmup_provider(_PROVIDER)

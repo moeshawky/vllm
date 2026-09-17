@@ -7,6 +7,14 @@
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 # Forward-only adaptation of flash-linear-attention 0.5.0.
 # ruff: noqa: E501
+"""Triton intra-chunk KDA (Kimi Delta Attention) forward kernels.
+
+Computes within-chunk attention scores (Aqk) and key-key interaction
+scores (Akk) using fused inter+solve_tril kernels. The diagonal Akk
+blocks are first computed in parallel via chunk_intra_token_parallel,
+then this module computes off-diagonal blocks and performs forward
+substitution to produce the block-inverted attention matrix.
+"""
 
 import torch
 
@@ -477,6 +485,14 @@ def chunk_kda_fwd_intra(
     chunk_indices: torch.LongTensor | None = None,
     safe_gate: bool = False,
 ):
+    """Compute intra-chunk attention scores for KDA forward pass.
+
+    Runs chunk_kda_fwd_intra_token_parallel to compute diagonal Akk blocks,
+    then chunk_kda_fwd_kernel_inter_solve_fused to compute off-diagonal
+    blocks and invert the full block-triangular system. Returns (Aqk, Akk)
+    where Aqk is the full attention score matrix and Akk is the inverted
+    key-key matrix, both shaped [B, T, HV, BT].
+    """
     B, T, H, K, HV = *k.shape, gk.shape[2]
     BT = chunk_size
     BC = 16

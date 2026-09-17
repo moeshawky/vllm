@@ -25,6 +25,13 @@ def _silu_and_mul_triton_kernel(
     EVEN_N: tl.constexpr,
     INT64_INDEX: tl.constexpr,
 ):
+    """Tiled SwiGLU activation over the interleaved gate/up layout.
+
+    Grid-stride loop over [BLOCK_M, BLOCK_N] output tiles. Reads interleaved
+    [g0, u0, g1, u1, ...] input, splits into gate and up halves via tl.split,
+    computes SiLU(gate)*up in fp32. Interleaved layout matches the checkpoint's
+    fused gate/up weight ordering, so no deinterleaving pass is needed.
+    """
     start_pid = tl.program_id(0)
     if INT64_INDEX:
         start_pid = start_pid.to(tl.int64)
@@ -140,6 +147,13 @@ def _sink_epilogue_kernel(
     S: tl.constexpr,
     BLOCK_F: tl.constexpr,
 ):
+    """Fused sink-expert epilogue: dequant + SwiGLU + sink weight.
+
+    Per (token, expert) program: reads interleaved gate/up rows from GEMM1 output,
+    applies per-expert pre-SiLU dequant scale, computes SwiGLU in fp32, multiplies
+    by per-token sink weight and per-expert post-SiLU scale. Replaces three
+    separate operations between the two sink GEMMs.
+    """
     pid_t = tl.program_id(0).to(tl.int64)
     pid_sf = tl.program_id(1)
     if pid_t >= T:

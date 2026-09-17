@@ -54,11 +54,17 @@ _ATTENTION_PARAMS_MAPPING = [
 
 
 def _mtp_depth_from_name(name: str) -> int | None:
+    """Extracts the numeric MTP depth index from a weight name matching
+    .mtp.layers.N. Returns None if not found. Used by the weight loader to
+    route checkpoint tensors to the correct depth block."""
     m = re.search(r"\.mtp\.layers\.(\d+)\.", name)
     return int(m.group(1)) if m else None
 
 
 def _select_mtp_depth_count(n_predict: int, num_spec: int | None) -> int:
+    """Computes the number of MTP depth blocks to build: min(n_predict,
+    num_spec) when num_spec is set, else n_predict. Raises ValueError if
+    the result is zero."""
     num_layers = min(n_predict, num_spec) if num_spec else n_predict
     if num_layers <= 0:
         raise ValueError(
@@ -104,6 +110,12 @@ class InklingMTPDepthLayer(nn.Module):
 
 
 class InklingMultiTokenPredictor(nn.Module):
+    """Inkling MTP draft predictor with multiple depth layers. Each depth
+    layer is a full Inkling block (dense bf16 MLP with short convolutions).
+    The predictor shares the target's embedding table and LM head, and
+    applies the backbone embed_norm on top of the raw embedding before
+    each depth layer."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None
@@ -244,6 +256,12 @@ class InklingMultiTokenPredictor(nn.Module):
 
 
 class InklingMTP(nn.Module, SupportsMultiModalEmbeddings):
+    """Inkling MTP speculative decoding model interface. Wraps
+    InklingMultiTokenPredictor and exposes the Embedding, forward, and
+    compute_logits methods required by the vLLM speculative decoding
+    framework. The muP width divisor is folded into the LM head GEMM alpha,
+    matching the target's compute_logits convention."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         assert vllm_config.speculative_config is not None

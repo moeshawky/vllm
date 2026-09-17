@@ -65,6 +65,11 @@ class InklingLogitsProcessor(LogitsProcessor):
         embedding_bias: torch.Tensor | None = None,
         skip_gather: bool = False,
     ) -> torch.Tensor | None:
+        """Dispatches to _lora_forward when wrapped by
+        LogitsProcessorWithLoRA (detected via the base_layer attribute) or
+        to _base_forward otherwise. The LoRA wrapper binds self to itself
+        when calling the base forward, so the hasattr check distinguishes
+        the two call paths."""
         # ``base_layer`` exists only on the LogitsProcessorWithLoRA wrapper,
         # which calls this forward with ``self`` bound to the wrapper. The
         # wrapper is not an ``InklingLogitsProcessor`` instance, so dispatch
@@ -84,6 +89,10 @@ class InklingLogitsProcessor(LogitsProcessor):
         embedding_bias: torch.Tensor | None = None,
         skip_gather: bool = False,
     ) -> torch.Tensor | None:
+        """Applies the muP width divisor to the full logits after the LoRA
+        delta has been added. Runs the LoRA wrapper's _get_logits (base +
+        delta), then multiplies by 1/mup so the delta is scaled equally
+        with the base logits."""
         # ``self`` is the LogitsProcessorWithLoRA wrapper here: ``_get_logits``
         # returns the base logits plus the lm_head LoRA delta. Apply the muP
         # divisor on the full logits so the LoRA delta is scaled too.

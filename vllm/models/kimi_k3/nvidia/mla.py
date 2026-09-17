@@ -392,6 +392,12 @@ class MultiHeadLatentAttention(nn.Module, AttentionLayerBase):
         return self.attn_backend
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
+        """Return the MLAAttentionSpec for this layer's KV cache.
+
+        Computes page_size from head_size, num_kv_heads, and the block size,
+        accounting for fp8 cache quantization. For non-quantized cache, sets
+        scale to 1.0.
+        """
         kv_cache_dtype = kv_cache_dtype_str_to_dtype(
             self.kv_cache_dtype, vllm_config.model_config
         )
@@ -533,6 +539,13 @@ class MultiHeadLatentAttention(nn.Module, AttentionLayerBase):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Run the full MLA attention path.
+
+        Computes fused pre-attention ops, then splits into prefill or decode
+        paths. Prefill uses fused key-concat and cache-insert kernels; decode
+        uses W_UK absorb followed by fused q-concat and cache-insert. Applies
+        optional output gate and o_proj.
+        """
         # Both branches produce (attn_out, gate); they differ only in whether
         # the g_proj GEMM is overlapped on the aux stream.
         g_proj = self.g_proj

@@ -7,7 +7,13 @@
 # the following copyright notice:
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 # ruff: noqa: E501
+"""KDA chunked attention kernels for AMD GPUs.
 
+Implements the chunked KDA (Key-Dependent Attention) forward pass in two
+stages: intra-chunk computation (delegated to chunk_intra) and inter-chunk
+state propagation via chunk_gla_fwd_o_gk. Also provides fused gate+cumsum
+preprocessing kernels. Ported from flash-linear-attention.
+"""
 
 import torch
 
@@ -24,7 +30,10 @@ from vllm.utils.math_utils import RCP_LN2, cdiv, next_power_of_2
 
 from .chunk_intra import chunk_kda_fwd_intra
 
+# Candidate block-time sizes for Triton autotuning of chunked KDA kernels.
 BT_LIST_AUTOTUNE = [32, 64, 128]
+# Candidate warp counts for autotuning; AMD uses fewer warps than NVIDIA
+# due to different hardware scheduling.
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if is_amd else [4, 8, 16, 32]
 
 
@@ -204,6 +213,13 @@ def recompute_w_u_fwd(
     cu_seqlens: torch.Tensor | None = None,
     chunk_indices: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Recompute the w and u tensors for chunked state propagation.
+
+    Computes w = A @ (k * beta * exp2(gk)) and u = A @ (v * beta) for each
+    chunk, where A is the attention matrix from the intra-chunk step.
+    Optionally computes qg (query with gate applied) and kg (key with
+    normalized gate) for downstream use.
+    """
     B, T, H, K, V = *k.shape, v.shape[-1]
     BT = A.shape[-1]
     BK = 64
@@ -372,6 +388,13 @@ def chunk_gla_fwd_o_gk(
     chunk_indices: torch.Tensor | None = None,
     chunk_size: int = FLA_CHUNK_SIZE,
 ):
+    """Compute the chunked GLA output with gated keys.
+
+    Given the chunked attention matrix A, the key-value states h, and the
+    gated query/key tensors, computes the output o via the GLA recurrence
+    across chunks. Supports fixed-length and variable-length (cu_seqlens)
+    sequences.
+    """
     B, T, H, K, V = *q.shape, v.shape[-1]
     BT = chunk_size
 
@@ -540,6 +563,13 @@ def fused_kda_gate_chunk_cumsum(
     chunk_size: int = FLA_CHUNK_SIZE,
     output_dtype: torch.dtype | None = torch.float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fused gate activation and chunked cumulative sum.
+
+    Applies the KDA gate transformation (softplus or lower-bounded sigmoid)
+    and computes the cumulative sum within each chunk. Returns (g, beta)
+    where g is the gate tensor and beta is the sigmoid-applied beta.
+    Supports fixed-length and variable-length sequences.
+    """
     if cu_seqlens is not None:
         assert raw_g.shape[0] == 1, (
             "Only batch size 1 is supported when cu_seqlens are provided"
@@ -670,6 +700,13 @@ def chunk_kda_fwd(
     output_final_state: bool,
     cu_seqlens: torch.Tensor | None = None,
 ):
+    """Main KDA chunked forward pass.
+
+    Runs the two-stage chunked KDA: (1) intra-chunk attention via
+    chunk_kda_fwd_intra, (2) inter-chunk state propagation via
+    chunk_gla_fwd_o_gk. Manages chunk indices, state tensors, and optional
+    final state output.
+    """
     chunk_size = FLA_CHUNK_SIZE
     chunk_indices = (
         prepare_chunk_indices(cu_seqlens, chunk_size)
@@ -716,6 +753,13 @@ def chunk_kda_with_fused_gate_fwd(
     chunk_indices: torch.Tensor | None = None,
     chunk_offsets: torch.Tensor | None = None,
 ):
+    """KDA chunked forward with fused gate preprocessing.
+
+    Same as chunk_kda_fwd but applies the gate activation (softplus or
+    lower-bounded) and beta sigmoid inside the kernel launch, avoiding a
+    separate preprocessing pass. Lower-bounded gating (when lower_bound is
+    provided) replaces the softplus with a bounded sigmoid.
+    """
     chunk_size = FLA_CHUNK_SIZE
     # Building chunk metadata from a device `cu_seqlens` costs a blocking
     # device->host copy. Callers that already hold it, i.e. the attention
@@ -762,6 +806,12 @@ def chunk_kda(
     cu_seqlens: torch.Tensor | None = None,
     **kwargs,
 ):
+    """High-level KDA chunked attention wrapper.
+
+    Applies optional L2 normalization to q and k, computes the default scale
+    (1/sqrt(K)), and dispatches to the fused-gate or non-fused-gate forward
+    pass. Supports variable-length sequences via cu_seqlens.
+    """
     if scale is None:
         scale = k.shape[-1] ** -0.5
 

@@ -45,6 +45,11 @@ ResolvedCall = tuple[Backend, SkinnyGemmConfig | None]
 
 @dataclass(frozen=True, slots=True)
 class ProjectionSpec:
+    """Frozen dataclass describing the low-latency GEMM dispatch decision for one
+    (N, K) shape. Holds dsv3 token counts and per-token-count CuTe configs for
+    the plain and residual paths.
+    """
+
     n: int
     k: int
     dsv3_tokens: frozenset[int] = frozenset()
@@ -53,9 +58,15 @@ class ProjectionSpec:
     name: str = ""  # optional debug label; never used for dispatch
 
     def cute_config(self, num_tokens: int) -> SkinnyGemmConfig | None:
+        """Return the SkinnyGemmConfig for the given token count, or None if
+        no CuTe config is registered for that count.
+        """
         return dict(self.cute_configs).get(num_tokens)
 
     def residual_config(self, num_tokens: int) -> SkinnyGemmConfig | None:
+        """Return the SkinnyGemmConfig for the residual path at the given token
+        count, or None if none is registered.
+        """
         return dict(self.residual_configs).get(num_tokens)
 
 
@@ -66,6 +77,9 @@ def _cute(
     k_unroll: int,
     vector_width: int = 8,
 ) -> SkinnyGemmConfig:
+    """Shorthand constructor for SkinnyGemmConfig with the default vector_width
+    of 8.
+    """
     return SkinnyGemmConfig(
         num_tokens,
         block_size,
@@ -489,6 +503,11 @@ KIMI_K3_PROJECTIONS_SM100: dict[tuple[int, int], ProjectionSpec] = {
 def _backend_for(
     spec: ProjectionSpec, num_tokens: int, has_residual: bool
 ) -> Backend | None:
+    """Select the backend for a ProjectionSpec at the given token count.
+
+    Prefers the residual CuTe config if has_residual is true, then the plain
+    CuTe config, then dsv3 if the token count is in dsv3_tokens.
+    """
     if has_residual:
         return "cute" if spec.residual_config(num_tokens) is not None else None
     if spec.cute_config(num_tokens) is not None:
@@ -511,6 +530,9 @@ def select_kimi_k3_backend(
 
 
 def _build_plan(spec: ProjectionSpec) -> dict[int, ResolvedCall]:
+    """Resolve the static dispatch plan for a shape: map each token count 1-16
+    to its (backend, config) pair. Called once at install time.
+    """
     plan: dict[int, ResolvedCall] = {}
     for num_tokens in range(1, 17):
         backend = _backend_for(spec, num_tokens, has_residual=False)
@@ -522,10 +544,14 @@ def _build_plan(spec: ProjectionSpec) -> dict[int, ResolvedCall]:
 
 
 def _build_residual_plan(spec: ProjectionSpec) -> dict[int, SkinnyGemmConfig]:
+    """Extract the residual-path configs from a ProjectionSpec into a
+    token-count-to-config map.
+    """
     return {num_tokens: config for num_tokens, config in spec.residual_configs}
 
 
 def _is_sm103() -> bool:
+    """Return True if the current device is SM103 (B300 class)."""
     return current_platform.is_device_capability((10, 3))
 
 
@@ -539,10 +565,16 @@ def _low_latency_table() -> dict[tuple[int, int], ProjectionSpec] | None:
 
 
 def _is_packed_row_major(tensor: torch.Tensor) -> bool:
+    """Return True if the tensor is a 2D row-major packed tensor
+    (stride == (shape[1], 1)).
+    """
     return tensor.dim() == 2 and tensor.stride() == (tensor.shape[1], 1)
 
 
 def _runtime_ok(x: torch.Tensor, weight: torch.Tensor) -> bool:
+    """Validate runtime invariants for low-latency GEMM: both inputs must be
+    packed, row-major, CUDA, BF16, same device, with matching K dimensions.
+    """
     return (
         _is_packed_row_major(x)
         and _is_packed_row_major(weight)
@@ -556,6 +588,10 @@ def _runtime_ok(x: torch.Tensor, weight: torch.Tensor) -> bool:
 
 
 def _residual_ok(x: torch.Tensor, weight: torch.Tensor, residual: torch.Tensor) -> bool:
+    """Validate runtime invariants for the residual path: residual must be 2D,
+    BF16, CUDA, same device as x, contiguous, with shape
+    (x.shape[0], weight.shape[0]).
+    """
     return (
         residual.dim() == 2
         and residual.dtype == torch.bfloat16
@@ -569,6 +605,11 @@ def _residual_ok(x: torch.Tensor, weight: torch.Tensor, residual: torch.Tensor) 
 def _run_plan(
     plan: dict[int, ResolvedCall], x: torch.Tensor, weight: torch.Tensor
 ) -> torch.Tensor | None:
+    """Execute the resolved plan for the given token count.
+
+    Dispatches to shape_dynamic_skinny_gemm for cute or ops.dsv3_fused_a_gemm
+    for dsv3_fused_a.
+    """
     entry = plan.get(x.shape[0])
     if entry is None:
         return None
@@ -590,6 +631,9 @@ def _run_residual_plan(
     weight: torch.Tensor,
     residual: torch.Tensor,
 ) -> torch.Tensor | None:
+    """Execute the residual-path plan for the given token count using
+    shape_dynamic_skinny_gemm with the residual fused.
+    """
     config = residual_plan.get(x.shape[0])
     if config is None or not shape_dynamic_skinny_gemm.is_available():
         return None

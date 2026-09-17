@@ -122,6 +122,15 @@ class MiniMaxM3IndexerMSAMetadataBuilder(MiniMaxM3IndexerMetadataBuilder):
         vllm_config: VllmConfig,
         device: torch.device,
     ) -> None:
+        """Initialize the MSA metadata builder and allocate the persistent
+        unified score buffer.
+
+        The buffer is [max_num_batched_tokens, num_index_heads, MAX_K_TILES]
+        float32, shared by all indexer layers and reused across forwards. Its
+        address must be stable for cudagraph capture and its tile dim is frozen
+        at MAX_K_TILES so the decode score kernel shape is constant at capture
+        time. The buffer is reset to the -inf sentinel per forward in build().
+        """
         super().__init__(kv_cache_spec, layer_names, vllm_config, device)
         # Persistent unified score buffer [T, H, MAX_K_TILES] shared by all
         # indexer layers and reused across forwards. Stable address (required
@@ -143,6 +152,14 @@ class MiniMaxM3IndexerMSAMetadataBuilder(MiniMaxM3IndexerMetadataBuilder):
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> MiniMaxM3IndexerMSAMetadata:
+        """Build MSA indexer metadata from the common attention metadata.
+
+        Splits requests into decode and prefill batches. For decode, builds the
+        Triton decode metadata. For prefill, builds the fmha_sm100 score plan
+        eagerly (prefill is not cudagraph-captured). Resets the unified score
+        buffer to the -inf sentinel and returns a view of it. Computes per-token
+        causal page counts for the top-k force-end and -1 clamp behavior.
+        """
         num_reqs = common_attn_metadata.num_reqs
         num_tokens = common_attn_metadata.num_actual_tokens
         seq_lens = common_attn_metadata.seq_lens
@@ -265,6 +282,16 @@ class MiniMaxM3IndexerMSAImpl(MiniMaxM3IndexerImpl):
         self,
         index_query: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        """Run the MSA indexer: score query tiles against index-K blocks and
+        select top-k.
+
+        Writes block scores into the unified score buffer (decode via CuteDSL
+        or Triton into the [:nd] region, prefill via fmha_sm100 OnlyScore into
+        the [nd:] region). Then calls sparse_topk_select once over the entire
+        buffer to pick the top-k blocks per token, force-including init and
+        local blocks and clamping out-of-range blocks to -1. The results are
+        written to the persistent topk_indices_buffer.
+        """
         attn_metadata = get_forward_context().attn_metadata
         if not isinstance(attn_metadata, dict):
             return None, None  # profiling run; caches unbound

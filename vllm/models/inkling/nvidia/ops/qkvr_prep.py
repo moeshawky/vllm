@@ -36,6 +36,13 @@ def _rel_proj_low_latency_kernel(
     BLOCK_N: tl.constexpr,
     APPLY_LOG_SCALING: tl.constexpr,
 ):
+    """Tiled matmul for the relative projection (low-latency variant).
+
+    Each program handles one [BLOCK_M, BLOCK_N] tile of the output. Reads the 16-d
+    relative embedding from the packed qkvr buffer for each query head, matrix
+    multiplies it against the projection weights, and stores the result. Applies
+    per-token log scaling when requested.
+    """
     row = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
     col = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
     inner = tl.arange(0, 16)
@@ -84,6 +91,12 @@ def _rel_proj_throughput_kernel(
     GROUP_M: tl.constexpr,
     APPLY_LOG_SCALING: tl.constexpr,
 ):
+    """Tiled matmul for the relative projection (throughput variant).
+
+    Same computation as the low-latency variant but uses group scheduling:
+    each program processes GROUP_M rows of tiles in a loop, loading the projection
+    weights once per column tile. Better occupancy for large row counts.
+    """
     row_group = tl.program_id(0)
     col = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
     inner = tl.arange(0, 16)
@@ -122,6 +135,12 @@ def _rel_proj_throughput_kernel(
 
 
 def use_rel_proj_throughput(rows: int, rel_extent: int) -> bool:
+    """Decide whether to use the throughput variant of the relative projection kernel.
+
+    The throughput kernel uses group scheduling for better occupancy when there are
+    many rows. The row threshold depends on the projection extent (larger extents
+    require more rows to amortize the setup cost).
+    """
     min_rows = 8192 if rel_extent == 512 else 2048
     return rows >= min_rows
 
@@ -137,6 +156,13 @@ def qkvr_rel_proj(
     head_dim: int,
     d_rel: int,
 ) -> None:
+    """Compute the relative position projection from the qkvr buffer.
+
+    Extracts the 16-d relative embedding from each query head in the packed qkvr
+    tensor, projects it through rel_proj to get the relative position scores, and
+    optionally scales by the per-token log scaling factor. Dispatches between a
+    low-latency kernel (small batches) and a throughput kernel (large batches).
+    """
     rows = qkvr.shape[0] * num_q_heads
     rel_extent = rel_proj.shape[1]
     assert d_rel == 16 and rel_proj.shape[0] == 16

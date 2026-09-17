@@ -11,6 +11,11 @@ from .ops import rmsnorm
 
 
 class InklingRMSNorm(nn.Module):
+    """Inkling RMS normalization layer. Computes sqrt-mean-square over the
+    last dimension (hidden_size) and scales by a learned per-dimension
+    weight. Uses the vendored Triton kernel from .ops.rmsnorm for the
+    forward pass; handles empty tensors by returning them unchanged."""
+
     def __init__(self, hidden_size: int, eps: float = 1e-6) -> None:
         super().__init__()
         self.weight = nn.Parameter(torch.ones(hidden_size))

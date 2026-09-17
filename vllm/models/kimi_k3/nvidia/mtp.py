@@ -48,6 +48,11 @@ logger = init_logger(__name__)
 
 
 class SharedHead(nn.Module):
+    """Shared normalization and projection head used by both the main model
+    and MTP layers. Applies RMSNorm to hidden states and returns them for
+    logit computation.
+    """
+
     def __init__(
         self,
         config: KimiLinearConfig,
@@ -64,10 +69,20 @@ class SharedHead(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Apply RMSNorm to hidden states and return the normalized result.
+
+        The logit head is applied separately by the caller.
+        """
         return self.norm(hidden_states)
 
 
 class KimiK3MultiTokenPredictorLayer(nn.Module):
+    """Single MTP prediction layer that takes the previous layer's hidden state
+    and input embeddings, combines them via fused input, runs them through a
+    full decoder block, and produces both logits and the recurrent hidden state
+    for the next MTP step.
+    """
+
     def __init__(
         self,
         config: KimiLinearConfig,
@@ -105,6 +120,12 @@ class KimiK3MultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run one MTP prediction step.
+
+        Combines input embeddings and previous hidden states via
+        fused_mtp_input, passes through the decoder block, and returns
+        normalized logits input plus the recurrent state.
+        """
         assert inputs_embeds is not None
         hidden_states = self.eh_proj(
             fused_mtp_input(

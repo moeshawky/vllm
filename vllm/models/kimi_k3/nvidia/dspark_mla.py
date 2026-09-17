@@ -52,6 +52,15 @@ def _duplicate_context_kv_weights(
 
 
 class K3DSparkDecoderLayer(nn.Module):
+    """One DSpark decoder layer for K3 draft models.
+
+    Wraps MLA attention and Kimi MLP with fused all-reduce + RMSNorm
+    residuals. Both row-parallel outputs (attention o_proj and MLP
+    down_proj) leave their all-reduces unfused (reduce_results=False)
+    and defer the collective to the next layer's input_layernorm via
+    fused_allreduce_rms_norm.
+    """
+
     def __init__(
         self,
         *,
@@ -125,6 +134,14 @@ class K3DSparkDecoderLayer(nn.Module):
 
 
 class K3DSparkModel(nn.Module):
+    """K3 DSpark draft model body.
+
+    Contains a stacked context projection (over all target layers' hidden
+    states), the draft decoder layers, a cross-layer KV projection for
+    context tokens, and a Markov head for speculative decoding. The frozen
+    target embedding is aliased after checkpoint load.
+    """
+
     def __init__(
         self,
         *,
@@ -396,6 +413,14 @@ class K3DSparkModel(nn.Module):
 
 
 class K3DSparkForCausalLM(nn.Module):
+    """Top-level K3 DSpark draft model for speculative decoding.
+
+    Wraps K3DSparkModel with a weight mapper that discards the training-only
+    confidence_head and embeds/lm_head (aliased from the frozen target).
+    Draft IDs are identical to target IDs (map_draft_to_target is the
+    identity).
+    """
+
     has_own_embed_tokens = False
     has_own_lm_head = False
     draft_id_to_target_id = None

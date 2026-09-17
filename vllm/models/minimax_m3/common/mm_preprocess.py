@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Multimodal preprocessing for MiniMax M3 vision-language model.
+
+Handles image and video tokenization, dummy-input construction for
+memory profiling, and prompt templating. Implements the vLLM
+multimodal processing interface (BaseProcessingInfo, BaseMultiModalProcessor)
+so M3 images/videos are converted to vision tokens and interleaved into
+the text prompt with the model's special vision tokens.
+"""
 
 import math
 from collections.abc import Mapping, Sequence
@@ -61,6 +69,16 @@ _MAX_FRAMES_PER_VIDEO = 500
 
 
 class MiniMaxM3VLProcessingInfo(BaseProcessingInfo):
+    """M3 vision-language multimodal processing info.
+
+    Implements BaseProcessingInfo for M3's image/video tokenization:
+    - Token counting mirrors the processor's smart_resize (area-bounded)
+      so vLLM's budgeting matches actual token output
+    - Dummy inputs are sized to the worst case (max pixels / most frames)
+      for correct encoder memory profiling
+    - Video uses temporal patching (frames grouped by temporal_patch_size)
+    - Long-side resize spec is opt-in via processor attributes
+    """
     IMAGE_TOKEN = "]<]image[>["
     VIDEO_TOKEN = "]<]video[>["
     VISION_START_TOKEN = "]<]start of image[>["
@@ -174,6 +192,13 @@ class MiniMaxM3VLProcessingInfo(BaseProcessingInfo):
         return n
 
     def get_image_size_with_most_features(self) -> ImageSize:
+        """Return the largest image size that produces the most vision tokens.
+
+        Computes the maximum square side length (multiple of patch*merge)
+        within the processor's area or long-side bound. Used to size dummy
+        images for encoder memory profiling so the allocation matches the
+        worst real input.
+        """
         # Largest square (a multiple of patch_size*merge_size) whose area is
         # within the image processor's bound — this yields the most vision
         # tokens for one image. With the long-side spec the square side is

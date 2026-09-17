@@ -6,6 +6,14 @@
 # The original source was licensed under the MIT license.
 # Copyright (c) 2023-2026, Songlin Yang, Yu Zhang, Zhiyuan Li
 # ruff: noqa: E501
+"""Fused recurrent KDA kernels for AMD GPU decode.
+
+Provides three public entry points: fused_recurrent_kda_fwd (raw recurrent
+kernel launch), fused_recurrent_kda (high-level wrapper that applies gate
+activation and beta sigmoid), and fused_recurrent_kda_packed_decode
+(one-token decode from packed post-conv QKV). Also includes a fused
+gate+beta preprocessor kernel. Adapted from flash-linear-attention.
+"""
 
 import torch
 

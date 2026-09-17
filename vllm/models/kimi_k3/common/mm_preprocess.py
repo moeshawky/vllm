@@ -43,6 +43,14 @@ def navit_resize_image(
     patch_limit_on_one_side: int,
     fixed_output_tokens: int | None,
 ):
+    """Compute the NAiV resize parameters for one image.
+
+    Scales the image so it fits within in_patch_limit patches and
+    patch_limit_on_one_side patches per side, then pads the result to a
+    multiple of merge_kernel_size * patch_size. Returns the new dimensions,
+    pad amounts, and the resulting token count (or fixed_output_tokens when
+    given).
+    """
     # Apply the patch limits.
     s1 = math.sqrt(
         in_patch_limit
@@ -159,6 +167,14 @@ class KimiK3ProcessingInfo(BaseProcessingInfo):
         patch_limit_on_one_side: int,
         fixed_output_tokens: int | None,
     ) -> ImageSize:
+        """Find the largest (width, height) that produces the most tokens.
+
+        Iterates every (width_patches, height_patches) pair up to
+        patch_limit_on_one_side, calls navit_resize_image on the corresponding
+        pixel size, and keeps the pair with the highest (num_tokens,
+        num_patches) score. Used to build worst-case dummy images for
+        profiling.
+        """
         max_side = patch_limit_on_one_side * patch_size
         best_score = (-1, -1)
         best_size = (max_side, max_side)

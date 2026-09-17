@@ -144,6 +144,15 @@ def fold_timespace_to_depth(
 
 
 class HMLPPatchEncoder(nn.Module):
+    """Hierarchical MLP patch encoder for Inkling vision.
+
+    Plans a sequence of (t,h,w,c) scale transitions via plan_out_scales,
+    then applies linear layers (with RMSNorm and GeLU between layers) to
+    progressively fold spatial/temporal dimensions into channels. The final
+    layer projects to decoder_dmodel. On CUDA with bf16, uses the fused
+    rmsnorm_gelu kernel from the nvidia ops module.
+    """
+
     def __init__(self, config: InklingVisionConfig):
         super().__init__()
         self.decoder_dmodel = config.decoder_dmodel
@@ -272,6 +281,10 @@ class InklingVision(nn.Module):
 
 
 class InklingAudio(nn.Module):
+    """Embeds each dMel bin index via a shared nn.Embedding table, sums the
+    per-bin embedding rows in fp32, and applies optional RMSNorm.
+    """
+
     def __init__(self, config: InklingAudioConfig, prefix: str = ""):
         del prefix
         super().__init__()

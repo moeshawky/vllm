@@ -98,6 +98,8 @@ class LamportCopy:
             fragment = fragment + stride
 
 
+# Compile LamportCopy once per (hidden_dim, max_m, ctas, threads, device)
+# and cache the result.
 @functools.cache
 def compile_kernel(
     hidden_dim: int,
@@ -142,6 +144,14 @@ def launch(
     ctas: int,
     threads: int,
 ) -> None:
+    """Launch the Lamport copy kernel: wait for producer, copy mailbox to
+    local output, reset sentinels.
+
+    Validates tensor shapes and dtypes, then launches the cached compiled
+    kernel on the current CUDA stream. The copy phase reads each 128-bit
+    Lamport fragment until the dirty sentinel clears, copies to local output,
+    then resets all mailbox fragments to the negative-zero sentinel for reuse.
+    """
     if not 1 <= m <= max_m:
         raise ValueError(f"runtime M={m} must be in [1, {max_m}]")
     if (
