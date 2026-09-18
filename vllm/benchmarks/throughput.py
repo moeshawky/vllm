@@ -43,6 +43,7 @@ def run_vllm(
     warmup_requests: list[SampleRequest] | None = None,
     prequeue_requests: bool = False,
 ) -> tuple[float, list[RequestOutput] | None]:
+    """Run an offline vLLM throughput benchmark with the synchronous LLM API."""
     from vllm import LLM
 
     llm = LLM.from_engine_args(engine_args)
@@ -88,6 +89,8 @@ def _run_vllm_requests(
     prequeue_requests: bool,
     enable_lora: bool,
 ) -> tuple[float, list[RequestOutput] | None]:
+    """Convert SampleRequest rows into prompts + SamplingParams
+    and time one vLLM batch over them."""
     from vllm import SamplingParams
 
     prompts: list[TextPrompt | TokensPrompt] = []
@@ -119,6 +122,8 @@ def _run_vllm_requests(
         if lora_requests is not None:
             lora_requests.append(request.lora_request)
 
+    # Dead flag: use_beam_search is hard-coded False and never reassigned,
+    # so the else branch (lines 152-185, llm.beam_search) is unreachable today.
     use_beam_search = False
 
     outputs = None
@@ -243,6 +248,7 @@ def _run_vllm_chat_requests(
     do_profile: bool,
     prequeue_requests: bool,
 ) -> tuple[float, list[RequestOutput]]:
+    """Time one vLLM chat-format batch over chat message lists."""
     from vllm import SamplingParams
 
     prompts = []
@@ -305,6 +311,7 @@ async def run_vllm_async(
     disable_detokenize: bool = False,
     warmup_requests: list[SampleRequest] | None = None,
 ) -> float:
+    """Run an offline VLLM throughput benchmark with the async engine API."""
     from vllm.entrypoints.launchers.api_server.entry import (
         build_async_engine_client_from_engine_args,
     )
@@ -353,6 +360,8 @@ async def _run_vllm_async_requests(
     do_profile: bool,
     request_id_prefix: str,
 ) -> tuple[float, None]:
+    """Submit all requests as concurrent async generators and
+    time until every generator is exhausted."""
     from vllm import SamplingParams
 
     prompts: list[TextPrompt | TokensPrompt] = []
@@ -416,6 +425,7 @@ def run_hf(
     enable_torch_compile: bool = False,
     warmup_requests: list[SampleRequest] | None = None,
 ) -> float:
+    """Run an offline throughput benchmark on a HuggingFace causal LM."""
     assert isinstance(tokenizer, PreTrainedTokenizerBase), (
         "the hf backend only supports HF tokenizers"
     )
@@ -454,6 +464,8 @@ def _run_hf_requests(
     max_batch_size: int,
     disable_detokenize: bool,
 ) -> tuple[float, None]:
+    """Greedily batch HF generate() calls under a fixed 2048-token
+    budget and time the whole run."""
     pbar = tqdm(total=len(requests))
     start = time.perf_counter()
     batch: list[str] = []
@@ -476,6 +488,7 @@ def _run_hf_requests(
                 max(max_prompt_len, next_prompt_len)
                 + max(max_output_len, next_output_len)
             ) <= 2048:
+                # Fixed 2048-token budget for the padded batch.
                 # We can add more requests to the batch.
                 continue
 
@@ -507,6 +520,7 @@ def _run_hf_requests(
 def save_to_pytorch_benchmark_format(
     args: argparse.Namespace, results: dict[str, Any]
 ) -> None:
+    """Write the run's results in the PyTorch benchmark JSON schema."""
     pt_records = convert_to_pytorch_benchmark_format(
         args=args,
         metrics={
@@ -566,6 +580,7 @@ def _to_serve_args(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def get_requests(args, tokenizer):
+    """Build the benchmark request list from CLI args."""
     serve_args = _to_serve_args(args)
     # Throughput reuses bench serve's dataset dispatch. vllm-chat is the only
     # multimodal-capable throughput backend, so it is the only one allowed past
@@ -578,6 +593,7 @@ def get_requests(args, tokenizer):
 
 
 def filter_requests_for_dp(requests, data_parallel_size):
+    """Keep only the requests owned by this data-parallel rank."""
     # Note(zhuohan): The way we get data_parallel_rank is hacky and only
     # works for external launcher mode. Should be cleaned up and deprecated
     # in the future with a better vLLM distributed process design.
@@ -783,6 +799,7 @@ def validate_args(args):
 
 
 def add_cli_args(parser: FlexibleArgumentParser):
+    """Register the throughput-benchmark CLI flags on the parser."""
     parser.add_argument(
         "--backend",
         type=str,
@@ -1013,6 +1030,7 @@ def add_cli_args(parser: FlexibleArgumentParser):
 
 
 def main(args: argparse.Namespace):
+    """CLI entry point for the offline throughput benchmark."""
     validate_args(args)
     if args.seed is None:
         args.seed = 0

@@ -179,6 +179,14 @@ class Qwen4ExpSparseMoeBlock(Qwen3NextSparseMoeBlock):
 
 
 class Qwen4ExpDecoderLayer(nn.Module):
+    """Single Qwen4Exp decoder layer with HyperConnection (HC) mixing.
+
+    Contains attention (linear or full/QSA), MLP (dense or MoE), optional PLE,
+    and two GatedResidual HC modules (attn_hyper_connection, mlp_hyper_connection).
+    forward() takes the HC tuple (hidden_states, block_output, injection) and
+    returns a new tuple for the next layer.
+    """
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -396,6 +404,16 @@ class Qwen4ExpMixtureOfExperts(MixtureOfExperts):
     }
 )
 class Qwen4ExpModel(nn.Module):
+    """Core Qwen4Exp transformer model with HyperConnection multi-stream mixing.
+
+    Embeds input tokens, repeats them across hc_count streams, and processes them
+    through a stack of Qwen4ExpDecoderLayer instances. Each layer exchanges an
+    HC tuple (hidden_states, block_output, injection) -- the final HC mixer on the
+    last pipeline stage collapses the multi-stream state into a single stream.
+    Supports deepstack visual embedding injection and MTP multi-stream hidden
+    buffer for speculative decoding.
+    """
+
     hf_to_vllm_mapper = Qwen3_5Model.hf_to_vllm_mapper | _HC_WEIGHTS_MAPPER
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
@@ -608,6 +626,15 @@ class Qwen4ExpForCausalLM(
     Qwen4ExpMixtureOfExperts,
     IsHybrid,
 ):
+    """Qwen4Exp causal language model wrapper with Mamba state management.
+
+    Wraps Qwen4ExpModel, adds an LM head and logits processor. Implements
+    MixtureOfExperts (EPLB), SupportsPP, SupportsMRoPE, SupportsLoRA,
+    HasInnerState, and IsHybrid interfaces. Provides class methods for
+    computing Mamba state shapes/dtypes for both GDN attention layers and
+    PLE short-conv layers.
+    """
+
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -828,6 +855,8 @@ class Qwen4ExpForCausalLM(
 
 
 class Qwen4ExpProcessingInfo(Qwen3VLProcessingInfo):
+    """Multimodal processing info for Qwen4Exp, inheriting Qwen3-VL's processor."""
+
     def get_hf_config(self) -> Qwen4ExpConfig:
         return self.ctx.get_hf_config(Qwen4ExpConfig)
 

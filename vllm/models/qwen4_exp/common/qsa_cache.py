@@ -617,6 +617,15 @@ class QSAMetadataBuilder(AttentionMetadataBuilder[QSAForwardMetadata]):
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> QSAForwardMetadata:
+        """Build QSA forward metadata for one cache group.
+
+        Computes token-to-request mapping, logical positions, slot mappings,
+        and optional pre-indexer work metadata. Uses the Triton kernel when
+        available (build_qsa_metadata = build_qsa_metadata_triton) or the
+        PyTorch fallback. For circular buffer caches, builds only the circular
+        slot mapping. For compressed caches, also builds work metadata for
+        the compression kernel.
+        """
         del common_prefix_len, fast_build
         num_tokens = common_attn_metadata.num_actual_tokens
         build_k_work = not self.is_circular_buffer and self.compress_ratio != 1
@@ -761,6 +770,13 @@ class QSAKeyStateCache(_QSAStateCache):
             self.rope_position_cache = None
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
+        """Compute KV cache spec for the raw key circular buffer.
+
+        The circular buffer holds the open group's committed keys plus
+        speculative draft rows, rounded up to whole groups so the ring
+        divides the attention block size. Returns a CircularBufferSpec
+        with the computed capacity.
+        """
         # Hold the open group's committed keys plus every row a speculative
         # step stores before acceptance is known, rounded up to whole groups so
         # the ring divides the attention block size (it joins the LCM that sets
@@ -785,6 +801,12 @@ class QSACompressedKeyCache(_QSAStateCache):
     """Normalized, group-first-RoPE BF16 key at one row per complete group."""
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
+        """Compute KV cache spec for the compressed key cache.
+
+        Returns an MLAAttentionSpec with one state per compression group
+        (tokens_per_state = compress_ratio). The compressed cache stores
+        normalized, group-first-RoPE keys at one row per complete group.
+        """
         del vllm_config
         return MLAAttentionSpec(
             block_size=self.cache_config.block_size,

@@ -21,11 +21,22 @@ _QSA_CONFIG_FIELDS = (
 
 
 class Qwen4ExpVisionConfig(Qwen3VLVisionConfig):
+    """Vision config for Qwen4Exp, inheriting Qwen3-VL's vision configuration."""
+
     model_type = "qwen4_exp"
     base_config_key = "vision_config"
 
 
 class Qwen4ExpTextConfig(Qwen3NextConfig):
+    """Text config for Qwen4Exp with HyperConnection, PLE, and QSA parameters.
+
+    Extends Qwen3NextConfig with Qwen4Exp-specific fields: hc_count (number of
+    HyperConnection streams), hc_lowrank (low-rank gate dimension), PLE
+    parameters (layer IDs, embedding dim, conv kernel, ngram settings), and QSA
+    parameters (indexer heads, budget, compression ratio). Validates all
+    Qwen4Exp-specific fields in constructor.
+    """
+
     model_type = "qwen4_exp_text"
     base_config_key = "text_config"
     keys_to_ignore_at_inference = ["past_key_values"]
@@ -191,6 +202,14 @@ class Qwen4ExpTextConfig(Qwen3NextConfig):
 
 
 class Qwen4ExpConfig(PretrainedConfig):
+    """Top-level Qwen4Exp configuration combining vision and text configs.
+
+    Sub-configs: vision_config (Qwen4ExpVisionConfig) and text_config
+    (Qwen4ExpTextConfig). Defines token IDs for image, video, and vision
+    start/end markers. Inherits from PretrainedConfig with sub_configs
+    registration for nested config types.
+    """
+
     model_type = "qwen4_exp"
     sub_configs: ClassVar[dict[str, type[PretrainedConfig]]] = {
         "vision_config": Qwen4ExpVisionConfig,

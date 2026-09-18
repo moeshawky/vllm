@@ -53,6 +53,13 @@ class HyperConnectionConfig:
 
 
 class GroupedGemmaRMSNorm(nn.Module):
+    """Per-group RMS normalization with separate affine weights per element.
+
+    Computes variance per group of 'group_size' elements, normalizes, then
+    applies an element-wise learned affine weight. Used by GatedResidual to
+    normalize each HC stream independently while retaining separate weights
+    for the full HC*H layout.
+    """
     def __init__(
         self,
         hidden_size: int,
@@ -234,6 +241,13 @@ class GatedResidual(HyperConnectionBase):
         block_output: torch.Tensor,
         residuals: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
+        """Inject block output back into HC streams via learned per-stream gate.
+
+        Computes a sigmoid injection weight from the normalized input through
+        block_inject_weight, scales by 2.0, and adds the gated block output to
+        the residual. Uses the hyper_input_normed from the paired mix() call to
+        ensure the same HC module's injection weight is used.
+        """
         if not hasattr(self, "block_inject_weight"):
             raise RuntimeError("combine was disabled for this hyper-connection")
         hyper_input, hyper_input_normed = residuals

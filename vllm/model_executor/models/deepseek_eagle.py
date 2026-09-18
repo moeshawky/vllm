@@ -31,6 +31,7 @@ from .utils import AutoWeightsLoader, maybe_prefix, process_eagle_weight
 
 @support_torch_compile
 class DeepseekV2Model(nn.Module):
+    """Docstring for DeepseekV2Model class."""
     def __init__(
         self,
         *,
@@ -38,6 +39,7 @@ class DeepseekV2Model(nn.Module):
         prefix: str = "",
         start_layer_id: int = 0,
     ) -> None:
+        """Docstring for DeepseekV2Model.__init__ method."""
         super().__init__()
         assert vllm_config.speculative_config is not None
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
@@ -81,6 +83,7 @@ class DeepseekV2Model(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Docstring for DeepseekV2Model.forward method."""
         input_embeds = self.embed_tokens(input_ids)
 
         inputs = torch.cat(
@@ -98,6 +101,7 @@ class DeepseekV2Model(nn.Module):
         return hidden_states, hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Docstring for DeepseekV2Model.load_weights method."""
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("gate_up_proj", "gate_proj", 0),
@@ -192,7 +196,9 @@ class DeepseekV2Model(nn.Module):
 
 
 class EagleDeepseekV3ForCausalLM(DeepseekV3ForCausalLM):
+    """Docstring for EagleDeepseekV3ForCausalLM class."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Docstring for EagleDeepseekV3ForCausalLM.__init__ method."""
         nn.Module.__init__(self)
         assert vllm_config.speculative_config is not None
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
@@ -246,6 +252,7 @@ class EagleDeepseekV3ForCausalLM(DeepseekV3ForCausalLM):
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        """Docstring for EagleDeepseekV3ForCausalLM.load_weights method."""
         def transform(inputs):
             name, loaded_weight = inputs
             if "lm_head" not in name:

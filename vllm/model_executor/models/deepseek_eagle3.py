@@ -151,6 +151,7 @@ class DeepseekV2Eagle3DecoderLayer(nn.Module):
 
 @support_torch_compile
 class DeepseekV2Eagle3Model(nn.Module):
+    """Docstring for DeepseekV2Eagle3Model class."""
     def __init__(
         self,
         *,
@@ -158,6 +159,7 @@ class DeepseekV2Eagle3Model(nn.Module):
         start_layer_id: int = 0,
         prefix: str = "",
     ) -> None:
+        """Docstring for DeepseekV2Eagle3Model.__init__ method."""
         super().__init__()
         assert vllm_config.speculative_config is not None
         self.config = vllm_config.speculative_config.draft_model_config.hf_config
@@ -236,6 +238,7 @@ class DeepseekV2Eagle3Model(nn.Module):
         hidden_states: torch.Tensor,
         input_embeds: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Docstring for DeepseekV2Eagle3Model.forward method."""
         if input_embeds is None:
             input_embeds = self.embed_input_ids(input_ids)
         assert hidden_states.shape[-1] == input_embeds.shape[-1]
@@ -333,6 +336,7 @@ class Eagle3DeepseekV2ForCausalLM(LocalArgmaxMixin, DeepseekV2ForCausalLM):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Docstring for Eagle3DeepseekV2ForCausalLM.compute_logits method."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         if self.draft_id_to_target_id is None:
             assert logits.shape[1] == self.config.vocab_size, (
@@ -367,6 +371,7 @@ class Eagle3DeepseekV2ForCausalLM(LocalArgmaxMixin, DeepseekV2ForCausalLM):
         return self.model.fc(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        """Docstring for Eagle3DeepseekV2ForCausalLM.load_weights method."""
         model_weights = {}
         includes_draft_id_mapping = False
         includes_embed_tokens = False

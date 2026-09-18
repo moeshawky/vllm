@@ -28,6 +28,7 @@ from .utils import AutoWeightsLoader
 
 
 class MLPBlock(nn.Module):
+    """Docstring for MLPBlock class."""
     def __init__(
         self,
         embedding_dim: int,
@@ -46,6 +47,7 @@ class MLPBlock(nn.Module):
 # From https://github.com/facebookresearch/detectron2/blob/main/detectron2/layers/batch_norm.py # noqa
 # Itself from https://github.com/facebookresearch/ConvNeXt/blob/d1fa8f6fef0a165b27399986cc2bdacc92777e40/models/convnext.py#L119  # noqa
 class LayerNorm2d(nn.Module):
+    """Docstring for LayerNorm2d class."""
     def __init__(self, num_channels: int, eps: float = 1e-6) -> None:
         super().__init__()
         self.weight = nn.Parameter(torch.ones(num_channels))
@@ -523,6 +525,7 @@ class PatchEmbed(nn.Module):
 
 # TODO(Isotr0py): use vision_config to build sam model
 def build_sam_vit_b():
+    """Docstring for build_sam_vit_b function."""
     return _build_sam(
         encoder_embed_dim=768,
         encoder_depth=12,
@@ -537,6 +540,7 @@ def _build_sam(
     encoder_num_heads,
     encoder_global_attn_indexes,
 ):
+    """Docstring for _build_sam function."""
     prompt_embed_dim = 256
     image_size = 1024
     vit_patch_size = 16
@@ -558,6 +562,7 @@ def _build_sam(
 
 
 class DeepCLIPVisionEmbeddings(CLIPVisionEmbeddings):
+    """Docstring for DeepCLIPVisionEmbeddings class."""
     def get_abs_pos(self, abs_pos: torch.Tensor, tgt_size: int):
         # abs_pos: L, C
         # tgt_size: M
@@ -611,6 +616,7 @@ class DeepCLIPVisionEmbeddings(CLIPVisionEmbeddings):
 
 
 class DeepCLIPVisionTransformer(nn.Module):
+    """Docstring for DeepCLIPVisionTransformer class."""
     def __init__(
         self,
         config: CLIPVisionConfig,

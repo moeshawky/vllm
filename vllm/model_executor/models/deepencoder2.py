@@ -47,6 +47,7 @@ class CustomQwen2Decoder(PluggableLayer):
         hidden_act: str = "silu",
         initializer_range: float = 0.02,
     ):
+        """Docstring for CustomQwen2Decoder.__init__ method."""
         super().__init__()
 
         # load
@@ -78,6 +79,7 @@ class CustomQwen2Decoder(PluggableLayer):
         """Qwen2Model"""
 
         class CustomQwen2ModelInner(Qwen2Model):
+            """Docstring for CustomQwen2ModelInner class."""
             def forward(
                 self,
                 input_ids=None,
@@ -92,6 +94,7 @@ class CustomQwen2Decoder(PluggableLayer):
                 return_dict=None,
                 cache_position=None,
             ):
+                """Docstring for CustomQwen2ModelInner.forward method."""
                 causal_mask_mapping = {
                     "full_attention": self._update_causal_mask(
                         attention_mask,
@@ -124,6 +127,7 @@ class CustomQwen2Decoder(PluggableLayer):
                 past_key_values,
                 output_attentions,
             ):
+                """Docstring for CustomQwen2ModelInner._update_causal_mask method."""
                 dtype, device = input_tensor.dtype, input_tensor.device
                 min_dtype = torch.finfo(dtype).min
                 batch_size, sequence_length = (
@@ -223,6 +227,7 @@ class Qwen2Decoder2Encoder(nn.Module):
         num_key_value_heads: int,
         intermediate_size: int,
     ):
+        """Docstring for Qwen2Decoder2Encoder.__init__ method."""
         super().__init__()
 
         self.model = CustomQwen2Decoder(
@@ -237,6 +242,7 @@ class Qwen2Decoder2Encoder(nn.Module):
         self.query_1024 = nn.Embedding(256, hidden_dimension)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Docstring for Qwen2Decoder2Encoder.forward method."""
         x = x.flatten(2).transpose(1, 2)
 
         bs, n_query, _ = x.shape
@@ -274,6 +280,7 @@ def build_qwen2_decoder_as_encoder(
     num_key_value_heads=2,
     intermediate_size=4864,
 ):
+    """Docstring for build_qwen2_decoder_as_encoder function."""
     decoder_as_encoder = Qwen2Decoder2Encoder(
         decoder_layer=decoder_layer,
         hidden_dimension=hidden_dimension,

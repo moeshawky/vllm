@@ -27,6 +27,7 @@ _T = TypeVar("_T")
 # Attempt N uses: base_timeout * (_RETRY_BACKOFF_FACTOR ** N) for the
 # per-attempt timeout and sleeps _RETRY_BACKOFF_FACTOR ** N seconds.
 _RETRY_BACKOFF_FACTOR = 4
+# Response is read in 64KB chunks to balance memory usage and I/O efficiency.
 _RESPONSE_READ_CHUNK_SIZE = 64 * KiB_bytes
 
 
@@ -61,6 +62,8 @@ class MediaDownloadSizeExceededError(ValueError):
 
 
 def _get_media_download_limit_bytes() -> int | None:
+    """Returns the media download limit in bytes from the environment variable,
+    or None if disabled."""
     max_size_mb = envs.VLLM_MAX_MEDIA_DOWNLOAD_SIZE_MB
     if max_size_mb <= 0:
         return None
@@ -68,6 +71,8 @@ def _get_media_download_limit_bytes() -> int | None:
 
 
 def _get_response_size_limit(max_bytes: int | None) -> tuple[int | None, bool]:
+    """Returns the effective size limit and whether it comes from the media
+    download limit."""
     media_max_bytes = _get_media_download_limit_bytes()
     if media_max_bytes is not None and (
         max_bytes is None or media_max_bytes <= max_bytes
@@ -79,6 +84,8 @@ def _get_response_size_limit(max_bytes: int | None) -> tuple[int | None, bool]:
 def _raise_size_exceeded(
     max_bytes: int, received_bytes: int, media_download_limit: bool
 ) -> None:
+    """Raises either MediaDownloadSizeExceededError or HTTPResponseSizeExceededError
+    based on whether the media download limit applies."""
     if media_download_limit:
         raise MediaDownloadSizeExceededError(max_bytes, received_bytes)
     raise HTTPResponseSizeExceededError(max_bytes, received_bytes)
@@ -89,6 +96,8 @@ def _check_content_length(
     max_bytes: int | None,
     media_download_limit: bool,
 ) -> None:
+    """Checks the Content-Length header against the max bytes limit. Raises
+    size-exceeded error if exceeded."""
     if content_length is None or max_bytes is None:
         return
     try:
@@ -106,6 +115,8 @@ def _append_chunk(
     max_bytes: int | None,
     media_download_limit: bool,
 ) -> int:
+    """Appends a chunk to the list and checks the running byte count against
+    the limit."""
     if not chunk:
         return received_bytes
     received_bytes += len(chunk)
@@ -116,6 +127,8 @@ def _append_chunk(
 
 
 def _read_response_bytes(response: requests.Response, max_bytes: int | None) -> bytes:
+    """Reads a sync HTTP response into bytes, enforcing the max_bytes limit
+    via chunked reading."""
     max_bytes, media_download_limit = _get_response_size_limit(max_bytes)
     if max_bytes is None:
         return response.content
@@ -137,6 +150,7 @@ def _read_response_bytes(response: requests.Response, max_bytes: int | None) -> 
 async def _async_read_response_bytes(
     response: aiohttp.ClientResponse, max_bytes: int | None
 ) -> bytes:
+    """Reads an async HTTP response into bytes, enforcing the max_bytes limit."""
     max_bytes, media_download_limit = _get_response_size_limit(max_bytes)
     if max_bytes is None:
         return await response.read()
@@ -207,6 +221,8 @@ def _log_retry(
     backoff: float,
     base_timeout: float | None,
 ) -> None:
+    """Logs a retry attempt with URL, attempt number, timeout info, and backoff
+    duration."""
     # args[0] is `self` (bound method), args[1] is the URL
     url = args[1] if len(args) > 1 else kwargs.get("url")
     timeout_info = (
@@ -325,6 +341,7 @@ class HTTPConnection:
     """Helper class to send HTTP requests."""
 
     def __init__(self, *, reuse_client: bool = True) -> None:
+        """Initializes HTTPConnection with optional client reuse."""
         super().__init__()
 
         self.reuse_client = reuse_client
@@ -333,6 +350,7 @@ class HTTPConnection:
         self._async_client: aiohttp.ClientSession | None = None
 
     def get_sync_client(self) -> requests.Session:
+        """Returns the sync requests.Session, creating it if needed."""
         if self._sync_client is None or not self.reuse_client:
             self._sync_client = requests.Session()
 
@@ -341,12 +359,15 @@ class HTTPConnection:
     # NOTE: We intentionally use an async function even though it is not
     # required, so that the client is only accessible inside async event loop
     async def get_async_client(self) -> aiohttp.ClientSession:
+        """Returns the async aiohttp.ClientSession, creating it if needed. Uses
+        trust_env=True."""
         if self._async_client is None or not self.reuse_client:
             self._async_client = aiohttp.ClientSession(trust_env=True)
 
         return self._async_client
 
     def _validate_http_url(self, url: str):
+        """Validates that a URL has an http or https scheme."""
         parsed_url = parse_url(url)
 
         if parsed_url.scheme not in ("http", "https"):
@@ -366,6 +387,8 @@ class HTTPConnection:
         extra_headers: Mapping[str, str] | None = None,
         allow_redirects: bool = True,
     ):
+        """Sends a synchronous GET request with optional streaming, timeout, and
+        headers."""
         self._validate_http_url(url)
 
         client = self.get_sync_client()
@@ -387,6 +410,7 @@ class HTTPConnection:
         extra_headers: Mapping[str, str] | None = None,
         allow_redirects: bool = True,
     ):
+        """Sends an asynchronous GET request with optional timeout and headers."""
         self._validate_http_url(url)
 
         client = await self.get_async_client()
@@ -408,6 +432,7 @@ class HTTPConnection:
         allow_redirects: bool = True,
         max_bytes: int | None = None,
     ) -> bytes:
+        """Downloads bytes from a URL with retry and size limit enforcement."""
         with self.get_response(
             url,
             stream=True,
@@ -427,6 +452,7 @@ class HTTPConnection:
         allow_redirects: bool = True,
         max_bytes: int | None = None,
     ) -> bytes:
+        """Async version of get_bytes."""
         async with await self.get_async_response(
             url,
             timeout=timeout,
@@ -479,6 +505,8 @@ class HTTPConnection:
         timeout: float | None = None,
         chunk_size: int = 128,
     ) -> Path:
+        """Downloads a file from a URL to a local path. Cleans up partial downloads
+        on failure."""
         try:
             with self.get_response(url, timeout=timeout) as r:
                 r.raise_for_status()
@@ -503,6 +531,7 @@ class HTTPConnection:
         timeout: float | None = None,
         chunk_size: int = 128,
     ) -> Path:
+        """Async version of download_file."""
         try:
             async with await self.get_async_response(
                 url,

@@ -101,6 +101,7 @@ class DeepseekOCRImagePixelInputs(TensorSchema):
 
 
 class NoRepeatNGramLogitsProcessor:
+    """Docstring for class NoRepeatNGramLogitsProcessor class."""
     def __init__(
         self,
         ngram_size: int,
@@ -196,6 +197,7 @@ class NGramPerReqLogitsProcessor(AdapterLogitsProcessor):
 
 
 class DeepseekOCRProcessingInfo(BaseProcessingInfo):
+    """Docstring for class DeepseekOCRProcessingInfo class."""
     def get_hf_config(self):
         return self.ctx.get_hf_config(DeepseekVLV2Config)
 
@@ -257,6 +259,7 @@ class DeepseekOCRProcessingInfo(BaseProcessingInfo):
 
 
 class DeepseekOCRDummyInputsBuilder(BaseDummyInputsBuilder[DeepseekOCRProcessingInfo]):
+    """Docstring for class DeepseekOCRDummyInputsBuilder class."""
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
 
@@ -287,6 +290,7 @@ class DeepseekOCRDummyInputsBuilder(BaseDummyInputsBuilder[DeepseekOCRProcessing
 class DeepseekOCRMultiModalProcessor(
     BaseMultiModalProcessor[DeepseekOCRProcessingInfo]
 ):
+    """Docstring for class DeepseekOCRMultiModalProcessor class."""
     def _apply_hf_processor_main(
         self,
         mm_items: MultiModalDataItems,
@@ -380,6 +384,7 @@ class DeepseekOCRMultiModalProcessor(
 class DeepseekOCRForCausalLM(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsEncoderCudaGraph
 ):
+    """Docstring for class DeepseekOCRForCausalLM class."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             # map prefix for language backbone

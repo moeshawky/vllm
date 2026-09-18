@@ -47,6 +47,7 @@ from .utils import (
 
 
 class SharedHead(nn.Module):
+    """Docstring for class SharedHead class."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -67,6 +68,7 @@ class SharedHead(nn.Module):
 
 
 class DeepSeekMultiTokenPredictorLayer(nn.Module):
+    """Docstring for class DeepSeekMultiTokenPredictorLayer class."""
     def __init__(self, vllm_config: VllmConfig, prefix: str) -> None:
         super().__init__()
 
@@ -138,6 +140,7 @@ class DeepSeekMultiTokenPredictorLayer(nn.Module):
 
 
 class DeepSeekMultiTokenPredictor(nn.Module):
+    """Docstring for class DeepSeekMultiTokenPredictor class."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -231,6 +234,7 @@ class DeepSeekMultiTokenPredictor(nn.Module):
 
 @support_torch_compile
 class DeepSeekMTP(nn.Module, DeepseekV2MixtureOfExperts):
+    """Docstring for class DeepSeekMTP class."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config

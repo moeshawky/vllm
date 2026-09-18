@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""DBRX mixture-of-experts model with tensor-parallel expert sharding."""
 from collections.abc import Iterable
 from itertools import islice
 from typing import Any
@@ -76,6 +77,7 @@ class DbrxRouter(nn.Module):
 
 
 class DbrxExperts(RoutedExperts):
+    """Docstring for class DbrxExperts class."""
     def __init__(
         self,
         *args,
@@ -188,6 +190,7 @@ class DbrxMoE(nn.Module):
 
 
 class DbrxAttention(nn.Module):
+    """Docstring for class DbrxAttention class."""
     def __init__(
         self,
         config: DbrxConfig,
@@ -306,6 +309,7 @@ class DbrxFusedNormAttention(nn.Module):
 
 
 class DbrxBlock(nn.Module):
+    """Docstring for class DbrxBlock class."""
     def __init__(
         self,
         config: DbrxConfig,
@@ -334,6 +338,7 @@ class DbrxBlock(nn.Module):
 
 
 class DbrxModel(nn.Module):
+    """Docstring for class DbrxModel class."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -426,6 +431,7 @@ class DbrxModel(nn.Module):
 
 
 class DbrxForCausalLM(nn.Module, SupportsPP):
+    """Docstring for class DbrxForCausalLM class."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config

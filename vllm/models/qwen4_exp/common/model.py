@@ -194,6 +194,14 @@ class Qwen4ExpSparseMoeBlock(Qwen3NextSparseMoeBlock):
 
 
 class Qwen4ExpDecoderLayer(nn.Module):
+    """Single Qwen4Exp decoder layer with HyperConnection (HC) mixing (TPU-compatible).
+
+    Contains attention (linear, full, QSA, or qwen_sparse_attention), MLP (dense
+    or MoE), optional PLE, and two GatedResidual HC modules. Supports the
+    qwen_sparse_attention layer type which falls back to dense self_attn on TPU
+    (no sparse kernel available). forward() exchanges the HC tuple
+    (hidden_states, block_output, injection) between layers.
+    """
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -387,6 +395,15 @@ class Qwen4ExpDecoderLayer(nn.Module):
     }
 )
 class Qwen4ExpModel(nn.Module):
+    """Core Qwen4Exp model with HyperConnection multi-stream mixing (TPU-compatible).
+
+    Embeds input tokens, repeats them across hc_count streams, and processes them
+    through a stack of Qwen4ExpDecoderLayer instances. Each layer exchanges an
+    HC tuple (hidden_states, block_output, injection) -- the final HC mixer on the
+    last pipeline stage collapses the multi-stream state into a single stream.
+    Supports deepstack visual embedding injection and MTP multi-stream hidden
+    buffer for speculative decoding.
+    """
     hf_to_vllm_mapper = Qwen3_5Model.hf_to_vllm_mapper | _HC_WEIGHTS_MAPPER
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
@@ -579,6 +596,7 @@ class Qwen4ExpModel(nn.Module):
 
 
 class Qwen4ExpProcessingInfo(Qwen3VLProcessingInfo):
+    """Multimodal processing info for Qwen4Exp, inheriting Qwen3-VL's processor."""
     def get_hf_config(self) -> HFQwen4ExpConfig:
         return self.ctx.get_hf_config(HFQwen4ExpConfig)
 
@@ -589,6 +607,13 @@ class Qwen4ExpProcessingInfo(Qwen3VLProcessingInfo):
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
 class Qwen4ExpForConditionalGeneration(Qwen3_5ForConditionalGeneration):
+    """Qwen4Exp conditional generation model (vision+text) for TPU/JAX.
+
+    Combines a Qwen3-VL vision tower with the Qwen4Exp language model. Supports
+    deepstack visual embedding injection and multimodal feature merging.
+    Implements the VllmModel protocol with get_input_embeddings, get_lm_head,
+    and forward methods.
+    """
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.language_model.": "model.",

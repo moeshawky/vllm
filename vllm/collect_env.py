@@ -75,6 +75,7 @@ SystemEnv = namedtuple(
 )
 
 DEFAULT_CONDA_PATTERNS = {
+    # Substring filter for `conda list` output.
     "torch",
     "numpy",
     "cudatoolkit",
@@ -93,6 +94,7 @@ DEFAULT_CONDA_PATTERNS = {
 }
 
 DEFAULT_PIP_PATTERNS = {
+    # Substring filter for `pip list --format=freeze` output.
     "torch",
     "numpy",
     "mypy",
@@ -158,6 +160,7 @@ def run_and_parse_first_match(run_lambda, command, regex):
 
 
 def get_conda_packages(run_lambda, patterns=None):
+    """Return the filtered `conda list` output for this environment."""
     if patterns is None:
         patterns = DEFAULT_CONDA_PATTERNS
     conda = os.environ.get("CONDA_EXE", "conda")
@@ -173,20 +176,24 @@ def get_conda_packages(run_lambda, patterns=None):
 
 
 def get_gcc_version(run_lambda):
+    """Return the GCC compiler version string, or None."""
     return run_and_parse_first_match(run_lambda, "gcc --version", r"gcc (.*)")
 
 
 def get_clang_version(run_lambda):
+    """Return the Clang compiler version string, or None."""
     return run_and_parse_first_match(
         run_lambda, "clang --version", r"clang version (.*)"
     )
 
 
 def get_cmake_version(run_lambda):
+    """Return the CMake version string, or None."""
     return run_and_parse_first_match(run_lambda, "cmake --version", r"cmake (.*)")
 
 
 def get_nvidia_driver_version(run_lambda):
+    """Return the NVIDIA driver version string, or None."""
     if get_platform() == "darwin":
         cmd = "kextstat | grep -i cuda"
         return run_and_parse_first_match(
@@ -197,6 +204,7 @@ def get_nvidia_driver_version(run_lambda):
 
 
 def get_gpu_info(run_lambda):
+    """Return a GPU model description, or None."""
     if get_platform() == "darwin" or (
         TORCH_AVAILABLE
         and hasattr(torch.version, "hip")
@@ -223,6 +231,7 @@ def get_gpu_info(run_lambda):
 
 
 def get_running_cuda_version(run_lambda):
+    """Return the CUDA runtime version string, or None."""
     return run_and_parse_first_match(run_lambda, "nvcc --version", r"release .+ V(.*)")
 
 
@@ -243,6 +252,8 @@ def get_cudnn_version(run_lambda):
         cudnn_cmd = 'ldconfig -p | grep libcudnn | rev | cut -d" " -f1 | rev'
     rc, out, _ = run_lambda(cudnn_cmd)
     # find will return 1 if there are permission errors or if not found
+    # The rc check covers the ldconfig | grep | rev | cut pipeline
+    # (line 243), not `find`; rc 1 is the expected no-match case.
     if len(out) == 0 or (rc != 1 and rc != 0):
         l = os.environ.get("CUDNN_LIBRARY")
         if l is not None and os.path.isfile(l):
@@ -264,6 +275,7 @@ def get_cudnn_version(run_lambda):
 
 
 def get_nvidia_smi():
+    """Return the nvidia-smi command string to use on this platform."""
     # Note: nvidia-smi is currently available only on Windows and Linux
     smi = "nvidia-smi"
     if get_platform() == "win32":
@@ -289,18 +301,21 @@ def get_rocm_version(run_lambda):
 
 
 def get_xpu_available():
+    """Return True when XPU is available."""
     if TORCH_AVAILABLE and hasattr(torch, "xpu") and torch.xpu.is_available():
         return True
     return False
 
 
 def get_xpu_runtime_version():
+    """Return the XPU runtime version string, or None."""
     if TORCH_AVAILABLE and hasattr(torch.version, "xpu"):
         return torch.version.xpu
     return None
 
 
 def get_pkg_version(run_lambda, pkg):
+    """Return the version of a system package, or None."""
     assert get_platform() == "linux"
 
     if pkg in ["vllm_xpu_kernels", "oneccl"]:
@@ -386,14 +401,17 @@ def get_oneapi_ccl_version(run_lambda):
 
 
 def get_libigdgmm_version(run_lambda):
+    """Return the version of the libigdgmm package, or None."""
     return get_pkg_version(run_lambda, "libigdgmm")
 
 
 def get_vllm_xpu_kernels_version(run_lambda):
+    """Return the version of the vllm_xpu_kernels package, or None."""
     return get_pkg_version(run_lambda, "vllm_xpu_kernels")
 
 
 def get_intel_gpu_models():
+    """Return a string listing Intel GPU models, or None."""
     if TORCH_AVAILABLE and hasattr(torch, "xpu") and torch.xpu.is_available():
         device_count = torch.xpu.device_count()
         return "\n".join(
@@ -416,6 +434,7 @@ def get_sycl_version(run_lambda):
 
 
 def get_vllm_version():
+    """Return the vLLM version string for the report."""
     from vllm import __version__, __version_tuple__
 
     if __version__ == "dev":
@@ -436,6 +455,7 @@ def get_vllm_version():
 
 
 def summarize_vllm_build_flags():
+    """Return the one-line build-flags summary printed in the report."""
     flags = "CUDA Archs: {}; ROCm: {}; XPU: {}".format(
         os.environ.get("TORCH_CUDA_ARCH_LIST", "Not Set"),
         "Enabled" if os.environ.get("ROCM_HOME") else "Disabled",
@@ -445,6 +465,7 @@ def summarize_vllm_build_flags():
 
 
 def get_gpu_topo(run_lambda):
+    """Return the GPU interconnect topology table, or None."""
     output = None
 
     if get_platform() == "linux":
@@ -532,6 +553,7 @@ def get_gpu_topo(run_lambda):
 
 
 def get_cpu_info(run_lambda):
+    """Return the CPU description for the report."""
     rc, out, err = 0, "", ""
     if get_platform() == "linux":
         rc, out, err = run_lambda("lscpu")
@@ -551,6 +573,7 @@ def get_cpu_info(run_lambda):
 
 
 def get_platform():
+    """Map sys.platform to a short platform tag."""
     if sys.platform.startswith("linux"):
         return "linux"
     elif sys.platform.startswith("win32"):
@@ -564,10 +587,12 @@ def get_platform():
 
 
 def get_mac_version(run_lambda):
+    """Return the macOS version string, or None."""
     return run_and_parse_first_match(run_lambda, "sw_vers -productVersion", r"(.*)")
 
 
 def get_windows_version(run_lambda):
+    """Return the Windows edition caption, or None."""
     system_root = os.environ.get("SYSTEMROOT", "C:\\Windows")
     wmic_cmd = os.path.join(system_root, "System32", "Wbem", "wmic")
     findstr_cmd = os.path.join(system_root, "System32", "findstr")
@@ -577,18 +602,21 @@ def get_windows_version(run_lambda):
 
 
 def get_lsb_version(run_lambda):
+    """Return the LSB distribution description, or None."""
     return run_and_parse_first_match(
         run_lambda, "lsb_release -a", r"Description:\t(.*)"
     )
 
 
 def check_release_file(run_lambda):
+    """Return the PRETTY_NAME from /etc/*-release, or None."""
     return run_and_parse_first_match(
         run_lambda, "cat /etc/*-release", r'PRETTY_NAME="(.*)"'
     )
 
 
 def get_os(run_lambda):
+    """Return the OS description string for the report."""
     from platform import machine
 
     platform = get_platform()
@@ -620,12 +648,14 @@ def get_os(run_lambda):
 
 
 def get_python_platform():
+    """Return the platform string as reported by platform.platform()."""
     import platform
 
     return platform.platform()
 
 
 def get_libc_version():
+    """Return the libc version string, or N/A on non-Linux."""
     import platform
 
     if get_platform() != "linux":
@@ -634,6 +664,7 @@ def get_libc_version():
 
 
 def is_uv_venv():
+    """Return True when the active interpreter is a uv-managed venv."""
     if os.environ.get("UV"):
         return True
     pyvenv_cfg_path = os.path.join(sys.prefix, "pyvenv.cfg")
@@ -678,11 +709,13 @@ def get_pip_packages(run_lambda, patterns=None):
 
 
 def get_cachingallocator_config():
+    """Return the PYTORCH_CUDA_ALLOC_CONF value, or empty string."""
     ca_config = os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
     return ca_config
 
 
 def get_cuda_module_loading_config():
+    """Return the CUDA_MODULE_LOADING value for the report, or N/A."""
     if TORCH_AVAILABLE and torch.cuda.is_available():
         torch.cuda.init()
         config = os.environ.get("CUDA_MODULE_LOADING", "")
@@ -692,6 +725,7 @@ def get_cuda_module_loading_config():
 
 
 def is_xnnpack_available():
+    """Return the XNNPACK enabled state as a string, or N/A."""
     if TORCH_AVAILABLE:
         import torch.backends.xnnpack
 
@@ -701,6 +735,7 @@ def is_xnnpack_available():
 
 
 def get_env_vars():
+    """Return the report's environment-variable section as text."""
     env_vars = ""
     secret_terms = ("secret", "token", "api", "access", "password")
     report_prefix = (
@@ -733,6 +768,7 @@ def get_env_vars():
 
 
 def get_env_info():
+    """Collect every field of the SystemEnv record for the report."""
     run_lambda = run
     pip_version, pip_list_output = get_pip_packages(run_lambda)
 
@@ -878,6 +914,7 @@ GPU Topology:
 
 
 def pretty_str(envinfo):
+    """Render a SystemEnv record as the human-readable report."""
     def replace_nones(dct, replacement="Could not collect"):
         for key in dct.keys():
             if dct[key] is not None:
@@ -1050,6 +1087,7 @@ def get_pretty_env_info():
 
 
 def main():
+    """CLI entry point: print the collected environment report."""
     print("Collecting environment information...")
     output = get_pretty_env_info()
     print(output)

@@ -33,6 +33,8 @@ def run_server(
     dry_run: bool,
     server_ready_timeout: int = 300,
 ):
+    """Context manager that starts a ServerProcess for the serve command
+    with serve_overrides applied to it."""
     server_cmd = serve_overrides.apply_to_cmd(serve_cmd)
 
     print("[BEGIN SERVER]")
@@ -57,6 +59,9 @@ def _update_run_data(
     bench_overrides: ParameterSweepItem,
     run_number: int,
 ):
+    """Stamp a run's result dict with its run_number and the merged serve/bench
+    override fields (bench overrides last, so they win on key clashes), returning
+    the same dict."""
     run_data["run_number"] = run_number
     run_data.update(serve_overrides)
     run_data.update(bench_overrides)
@@ -74,6 +79,7 @@ def run_benchmark(
     output_path: Path,
     dry_run: bool,
 ):
+    """Run one benchmark run and return its result dict."""
     benchmark_cmd = [
         *bench_overrides.apply_to_cmd(bench_cmd),
         "--percentile-metrics",
@@ -143,6 +149,8 @@ def _get_comb_base_path(
     *,
     extra_parts: tuple[str, ...] = (),
 ):
+    """Build the per-combination result directory under experiment_dir:
+    'SERVE-<name>' and/or 'BENCH-<name>' segments."""
     parts = list[str]()
     if serve_comb:
         parts.extend(("SERVE-", serve_comb.name))
@@ -155,6 +163,7 @@ def _get_comb_base_path(
 
 
 def _get_comb_run_path(base_path: Path, run_number: int | None):
+    """Return the result file for a combination: run=<n>.json or summary.json."""
     if run_number is None:
         return base_path / "summary.json"
 
@@ -166,6 +175,7 @@ def _comb_needs_server(
     bench_combs: ParameterSweep,
     experiment_dir: Path,
 ):
+    """Return True when at least one bench combination still lacks its summary.json."""
     for bench_comb in bench_combs:
         base_path = _get_comb_base_path(experiment_dir, serve_comb, bench_comb)
         if not _get_comb_run_path(base_path, run_number=None).exists():
@@ -185,6 +195,7 @@ def server_ctx(
     dry_run: bool,
     server_ready_timeout: int = 300,
 ):
+    """Return a context manager for the server a serve combination needs."""
     if not _comb_needs_server(serve_comb, bench_params, experiment_dir):
         return contextlib.nullcontext()
 
@@ -203,6 +214,8 @@ def _comb_is_valid(
     bench_comb: ParameterSweepItem,
     link_vars: list[tuple[str, str]],
 ) -> bool:
+    """Check that every linked-variable pair is present on both
+    sides with equal values."""
     return all(
         serve_key in serve_comb
         and bench_key in bench_comb
@@ -222,6 +235,8 @@ def run_comb(
     num_runs: int,
     dry_run: bool,
 ):
+    """Run all num_runs benchmark runs for one (serve, bench) combination and
+    write the aggregate summary.json."""
     if not _comb_is_valid(serve_comb, bench_comb, link_vars):
         return None
 
@@ -264,6 +279,7 @@ def run_combs(
     num_runs: int,
     dry_run: bool,
 ):
+    """Iterate the Cartesian product of serve_params and bench_params."""
     all_data = list[dict[str, object]]()
     for serve_comb in serve_params:
         with server_ctx(
@@ -304,6 +320,7 @@ def run_combs(
 
 @dataclass
 class SweepServeArgs:
+    """CLI argument holder for the `vllm bench sweep serve` subcommand."""
     serve_cmd: list[str]
     bench_cmd: list[str]
     after_bench_cmd: list[str]
@@ -323,6 +340,7 @@ class SweepServeArgs:
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
+        """Build a SweepServeArgs from parsed CLI args."""
         serve_cmd = shlex.split(args.serve_cmd)
         bench_cmd = shlex.split(args.bench_cmd)
         after_bench_cmd = (
@@ -370,6 +388,7 @@ class SweepServeArgs:
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
+        """Register the serve subcommand arguments."""
         parser.add_argument(
             "--serve-cmd",
             type=str,
@@ -471,6 +490,7 @@ class SweepServeArgs:
 
     @staticmethod
     def parse_link_vars(s: str) -> list[tuple[str, str]]:
+        """Parse the --link-vars comma string into (serve_key, bench_key) pairs."""
         if not s:
             return []
         pairs = []
@@ -480,6 +500,7 @@ class SweepServeArgs:
         return pairs
 
     def resolve_experiment_dir(self) -> Path:
+        """Return <output_dir>/<experiment_name> after enforcing the lifecycle rule."""
         experiment_dir = self.output_dir / self.experiment_name
 
         if self.resume:
@@ -493,6 +514,7 @@ class SweepServeArgs:
 
     @contextmanager
     def run_ctx(self, experiment_dir: Path):
+        """Context manager around the sweep product."""
         if self.dry_run:
             yield
             print(f"Experiment will be saved at: {experiment_dir}")
@@ -509,6 +531,7 @@ class SweepServeArgs:
 
 
 def run_main(args: SweepServeArgs):
+    """Resolve the experiment directory and run the combination product."""
     experiment_dir = args.resolve_experiment_dir()
 
     with args.run_ctx(experiment_dir):
@@ -528,6 +551,7 @@ def run_main(args: SweepServeArgs):
 
 
 def main(args: argparse.Namespace):
+    """CLI entry point for the serve subcommand."""
     run_main(SweepServeArgs.from_cli_args(args))
 
 
