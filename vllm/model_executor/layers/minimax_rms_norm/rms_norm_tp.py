@@ -6,9 +6,9 @@
 This module implements RMS normalization with tensor model parallel
 support. It provides Triton kernel paths for fused QK-norm +
 all-reduce operations, along with eager torch fallbacks. The
-Lamport fused kernel path runs in a single kernel
-both the all-reduce and RMS normalization for improved
-throughput on ROCm platforms.
+    Lamport fused kernel path runs both the all-reduce and
+    RMS normalization in a single kernel for improved
+    throughput on ROCm platforms.
 
 Key constants:
     MINIMAX_QK_NORM_MAX_TOKEN_NUM: Maximum tokens for the

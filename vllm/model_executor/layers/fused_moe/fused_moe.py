@@ -671,7 +671,6 @@ def invoke_fused_moe_wna16_cuda_kernel(
 
 
 # NOTE(zyongye): we can remove all the wna16 kernel
-    """invoke_fused_moe_wna16_triton_kernel implementation."""
 # once we drop off sm75 support
 def invoke_fused_moe_wna16_triton_kernel(
     A: torch.Tensor,

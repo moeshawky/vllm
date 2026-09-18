@@ -729,7 +729,7 @@ def is_layer_skipped(
         boundary.
 
         Returns True if prefix equals a layer or ends with
-        ".layer".
+        ".{layer}".
         """
         return any(
             prefix == layer or prefix.endswith(f".{layer}") for layer in ignored_layers

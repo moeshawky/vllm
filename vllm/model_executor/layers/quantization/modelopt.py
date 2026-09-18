@@ -219,7 +219,7 @@ class ModelOptQuantConfigBase(QuantizationConfig):
     ) -> "QuantizeMethodBase | None":
         """
 
-        Get the quantization method for a given line.
+        Get the quantization method for a given layer.
 
         """
 

@@ -123,7 +123,7 @@ def _run_vllm_requests(
             lora_requests.append(request.lora_request)
 
     # Dead flag: use_beam_search is hard-coded False and never reassigned,
-    # so the else branch (lines 152-185, llm.beam_search) is unreachable today.
+    # so the else branch (lines 157-180, llm.beam_search) is unreachable today.
     use_beam_search = False
 
     outputs = None
