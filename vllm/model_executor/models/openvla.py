@@ -52,9 +52,6 @@ from vllm.utils.tensor_schema import TensorSchema, TensorShape
 from .module_mapping import MultiModelKeys
 from .utils import AutoWeightsLoader, init_vllm_registered_model, maybe_prefix
 
-"""OpenVLA multimodal model for action prediction with fused DINOv2+SigLIP
-vision backbone."""
-
 # openvla/openvla-7b uses 224x224 images with ViT patch size 14, yielding a
 # 16x16 image-token grid.
 _OPENVLA_IMAGE_SIZE = 224

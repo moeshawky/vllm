@@ -85,7 +85,6 @@ from .vision import get_vit_attn_backend
 
 logger = logging.get_logger(__name__)
 
-"""OpenPangu vision-language model for multimodal inference."""
 
 
 class OpenPanguVisionAttention(nn.Module):
