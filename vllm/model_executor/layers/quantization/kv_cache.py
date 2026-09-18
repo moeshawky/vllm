@@ -1,6 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+KV-cache quantization scaling factor implementation.
+
+
+
+Provides KVCacheScaleParameter and BaseKVCacheMethod for managing
+
+per-head and per-tensor KV-cache scale factors in FP8 attention
+
+backends.
+
+"""
+
+
+
 import torch
 
 from vllm.logger import init_logger
@@ -27,10 +43,26 @@ class KVCacheScaleParameter(torch.nn.Parameter):
     """
 
     def __new__(cls) -> "KVCacheScaleParameter":
+        """
+
+        Document __new__.
+
+        """
+
+
+
         return super().__new__(cls, torch.tensor(-1.0), requires_grad=False)
 
     @staticmethod
     def weight_loader(param: torch.nn.Parameter, loaded_weight: torch.Tensor) -> None:
+        """
+
+        Document weight_loader.
+
+        """
+
+
+
         if loaded_weight.numel() != 1:
             raise ValueError(
                 f"KV-cache scale expects a scalar weight, got shape "
@@ -52,6 +84,14 @@ class BaseKVCacheMethod(QuantizeMethodBase):
     """
 
     def __init__(self, quant_config: QuantizationConfig):
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
 
     def create_weights(self, layer: torch.nn.Module):
@@ -69,9 +109,25 @@ class BaseKVCacheMethod(QuantizeMethodBase):
         layer.prob_scale = KVCacheScaleParameter()
 
     def apply(self, layer: torch.nn.Module) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         raise RuntimeError(f"{self.__class__.__name__}.apply should not be called.")
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         # skip if there are no weights to process (for example, weight reloading)
         if not hasattr(layer, "q_scale"):
             assert not hasattr(layer, "k_scale")

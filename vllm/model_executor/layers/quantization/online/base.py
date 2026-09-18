@@ -1,6 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+Online quantization dispatch layer.
+
+
+
+Provides OnlineQuantizationConfig and dispatch tables that route
+
+quantization requests to the appropriate per-tensor, per-block,
+
+or per-channel online quantization method implementations.
+
+"""
+
+
+
 from typing import Any
 
 import torch
@@ -91,6 +107,14 @@ class OnlineQuantizationConfig(QuantizationConfig):
         self,
         args: QuantizationConfigArgs,
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__()
         if args.linear is None and args.moe is None:
             raise ValueError(
@@ -103,24 +127,64 @@ class OnlineQuantizationConfig(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "online"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16, torch.half]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         # Note: as more online quant schemes will be added, this
         # value will become the minimum across all supported schemes.
         return 75
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """
+
+        Return the config file names.
+
+        """
+
+
+
         return []
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "OnlineQuantizationConfig":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         raise NotImplementedError(
             "OnlineQuantizationConfig does not support loading from a "
             "checkpoint config. Use quantization_config or "
@@ -133,6 +197,14 @@ class OnlineQuantizationConfig(QuantizationConfig):
         table: dict[QuantKey, type],
         layer: torch.nn.Module,
     ) -> "QuantizeMethodBase | None":
+        """
+
+        Dispatch the quantization.
+
+        """
+
+
+
         if spec is None or spec.weight is None:
             return None
         cls = table.get(spec.weight)
@@ -157,6 +229,14 @@ class OnlineQuantizationConfig(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """
+
+        Get the quantization method for a given line.
+
+        """
+
+
+
         if isinstance(layer, LinearBase):
             if should_ignore_layer(
                 prefix,

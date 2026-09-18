@@ -1,6 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+MXFP4 quantization implementation.
+
+
+
+Provides Mxfp4Config, GptOssMxfp4Config, and related MoE methods
+
+for MXFP4 mixed-precision quantization.
+
+"""
+
+
+
 import torch
 
 from vllm.logger import init_logger
@@ -50,27 +64,75 @@ class Mxfp4Config(QuantizationConfig):
     """
 
     def __init__(self, ignored_layers: list[str] | None = None):
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__()
         self.ignored_layers = ignored_layers
 
     @classmethod
     def from_config(cls, config):
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         return cls()
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         return 80
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "mxfp4"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16]
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """
+
+        Return the config file names.
+
+        """
+
+
+
         return []
 
     def _make_moe_method(self, moe: FusedMoEConfig) -> FusedMoEMethodBase:
@@ -81,6 +143,14 @@ class Mxfp4Config(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """
+
+        Get the quantization method for a given line.
+
+        """
+
+
+
         if isinstance(layer, LinearBase):
             if self.ignored_layers and is_layer_skipped(
                 prefix=prefix,
@@ -113,12 +183,28 @@ class GptOssMxfp4Config(Mxfp4Config):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "gpt_oss_mxfp4"
 
     @classmethod
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """
+
+        Check if the config overrides to this method.
+
+        """
+
+
+
         # Match both "mxfp4" (original checkpoint value) and "gpt_oss_mxfp4"
         # (already normalized by verify_and_update_model_config) so that
         # explicit --quantization mxfp4 from the user doesn't cause a mismatch.
@@ -136,6 +222,14 @@ class GptOssMxfp4Config(Mxfp4Config):
         return "gpt_oss_mxfp4"
 
     def _make_moe_method(self, moe: FusedMoEConfig) -> FusedMoEMethodBase:
+        """
+
+        Create the MoE method.
+
+        """
+
+
+
         return GptOssMxfp4MoEMethod(moe)
 
 
@@ -143,6 +237,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
     """MXFP4 MoE quantization method."""
 
     def __init__(self, moe: FusedMoEConfig):
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(moe)
         self.weight_dtype = "gpt_oss_mxfp4"
         self.mxfp4_backend, self.experts_cls = select_mxfp4_moe_backend(moe)
@@ -158,6 +260,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
 
     @property
     def skip_forward_padding(self) -> bool:
+        """
+
+        Check if forward padding should be skipped.
+
+        """
+
+
+
         # SM100_FI_MXFP4_MXFP8_TRTLLM supports padding with mxfp8 quant
         # so can skip the padding in the forward before applying the moe method
         return self.mxfp4_backend == Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_MXFP8
@@ -165,6 +275,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
     # TODO(bnell): move to MK/expert_class?
     @property
     def has_unpadded_output(self) -> bool:
+        """
+
+        Check if the method produces unpadded output.
+
+        """
+
+
+
         return self.mxfp4_backend in [
             Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_MXFP8,
             Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_BF16,
@@ -177,6 +295,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
         act_dtype: torch.dtype,
         moe_parallel_config: FusedMoEParallelConfig,
     ) -> tuple[int, int]:
+        """
+
+        Round up hidden and intermediate sizes to kernel requirements.
+
+        """
+
+
+
         hidden_size, intermediate_size_per_partition = super().maybe_roundup_sizes(
             hidden_size=hidden_size,
             intermediate_size_per_partition=intermediate_size_per_partition,
@@ -196,6 +322,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         self.num_experts = num_experts
         weight_dtype = torch.uint8
         scale_dtype = torch.uint8
@@ -291,6 +425,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
         w13_bias: torch.Tensor | None = None,
         w2_bias: torch.Tensor | None = None,
     ) -> None:
+        """
+
+        Set up the quantization kernel.
+
+        """
+
+
+
         num_experts = self.num_experts
         intermediate_size = self.intermediate_size
         hidden_size = self.hidden_size
@@ -380,6 +522,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
             self.moe_kernel.fused_experts.process_weights_after_loading(layer)
 
     def process_weights_after_loading(self, layer: RoutedExperts) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         w13 = layer.w13_weight
         w2 = layer.w2_weight
         w13_scale = layer.w13_weight_scale
@@ -395,6 +545,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: RoutedExperts
     ) -> FusedMoEQuantConfig | None:
+        """
+
+        Get the fused MoE quantization configuration.
+
+        """
+
+
+
         w1_bias = getattr(layer, "w13_bias", None)
         w2_bias = getattr(layer, "w2_bias", None)
 
@@ -430,6 +588,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
@@ -453,6 +619,14 @@ class GptOssMxfp4MoEMethod(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor | UnfinalizedMoEOutput:
+        """
+
+        Apply the quantization in monolithic mode.
+
+        """
+
+
+
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -475,6 +649,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
     """MXFP4 MoE quantization method."""
 
     def __init__(self, moe: FusedMoEConfig):
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(moe)
 
         self.weight_dtype = "mxfp4"
@@ -491,10 +673,26 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
 
     @property
     def supports_eplb(self) -> bool:
+        """
+
+        Check if EPLB is supported.
+
+        """
+
+
+
         return True
 
     @property
     def skip_forward_padding(self) -> bool:
+        """
+
+        Check if forward padding should be skipped.
+
+        """
+
+
+
         # SM100_FI_MXFP4_MXFP8_TRTLLM supports padding with mxfp8 quant
         # so can skip the padding in the forward before applying the moe method
         return self.mxfp4_backend == Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_MXFP8
@@ -502,6 +700,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
     # TODO(bnell): move to MK/expert_class?
     @property
     def has_unpadded_output(self) -> bool:
+        """
+
+        Check if the method produces unpadded output.
+
+        """
+
+
+
         return self.mxfp4_backend in [
             Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_MXFP8,
             Mxfp4MoeBackend.FLASHINFER_TRTLLM_MXFP4_BF16,
@@ -514,6 +720,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         act_dtype: torch.dtype,
         moe_parallel_config: FusedMoEParallelConfig,
     ) -> tuple[int, int]:
+        """
+
+        Round up hidden and intermediate sizes to kernel requirements.
+
+        """
+
+
+
         hidden_size, intermediate_size_per_partition = super().maybe_roundup_sizes(
             hidden_size=hidden_size,
             intermediate_size_per_partition=intermediate_size_per_partition,
@@ -529,6 +743,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
 
     @staticmethod
     def _encode_mxfp4_weight_scale(loaded_weight: torch.Tensor) -> torch.Tensor:
+        """
+
+        Encode the MXFP4 weight scale.
+
+        """
+
+
+
         if loaded_weight.dtype == torch.uint8:
             return loaded_weight
         if loaded_weight.dtype == torch.float8_e8m0fnu:
@@ -539,6 +761,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
 
     @staticmethod
     def get_scale_weight_loader(weight_loader):
+        """
+
+        Get the scale-specific weight loader.
+
+        """
+
+
+
         def mxfp4_weight_loader(
             param: torch.nn.Parameter,
             loaded_weight: torch.Tensor,
@@ -547,6 +777,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             expert_id: int,
             return_success: bool = False,
         ) -> bool | None:
+            """
+
+            Load and encode MXFP4 weight scales.
+
+            """
+
+
+
             loaded_weight = Mxfp4MoEMethod._encode_mxfp4_weight_scale(loaded_weight)
             return weight_loader(
                 param,
@@ -568,6 +806,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         self.num_experts = num_experts
         weight_dtype = torch.uint8
         scale_dtype = torch.uint8
@@ -671,6 +917,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         w13_bias: torch.Tensor | None = None,
         w2_bias: torch.Tensor | None = None,
     ) -> None:
+        """
+
+        Set up the quantization kernel.
+
+        """
+
+
+
         num_experts = self.num_experts
         intermediate_size = self.intermediate_size
         hidden_size = self.hidden_size
@@ -774,6 +1028,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             self.moe_kernel.fused_experts.process_weights_after_loading(layer)
 
     def process_weights_after_loading(self, layer):
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         w13 = layer.w13_weight
         w2 = layer.w2_weight
         w13_scale = layer.w13_weight_scale
@@ -790,6 +1052,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         self,
         layer: RoutedExperts,
     ) -> FusedMoEQuantConfig | None:
+        """
+
+        Get the fused MoE quantization configuration.
+
+        """
+
+
+
         w1_bias = getattr(layer, "w13_bias", None)
         w2_bias = getattr(layer, "w2_bias", None)
         swiglu_limit = getattr(layer, "swiglu_limit", None)
@@ -844,6 +1114,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
@@ -867,6 +1145,14 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor | UnfinalizedMoEOutput:
+        """
+
+        Apply the quantization in monolithic mode.
+
+        """
+
+
+
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(

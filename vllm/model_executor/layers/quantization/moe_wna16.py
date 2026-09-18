@@ -1,6 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+MOE WNA16 (W8A16/W4A16) quantization implementation.
+
+
+
+Provides MoeWNA16Config and MoeWNA16Method for mixed-precision
+
+MoE quantization with INT4/INT8 weight quantization and AWQ/GPTQ
+
+linear quantization methods.
+
+"""
+
+
+
 from typing import Any
 
 import torch
@@ -57,6 +73,14 @@ class MoeWNA16Config(QuantizationConfig):
         modules_to_not_convert: list[str] | None,
         full_config: dict[str, Any],
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__()
         self.weight_bits = weight_bits
         self.group_size = group_size
@@ -93,22 +117,62 @@ class MoeWNA16Config(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "moe_wna16"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16, torch.half]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         return 70
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """
+
+        Return the config file names.
+
+        """
+
+
+
         return ["quantize_config.json"]
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "MoeWNA16Config":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         linear_quant_method = cls.get_from_keys(config, ["quant_method"])
         weight_bits = cls.get_from_keys(config, ["bits"])
         group_size = cls.get_from_keys(config, ["group_size"])
@@ -138,6 +202,14 @@ class MoeWNA16Config(QuantizationConfig):
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """
+
+        Check if the config overrides to this method.
+
+        """
+
+
+
         can_convert = cls.is_moe_wna16_compatible(hf_quant_cfg)
         if can_convert and user_quant == "moe_wna16":
             return cls.get_name()
@@ -145,6 +217,14 @@ class MoeWNA16Config(QuantizationConfig):
 
     @classmethod
     def is_moe_wna16_compatible(cls, quant_config: dict[str, Any]):
+        """
+
+        Check if the config is compatible with MOE WNA16.
+
+        """
+
+
+
         # Extract data from quant config.
         quant_method = quant_config.get("quant_method", "").lower()
         num_bits = quant_config.get("bits")
@@ -171,6 +251,14 @@ class MoeWNA16Config(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """
+
+        Get the quantization method for a given line.
+
+        """
+
+
+
         if is_layer_skipped_quant(prefix, self.modules_to_not_convert):
             if isinstance(layer, RoutedExperts):
                 return UnquantizedFusedMoEMethod(layer.moe_config)
@@ -198,6 +286,14 @@ class MoeWNA16Config(QuantizationConfig):
 
 
 def is_layer_skipped_quant(prefix: str, modules_to_not_convert: list[str]):
+    """
+
+    Check if a layer prefix matches any module to skip.
+
+    """
+
+
+
     return any(module_name in prefix for module_name in modules_to_not_convert)
 
 
@@ -209,6 +305,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
     """
 
     def __init__(self, quant_config: MoeWNA16Config, moe: "FusedMoEConfig") -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(moe)
         self.quant_config = quant_config
 
@@ -248,6 +352,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         layer.quant_config = self.quant_config
         bit8_pack_factor = self.quant_config.bit8_pack_factor
         group_size = self.quant_config.group_size
@@ -364,6 +476,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: RoutedExperts
     ) -> FusedMoEQuantConfig | None:
+        """
+
+        Get the fused MoE quantization configuration.
+
+        """
+
+
+
         if self.wna16_backend == WNA16MoEBackend.HUMMING:
             from vllm.model_executor.layers.quantization.utils.humming_utils import (
                 get_humming_moe_quant_config,
@@ -387,6 +507,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
         )
 
     def _setup_kernel(self, layer: RoutedExperts):
+        """
+
+        Set up the quantization kernel.
+
+        """
+
+
+
         assert self.experts_cls is not None
         self.moe_quant_config = self.get_fused_moe_quant_config(layer)
         assert self.moe_quant_config is not None
@@ -399,6 +527,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: RoutedExperts) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         has_zp = self.quant_config.has_zp
         converted = convert_to_wna16_moe_kernel_format(
             backend=self.wna16_backend,
@@ -475,6 +611,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
@@ -498,6 +642,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Apply the quantization in monolithic mode.
+
+        """
+
+
+
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -517,7 +669,23 @@ class MoeWNA16Method(FusedMoEMethodBase):
 
     @staticmethod
     def get_weight_loader(layer, weight_loader):
+        """
+
+        Get the weight loader function.
+
+        """
+
+
+
         def convert_awq_tensor(tensor, tensor_type):
+            """
+
+            Convert AWQ-format tensor to standard format.
+
+            """
+
+
+
             # convert awq qweight/qzeros to a standard format (assume int4)
             # qweight: (k, n // pack_factor_bit32) -> (n, k // pack_factor_bit8)
             # qzeros: (k // group_size, n // pack_factor_bit32) ->
@@ -556,6 +724,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
             return tensor
 
         def convert_gptq_int4_qzeros(tensor):
+            """
+
+            Convert GPTQ INT4 qzeros tensor.
+
+            """
+
+
+
             tensor = tensor.view(torch.uint8)
             shifter = torch.tensor([0, 4], dtype=torch.uint8, device=tensor.device)
             tensor = (tensor[:, :, None] >> shifter) & 0xF
@@ -571,6 +747,14 @@ class MoeWNA16Method(FusedMoEMethodBase):
             expert_id: int,
             return_success: bool = False,
         ):
+            """
+
+            Convert and load WNA16 quantized weights.
+
+            """
+
+
+
             if "g_idx" in weight_name:
                 return False if return_success else None
             if not layer.quant_config.has_zp and "qzeros" in weight_name:

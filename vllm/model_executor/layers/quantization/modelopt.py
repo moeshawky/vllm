@@ -1,6 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+ModelOpt quantization methods and configuration.
+
+
+
+Provides ModelOptFp8Config, ModelOptNvFp4Config, and related
+
+linear methods for quantized model inference with ModelOpt
+
+checkpoint format.
+
+"""
+
+
+
 from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, cast
 
@@ -121,10 +137,26 @@ class ModelOptKVCacheMethod(BaseKVCacheMethod):
     """
 
     def __init__(self, quant_config: "ModelOptQuantConfigBase"):
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(quant_config)
 
 
 class ModelOptQuantConfigBase(QuantizationConfig):
+    """
+
+    Document ModelOptQuantConfigBase.
+
+    """
+
+
+
     LinearMethodCls: type = LinearMethodBase
     FusedMoEMethodCls: type = FusedMoEMethodBase
     KVCacheMethodCls: type = BaseKVCacheMethod
@@ -133,6 +165,14 @@ class ModelOptQuantConfigBase(QuantizationConfig):
         self,
         exclude_modules: list[str],
     ):
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__()
         self.exclude_modules: list[str] = exclude_modules
 
@@ -177,6 +217,14 @@ class ModelOptQuantConfigBase(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """
+
+        Get the quantization method for a given line.
+
+        """
+
+
+
         # handle kv-cache first so we can focus only on weight quantization thereafter
         if isinstance(layer, (Attention, MLAAttention)):
             return self.KVCacheMethodCls(self)
@@ -216,6 +264,14 @@ class ModelOptQuantConfigBase(QuantizationConfig):
         return None
 
     def apply_vllm_mapper(self, hf_to_vllm_mapper: "WeightsMapper"):
+        """
+
+        Apply the HF-to-vLLM weight mapper.
+
+        """
+
+
+
         if len(self.exclude_modules) > 0:
             # This is a workaround for the weights remapping issue:
             # https://github.com/vllm-project/vllm/issues/28072
@@ -258,6 +314,14 @@ class ModelOptQuantConfigBase(QuantizationConfig):
 
     @staticmethod
     def get_config_filenames() -> list[str]:
+        """
+
+        Return the config file names.
+
+        """
+
+
+
         return ["hf_quant_config.json"]
 
     @classmethod
@@ -270,10 +334,26 @@ class ModelOptQuantConfigBase(QuantizationConfig):
         original_config: dict[str, Any],
         group_size: int | None,
     ) -> "ModelOptQuantConfigBase":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         raise NotImplementedError("Please implement this function in sub classes")
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "ModelOptQuantConfigBase":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         # Handle both ModelOpt format and compressed-tensors style format
         if "quantization" in config:
             # Traditional ModelOpt format:
@@ -371,6 +451,14 @@ class ModelOptFp8Config(ModelOptQuantConfigBase):
         kv_cache_quant_method: str | None,
         exclude_modules: list[str],
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(exclude_modules)
         self.quant_method = quant_method
         self.is_checkpoint_fp8_serialized = is_checkpoint_fp8_serialized
@@ -397,19 +485,51 @@ class ModelOptFp8Config(ModelOptQuantConfigBase):
             )
 
     def get_name(self) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "modelopt"
 
     def get_supported_act_dtypes(self) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16, torch.half]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         return 80
 
     @classmethod
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """
+
+        Check if the config overrides to this method.
+
+        """
+
+
+
         algo = cls._extract_modelopt_quant_algo(hf_quant_cfg)
         if algo is not None and algo == "FP8":
             return "modelopt"
@@ -425,6 +545,14 @@ class ModelOptFp8Config(ModelOptQuantConfigBase):
         original_config: dict[str, Any],
         **kwargs: Any,
     ) -> "ModelOptFp8Config":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         is_checkpoint_fp8_serialized = "FP8" in quant_method
 
         return cls(
@@ -448,6 +576,14 @@ class ModelOptFp8LinearMethod(LinearMethodBase):
     """
 
     def __init__(self, quant_config: ModelOptFp8Config) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
         self.out_dtype = get_current_vllm_config().model_config.dtype
         self.input_dtype = get_current_vllm_config().model_config.dtype
@@ -462,6 +598,14 @@ class ModelOptFp8LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         del input_size, output_size
         output_size_per_partition = sum(output_partition_sizes)
         weight_loader = extra_weight_attrs.get("weight_loader")
@@ -511,6 +655,14 @@ class ModelOptFp8LinearMethod(LinearMethodBase):
         )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         weight = layer.weight
         max_w_scale = layer.weight_scale.max()
         if not (layer.weight_scale == layer.weight_scale[0]).all():
@@ -530,6 +682,14 @@ class ModelOptFp8LinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         return self.fp8_linear.apply_weights(layer, x, bias)
 
 
@@ -543,6 +703,14 @@ class ModelOptFp8PcPtLinearMethod(LinearMethodBase):
     """
 
     def __init__(self, quant_config: ModelOptFp8Config) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
         self.out_dtype = get_current_vllm_config().model_config.dtype
         self.input_dtype = get_current_vllm_config().model_config.dtype
@@ -557,6 +725,14 @@ class ModelOptFp8PcPtLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         del input_size, output_size
 
         if not self.quant_config.is_checkpoint_fp8_serialized:
@@ -601,6 +777,14 @@ class ModelOptFp8PcPtLinearMethod(LinearMethodBase):
         )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         weight, weight_scale, _ = process_fp8_weight_channel_strategy(
             layer.weight, layer.weight_scale.data
         )
@@ -614,6 +798,14 @@ class ModelOptFp8PcPtLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         return self.fp8_linear.apply_weights(layer, x, bias)
 
 
@@ -632,6 +824,14 @@ class ModelOptFp8PbWoLinearMethod(LinearMethodBase):
     _WEIGHT_BLOCK_SIZE: tuple[int, int] = (128, 128)
 
     def __init__(self, quant_config: ModelOptFp8Config) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
         block_n, block_k = self._WEIGHT_BLOCK_SIZE
         self.weight_block_size = list(self._WEIGHT_BLOCK_SIZE)
@@ -656,6 +856,14 @@ class ModelOptFp8PbWoLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         del input_size, output_size
 
         if not self.quant_config.is_checkpoint_fp8_serialized:
@@ -721,6 +929,14 @@ class ModelOptFp8PbWoLinearMethod(LinearMethodBase):
         )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         # Keep weight in [out, in] layout for Fp8BlockScaledMMLinearKernel.
         weight = layer.weight.data
         if self.output_padding:
@@ -752,6 +968,14 @@ class ModelOptFp8PbWoLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         kernel_bias = None if self.output_padding else bias
         output = self.w8a8_block_fp8_linear.apply_weights(layer, x, kernel_bias)
         if not self.output_padding:
@@ -776,6 +1000,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         quant_config: ModelOptFp8Config,
         moe_config: FusedMoEConfig,
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(moe_config)
         self.quant_config = quant_config
         assert self.quant_config.is_checkpoint_fp8_serialized
@@ -796,6 +1028,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         layer.orig_dtype = params_dtype
         layer.num_experts = num_experts
 
@@ -876,6 +1116,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         w13_input_scale: torch.Tensor,
         w2_input_scale: torch.Tensor,
     ):
+        """
+
+        Set up the quantization kernel.
+
+        """
+
+
+
         w13, w2, w13_scale, w2_scale = convert_to_fp8_moe_kernel_format(
             fp8_backend=self.fp8_backend,
             layer=layer,
@@ -906,6 +1154,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: RoutedExperts) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         w13 = layer.w13_weight
         w2 = layer.w2_weight
         w13_scale = layer.w13_weight_scale
@@ -939,6 +1195,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         )
 
     def get_fused_moe_quant_config(self, layer: RoutedExperts) -> FusedMoEQuantConfig:
+        """
+
+        Get the fused MoE quantization configuration.
+
+        """
+
+
+
         w1_scale = layer.w13_weight_scale
         w2_scale = layer.w2_weight_scale
         a1_scale = layer.w13_input_scale
@@ -961,6 +1225,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Apply the quantization in monolithic mode.
+
+        """
+
+
+
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -987,6 +1259,14 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
@@ -1020,6 +1300,14 @@ class ModelOptNvFp4Config(ModelOptQuantConfigBase):
         exclude_modules: list[str] | None = None,
         group_size: int = 16,
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         if exclude_modules is None:
             exclude_modules = []
         super().__init__(exclude_modules)
@@ -1050,19 +1338,51 @@ class ModelOptNvFp4Config(ModelOptQuantConfigBase):
             )
 
     def get_name(self) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "modelopt_fp4"
 
     def get_supported_act_dtypes(self) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16, torch.half, torch.float8_e4m3fn]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         return 75
 
     @classmethod
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """
+
+        Check if the config overrides to this method.
+
+        """
+
+
+
         algo = cls._extract_modelopt_quant_algo(hf_quant_cfg)
         if algo is not None and ("NVFP4" in algo or "FP4" in algo):
             return "modelopt_fp4"
@@ -1079,6 +1399,14 @@ class ModelOptNvFp4Config(ModelOptQuantConfigBase):
         group_size: int | None,
         **kwargs: Any,
     ) -> "ModelOptNvFp4Config":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         is_checkpoint_nvfp4_serialized = "NVFP4" in quant_method
 
         if group_size is None:
@@ -1119,6 +1447,14 @@ class ModelOptNvFp4LinearMethod(LinearMethodBase):
     """
 
     def __init__(self, quant_config: ModelOptNvFp4Config) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
         self.marlin_input_dtype = None
         self.kernel = init_nvfp4_linear_kernel()
@@ -1133,6 +1469,14 @@ class ModelOptNvFp4LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         del input_size, output_size
         if not self.quant_config.is_checkpoint_nvfp4_serialized:
             raise ValueError(
@@ -1200,6 +1544,14 @@ class ModelOptNvFp4LinearMethod(LinearMethodBase):
         expose_input_quant_key(layer, self.kernel)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         if (
             torch.unique(layer.input_scale).numel() != 1
             or torch.unique(layer.weight_scale_2).numel() != 1
@@ -1238,6 +1590,14 @@ class ModelOptNvFp4LinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         return self.kernel.apply_weights(layer=layer, x=x, bias=bias)
 
 
@@ -1264,6 +1624,14 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
     """
 
     def __init__(self, quant_config: ModelOptNvFp4Config) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
         self.marlin_input_dtype = None
         # `init_nvfp4_linear_kernel(use_a16=True)` is best of both worlds:
@@ -1282,6 +1650,14 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         del input_size, output_size
         if not self.quant_config.is_checkpoint_nvfp4_serialized:
             raise ValueError(
@@ -1349,6 +1725,14 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
         layer.register_parameter("input_scale", input_scale)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         if not hasattr(layer, "has_bias"):
             layer.has_bias = getattr(layer, "bias", None) is not None
 
@@ -1383,6 +1767,14 @@ class ModelOptNvFp4W4A16LinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         return self.kernel.apply_weights(layer=layer, x=x, bias=bias)
 
 
@@ -1398,6 +1790,14 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
         quant_config: ModelOptNvFp4Config,
         moe_config: FusedMoEConfig,
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(moe_config)
         self.quant_config = quant_config
         # W4A16 mode fires for W4A16_NVFP4 on-disk checkpoints. With
@@ -1432,6 +1832,14 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         assert self.quant_config.is_checkpoint_nvfp4_serialized
 
         layer.num_experts = num_experts
@@ -1600,6 +2008,14 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
         self.moe_kernel.fused_experts.process_weights_after_loading(layer)
 
     def get_fused_moe_quant_config(self, layer: RoutedExperts) -> FusedMoEQuantConfig:
+        """
+
+        Get the fused MoE quantization configuration.
+
+        """
+
+
+
         return make_nvfp4_moe_quant_config(
             backend=self.nvfp4_backend,
             w13_scale=layer.w13_weight_scale,
@@ -1617,6 +2033,14 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
 
     @property
     def supports_eplb(self) -> bool:
+        """
+
+        Check if EPLB is supported.
+
+        """
+
+
+
         return True
 
     def apply_monolithic(
@@ -1626,6 +2050,14 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor | UnfinalizedMoEOutput:
+        """
+
+        Apply the quantization in monolithic mode.
+
+        """
+
+
+
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -1652,6 +2084,14 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
@@ -1683,6 +2123,14 @@ class ModelOptMxFp8Config(ModelOptQuantConfigBase):
         kv_cache_quant_algo: str | None,
         exclude_modules: list[str],
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(exclude_modules)
         self.is_checkpoint_mxfp8_serialized = is_checkpoint_mxfp8_serialized
 
@@ -1700,13 +2148,37 @@ class ModelOptMxFp8Config(ModelOptQuantConfigBase):
         self.kv_cache_quant_algo = kv_cache_quant_algo
 
     def get_name(self) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "modelopt_mxfp8"
 
     def get_supported_act_dtypes(self) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         # Marlin kernel supports MXFP8 on SM80+
         return 80
 
@@ -1714,6 +2186,14 @@ class ModelOptMxFp8Config(ModelOptQuantConfigBase):
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """
+
+        Check if the config overrides to this method.
+
+        """
+
+
+
         algo = cls._extract_modelopt_quant_algo(hf_quant_cfg)
         if algo is not None and "MXFP8" in algo:
             return "modelopt_mxfp8"
@@ -1721,6 +2201,14 @@ class ModelOptMxFp8Config(ModelOptQuantConfigBase):
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "ModelOptMxFp8Config":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         # MiniMax-style checkpoints tag `quant_method: "mxfp8"` + `ignored_layers`
         # (same on-disk format as ModelOpt MXFP8); normalize to the ModelOpt
         # schema and reuse the shared parser.
@@ -1745,6 +2233,14 @@ class ModelOptMxFp8Config(ModelOptQuantConfigBase):
         original_config: dict[str, Any],
         **kwargs: Any,
     ) -> "ModelOptMxFp8Config":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         is_checkpoint_mxfp8_serialized = "MXFP8" in quant_method.upper()
 
         # For MXFP8, validate required fields in the config
@@ -1771,6 +2267,14 @@ class ModelOptMxFp8LinearMethod(LinearMethodBase):
     """Linear method for ModelOpt MXFP8 quantization."""
 
     def __init__(self, quant_config: ModelOptMxFp8Config) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         self.quant_config = quant_config
 
         if not self.quant_config.is_checkpoint_mxfp8_serialized:
@@ -1791,6 +2295,14 @@ class ModelOptMxFp8LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         del input_size, output_size
 
         if not self.quant_config.is_checkpoint_mxfp8_serialized:
@@ -1838,6 +2350,14 @@ class ModelOptMxFp8LinearMethod(LinearMethodBase):
         layer.register_parameter("weight_scale", weight_scale)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         # Idempotent: the emulation kernel may dequant the weight to BF16 at load
         # time (>=2-byte). If already converted, there is nothing left to do --
         # avoid re-running the MXFP8-only validation/conversion below.
@@ -1875,6 +2395,14 @@ class ModelOptMxFp8LinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         return self.kernel.apply_weights(layer, x, bias)
 
 
@@ -1886,6 +2414,14 @@ class ModelOptMxFp8FusedMoE(FusedMoEMethodBase):
         quant_config: ModelOptMxFp8Config,
         moe_config: FusedMoEConfig,
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(moe_config)
         self.weight_block_size = [1, MXFP8_BLOCK_SIZE]
         self.quant_config = quant_config
@@ -1902,6 +2438,14 @@ class ModelOptMxFp8FusedMoE(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """
+
+        Create quantization weights.
+
+        """
+
+
+
         assert layer.intermediate_size_per_partition == intermediate_size_per_partition
         assert layer.hidden_size == hidden_size
         layer.orig_dtype = params_dtype
@@ -2041,6 +2585,14 @@ class ModelOptMxFp8FusedMoE(FusedMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: RoutedExperts) -> None:
+        """
+
+        Process weights after checkpoint loading.
+
+        """
+
+
+
         # TODO(bnell): why is this required only for mxfp8?
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
@@ -2091,6 +2643,14 @@ class ModelOptMxFp8FusedMoE(FusedMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: RoutedExperts
     ) -> FusedMoEQuantConfig | None:
+        """
+
+        Get the fused MoE quantization configuration.
+
+        """
+
+
+
         return make_fp8_moe_quant_config(
             fp8_backend=self.mxfp8_backend,
             w1_scale=layer.w13_weight_scale,
@@ -2111,6 +2671,14 @@ class ModelOptMxFp8FusedMoE(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """
+
+        Apply the quantization in monolithic mode.
+
+        """
+
+
+
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -2137,6 +2705,14 @@ class ModelOptMxFp8FusedMoE(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """
+
+        Document apply.
+
+        """
+
+
+
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
@@ -2180,6 +2756,14 @@ class ModelOptMixedPrecisionConfig(ModelOptQuantConfigBase):
         w4a16_nvfp4_config: ModelOptNvFp4Config,
         mxfp8_config: ModelOptMxFp8Config,
     ) -> None:
+        """
+
+        Initialize the instance.
+
+        """
+
+
+
         super().__init__(exclude_modules)
         self.kv_cache_quant_method = kv_cache_quant_method
         self.quantized_layers = quantized_layers
@@ -2189,13 +2773,37 @@ class ModelOptMixedPrecisionConfig(ModelOptQuantConfigBase):
         self.mxfp8_config = mxfp8_config
 
     def get_name(self) -> QuantizationMethods:
+        """
+
+        Return the canonical name identifier.
+
+        """
+
+
+
         return "modelopt_mixed"
 
     def get_supported_act_dtypes(self) -> list[torch.dtype]:
+        """
+
+        Return the activation dtypes.
+
+        """
+
+
+
         return [torch.bfloat16, torch.half]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """
+
+        Return the minimum GPU capability.
+
+        """
+
+
+
         # Turing and up (SM75+): NVFP4 routed experts run via Marlin W4A16
         # (SM75+), FP8 weight-only dense via MarlinFP8 (cc>=7.5), and FP8 MoE,
         # if present, via Marlin (TritonExperts gates its FP8 schemes behind
@@ -2209,6 +2817,14 @@ class ModelOptMixedPrecisionConfig(ModelOptQuantConfigBase):
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """
+
+        Check if the config overrides to this method.
+
+        """
+
+
+
         algo = cls._extract_modelopt_quant_algo(hf_quant_cfg)
         if algo is not None and algo == "MIXED_PRECISION":
             return "modelopt_mixed"
@@ -2225,6 +2841,14 @@ class ModelOptMixedPrecisionConfig(ModelOptQuantConfigBase):
         group_size: int | None,
         **kwargs: Any,
     ) -> "ModelOptMixedPrecisionConfig":
+        """
+
+        Parse the config from a dictionary.
+
+        """
+
+
+
         if "quantization" in original_config:
             quantized_layers = original_config["quantization"].get(
                 "quantized_layers", {}
@@ -2373,6 +2997,14 @@ class ModelOptMixedPrecisionConfig(ModelOptQuantConfigBase):
 
     @staticmethod
     def _quantized_layer_prefix_candidates(prefix: str) -> tuple[str, ...]:
+        """
+
+        Document _quantized_layer_prefix_candidates.
+
+        """
+
+
+
         candidates = [prefix]
 
         if prefix.endswith(".lm_head"):
@@ -2447,6 +3079,14 @@ class ModelOptMixedPrecisionConfig(ModelOptQuantConfigBase):
         return None
 
     def apply_vllm_mapper(self, hf_to_vllm_mapper: "WeightsMapper"):
+        """
+
+        Apply the HF-to-vLLM weight mapper.
+
+        """
+
+
+
         super().apply_vllm_mapper(hf_to_vllm_mapper)
         if self.quantized_layers:
             self.quantized_layers = hf_to_vllm_mapper.apply_dict(self.quantized_layers)
