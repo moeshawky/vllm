@@ -103,6 +103,7 @@ class BagelVisionMLP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         x, _ = self.fc1(x)
         x = self.act(x)
         x, _ = self.fc2(x)
@@ -191,6 +192,7 @@ class BagelProcessingInfo(BaseProcessingInfo):
     """Processing information for BAGEL model."""
 
     def get_hf_processor(self, **kwargs: object) -> BagelProcessor:
+        """Get HuggingFace processor."""
         from vllm.transformers_utils.processor import cached_get_image_processor
 
         image_processor = cached_get_image_processor(
@@ -208,6 +210,7 @@ class BagelProcessingInfo(BaseProcessingInfo):
         )
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Get supported multimodal limits."""
         return {"image": None}
 
     def get_mm_max_tokens_per_item(
@@ -215,6 +218,7 @@ class BagelProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
+        """Get max tokens per item."""
         hf_config = self.get_hf_config()
         # Calculate max tokens per image
         # For BAGEL: (vit_max_num_patch_per_side) ** 2
@@ -227,6 +231,7 @@ class BagelProcessingInfo(BaseProcessingInfo):
         image_width: int,
         image_height: int,
     ) -> int:
+        """Count number of image tokens."""
         hf_config = self.get_hf_config()
         vit_config = hf_config.vit_config
         patch_size = vit_config.patch_size
@@ -241,6 +246,7 @@ class BagelDummyInputsBuilder(BaseDummyInputsBuilder[BagelProcessingInfo]):
     """Build dummy inputs for BAGEL model profiling."""
 
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get dummy text input."""
         num_images = mm_counts.get("image", 0)
         # Use a simple placeholder for each image
         return "<|image_pad|>" * num_images
@@ -251,6 +257,7 @@ class BagelDummyInputsBuilder(BaseDummyInputsBuilder[BagelProcessingInfo]):
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Get dummy multimodal data."""
         num_images = mm_counts.get("image", 0)
         hf_config = self.info.get_hf_config()
         vit_config = hf_config.vit_config
@@ -292,6 +299,7 @@ class BagelMultiModalProcessor(BaseMultiModalProcessor[BagelProcessingInfo]):
 
         def get_replacement_bagel(item_idx: int):
             # For BAGEL, calculate number of tokens based on max patch size
+            """Get image token replacement."""
             num_tokens = hf_config.vit_max_num_patch_per_side**2
             # Use the image token ID from tokenizer
             return [image_token_id] * num_tokens
@@ -336,6 +344,7 @@ class BagelForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get placeholder string for modality."""
         if modality.startswith("image"):
             return "<|image_pad|>"
 
@@ -523,6 +532,7 @@ class BagelForConditionalGeneration(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

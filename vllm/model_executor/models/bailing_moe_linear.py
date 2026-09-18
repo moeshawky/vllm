@@ -65,7 +65,10 @@ from .utils import (
 logger = init_logger(__name__)
 
 
+
+"""Inference-only bailing_moe_linear model."""
 def is_linear_layer(layer_idx, layer_group_size):
+    """Check if layer index uses linear attention."""
     if layer_idx is None:
         return False
     if layer_group_size > 0:
@@ -232,6 +235,7 @@ class BailingMoeV25MLAAttention(nn.Module):
 
 
 class BailingMoEGate(nn.Module):
+    """Routing gate for Bailing MoE expert selection."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -256,6 +260,7 @@ class BailingMoEGate(nn.Module):
             self.expert_bias = None
 
     def forward(self, hidden_states):
+        """Forward pass."""
         logits = F.linear(hidden_states.to(self.weight.dtype), self.weight, None).to(
             hidden_states.dtype
         )
@@ -354,6 +359,7 @@ class BailingMoeV25(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         num_tokens, hidden_size = hidden_states.shape
         # Ensure contiguous token-major layout before router/projections.
         hidden_states = hidden_states.contiguous().view(-1, hidden_size)
@@ -435,6 +441,7 @@ class BailingMoeV25DecoderLayer(nn.Module):
         residual: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         # Input layernorm
+        """Forward pass."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -508,6 +515,7 @@ class BailingMoeV25Model(nn.Module):
 
         # Layers
         def layer_fn(prefix):
+            """Create decoder layer function."""
             layer_idx = int(prefix.split(".")[-1])
             layer_config = copy.deepcopy(config)
             layer_config.attention_type = self.decoder_attention_types[layer_idx]
@@ -535,10 +543,12 @@ class BailingMoeV25Model(nn.Module):
             self.norm = PPMissingLayer()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
         return self.word_embeddings(input_ids)
 
     @property
     def embed_tokens(self) -> nn.Module:
+        """Get embed tokens property."""
         return self.word_embeddings
 
     def forward(
@@ -548,6 +558,7 @@ class BailingMoeV25Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
         forward_context = get_forward_context()
         attn_metadata = forward_context.attn_metadata
 
@@ -753,6 +764,7 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
             self.lm_head = PPMissingLayer()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -762,6 +774,7 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
         hidden_states = self.model(
             input_ids=input_ids,
             positions=positions,
@@ -774,11 +787,13 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute logits from hidden states."""
         return self.logits_processor(self.lm_head, hidden_states)
 
     def make_empty_intermediate_tensors(
         self, batch_size: int, dtype: torch.dtype, device: torch.device
     ) -> IntermediateTensors:
+        """Create empty intermediate tensors."""
         return IntermediateTensors(
             {
                 "hidden_states": torch.zeros(
@@ -815,6 +830,7 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
         cls,
         vllm_config: VllmConfig,
     ) -> tuple[torch.dtype, ...]:
+        """Get Mamba state dtype from config."""
         return MambaStateDtypeCalculator.linear_attention_state_dtype(
             vllm_config.model_config.dtype,
             vllm_config.cache_config.mamba_cache_dtype,
@@ -822,11 +838,14 @@ class BailingMoeV25ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsPP):
 
     @classmethod
     def get_mamba_state_copy_func(cls) -> tuple:
+        """Get Mamba state copy function."""
         return MambaStateCopyFuncCalculator.linear_attention_state_copy_func()
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        """Get expert parameter mapping for MoE layers."""
         return self.model.get_expert_mapping()

@@ -25,11 +25,23 @@ from .utils import AutoWeightsLoader, WeightsMapper
 
 
 def get_blip_patch_grid_length(*, image_size: int, patch_size: int) -> int:
+
+    """
+    Compute grid length of patches for image size.
+    """
+
+
     assert image_size % patch_size == 0
     return image_size // patch_size
 
 
 def get_blip_num_patches(*, image_size: int, patch_size: int) -> int:
+
+    """
+    Compute total number of patches.
+    """
+
+
     grid_length = get_blip_patch_grid_length(
         image_size=image_size, patch_size=patch_size
     )
@@ -38,7 +50,19 @@ def get_blip_num_patches(*, image_size: int, patch_size: int) -> int:
 
 # Adapted from https://github.com/huggingface/transformers/blob/v4.39.0/src/transformers/models/blip/modeling_blip.py#L164 # noqa
 class BlipVisionEmbeddings(nn.Module):
+
+    """
+    Vision embeddings for BLIP models.
+    """
+
+
     def __init__(self, config: BlipVisionConfig | Blip2VisionConfig):
+
+        """
+        Initialize BLIP vision embeddings.
+        """
+
+
         super().__init__()
 
         self.config = config
@@ -65,6 +89,12 @@ class BlipVisionEmbeddings(nn.Module):
         )
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+
+        """
+        Compute vision embeddings from pixel values.
+        """
+
+
         batch_size = pixel_values.shape[0]
         target_dtype = self.patch_embedding.weight.dtype
         patch_embeds = self.patch_embedding(
@@ -151,6 +181,12 @@ class BlipAttention(nn.Module):
 
 
 class BlipMLP(nn.Module):
+
+    """
+    MLP layer for BLIP vision encoder.
+    """
+
+
     def __init__(
         self,
         config: BlipVisionConfig,
@@ -186,6 +222,12 @@ class BlipMLP(nn.Module):
 
 
 class BlipEncoderLayer(nn.Module):
+
+    """
+    Single BLIP encoder layer with attention and MLP.
+    """
+
+
     def __init__(
         self,
         config: BlipVisionConfig,
@@ -264,6 +306,12 @@ class BlipEncoder(nn.Module):
 
 
 class BlipVisionModel(nn.Module, SupportsQuant):
+
+    """
+    BLIP vision model with embedding and encoder.
+    """
+
+
     config_class = BlipVisionConfig
     main_input_name = "pixel_values"
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
@@ -327,6 +375,12 @@ class BlipVisionModel(nn.Module, SupportsQuant):
         return self.post_layernorm(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights into BLIP vision.
+        """
+
+
         loader = AutoWeightsLoader(self)
 
         # omit layers when num_hidden_layers_override is set

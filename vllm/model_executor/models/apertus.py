@@ -75,6 +75,8 @@ from .utils import (
 
 
 class ApertusMLP(nn.Module):
+    """ApertusMLP module."""
+    
     def __init__(
         self,
         hidden_size: int,
@@ -85,6 +87,8 @@ class ApertusMLP(nn.Module):
         prefix: str = "",
         reduce_results: bool = True,
     ) -> None:
+        """ApertusMLP constructor."""
+        
         super().__init__()
         self.up_proj = ColumnParallelLinear(
             input_size=hidden_size,
@@ -109,6 +113,8 @@ class ApertusMLP(nn.Module):
         self.act_fn = XIELU()
 
     def forward(self, x):
+        """Forward pass."""
+        
         x, _ = self.up_proj(x)
         x = self.act_fn(x)
         x, _ = self.down_proj(x)
@@ -116,6 +122,8 @@ class ApertusMLP(nn.Module):
 
 
 class ApertusAttention(nn.Module):
+    """ApertusAttention module with QK-norm attention and sigmoid gating."""
+    
     def __init__(
         self,
         config: ApertusConfig,
@@ -130,6 +138,8 @@ class ApertusAttention(nn.Module):
         prefix: str = "",
         attn_type: str = AttentionType.DECODER,
     ) -> None:
+        """ApertusAttention constructor."""
+        
         super().__init__()
         layer_idx = extract_layer_index(prefix)
         self.hidden_size = hidden_size
@@ -209,6 +219,8 @@ class ApertusAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass."""
+        
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q = self.q_norm(q.view(-1, self.num_heads, self.head_dim)).view_as(q)
@@ -223,6 +235,8 @@ class ApertusAttention(nn.Module):
         config: ApertusConfig,
         quant_config: QuantizationConfig | None,
     ) -> None:
+        """Initialize rotary embedding."""
+        
         is_neox_style = True
 
         self.rotary_emb = get_rope(
@@ -234,6 +248,8 @@ class ApertusAttention(nn.Module):
 
 
 class ApertusDecoderLayer(nn.Module):
+    """ApertusDecoderLayer module with QKV parallel projection."""
+    
     def __init__(
         self,
         config: ApertusConfig,
@@ -241,6 +257,8 @@ class ApertusDecoderLayer(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """ApertusDecoderLayer constructor."""
+        
         super().__init__()
         self.hidden_size = config.hidden_size
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
@@ -296,6 +314,8 @@ class ApertusDecoderLayer(nn.Module):
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
+        """Forward pass."""
+        
         if residual is None:
             residual = hidden_states
             hidden_states = self.attention_layernorm(hidden_states)
@@ -311,6 +331,8 @@ class ApertusDecoderLayer(nn.Module):
 
 @support_torch_compile
 class ApertusModel(nn.Module, EagleModelMixin):
+    """ApertusModel module."""
+    
     def __init__(
         self,
         *,
@@ -318,6 +340,8 @@ class ApertusModel(nn.Module, EagleModelMixin):
         prefix: str = "",
         layer_type: type[nn.Module] = ApertusDecoderLayer,
     ):
+        """ApertusModel constructor."""
+        
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -359,6 +383,8 @@ class ApertusModel(nn.Module, EagleModelMixin):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
+        
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -368,6 +394,8 @@ class ApertusModel(nn.Module, EagleModelMixin):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Forward pass."""
+        
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -403,6 +431,11 @@ class ApertusModel(nn.Module, EagleModelMixin):
 class ApertusForCausalLM(
     nn.Module, SupportsLoRA, SupportsPP, SupportsEagle, SupportsEagle3
 ):
+    """ApertusForCausalLM module with QKV parallel projection."""
+    
+    # Checkpoint name remap applied by load_weights (line 494): the q/k/v projections
+    # are stacked into the fused qkv_proj. There is no gate/up pair because ApertusMLP
+    # is single-branch (up_proj only).
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -410,6 +443,8 @@ class ApertusForCausalLM(
             ".v_proj": (".qkv_proj", "v"),
         }
     )
+    # Packed-module map for the weight loader: qkv_proj absorbs q_proj/k_proj/v_proj
+    # (mirrors hf_to_vllm_mapper).
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
 
     # LoRA specific attributes
@@ -425,6 +460,8 @@ class ApertusForCausalLM(
         prefix: str = "",
         layer_type: type[nn.Module] = ApertusDecoderLayer,
     ):
+        """ApertusForCausalLM constructor."""
+        
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -463,11 +500,15 @@ class ApertusForCausalLM(
         prefix: str = "",
         layer_type: type[nn.Module] = ApertusDecoderLayer,
     ):
+        """Initialize model with configurable layer type."""
+        
         return ApertusModel(
             vllm_config=vllm_config, prefix=prefix, layer_type=layer_type
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
+        
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -477,6 +518,8 @@ class ApertusForCausalLM(
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+        
         model_output = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -486,9 +529,13 @@ class ApertusForCausalLM(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+        
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
+        
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

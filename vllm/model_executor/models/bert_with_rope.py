@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""
+BERT models with rotary positional embeddings.
+"""
+
 from collections.abc import Iterable
 
 import torch
@@ -46,7 +50,19 @@ from .interfaces_base import default_pooling_type
 
 
 class BertWithRopeEmbedding(nn.Module):
+
+    """
+    BERT embedding layer with rotary positional encoding.
+    """
+
+
     def __init__(self, config: PretrainedConfig):
+
+        """
+        Initialize BERT embedding with rotary validation.
+        """
+
+
         super().__init__()
         if config.position_embedding_type not in ["rope", "rotary"]:
             raise ValueError(
@@ -88,6 +104,12 @@ class BertWithRopeEmbedding(nn.Module):
 
 
 class BertWithRopeAttention(nn.Module):
+
+    """
+    BERT attention with rotary positional embeddings.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -162,6 +184,12 @@ class BertWithRopeAttention(nn.Module):
 
 
 class BertWithRopeGatedMLP(nn.Module):
+
+    """
+    BERT MLP with gated activation and rotary.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -196,6 +224,12 @@ class BertWithRopeGatedMLP(nn.Module):
 
 
 class BertWithRopeMLP(nn.Module):
+
+    """
+    BERT MLP with standard SwiGLU activation.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -230,6 +264,12 @@ class BertWithRopeMLP(nn.Module):
 
 
 class NomicMoE(nn.Module):
+
+    """
+    NomicMoE with Mixture-of-Experts routing.
+    """
+
+
     def __init__(
         self,
         num_experts: int,
@@ -343,6 +383,12 @@ class NomicMoE(nn.Module):
 
 
 class BertWithRopeBlock(nn.Module):
+
+    """
+    Single transformer block with attention and MLP.
+    """
+
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -404,6 +450,12 @@ class BertWithRopeBlock(nn.Module):
 
 
 class BertWithRopeEncoder(nn.Module):
+
+    """
+    BERT encoder with rotary embeddings.
+    """
+
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -444,6 +496,12 @@ class BertWithRopeEncoder(nn.Module):
 @support_torch_compile
 @default_pooling_type(seq_pooling_type="CLS")
 class BertWithRope(nn.Module, SupportsQuant):
+
+    """
+    BERT model with rotary positional embeddings.
+    """
+
+
     hf_to_vllm_mapper = WeightsMapper(orig_to_new_prefix={"model.": ""})
 
     def __init__(
@@ -472,6 +530,12 @@ class BertWithRope(nn.Module, SupportsQuant):
             self.pooler = None
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+
+        """
+        Convert input IDs to embeddings.
+        """
+
+
         return self.embeddings(input_ids)
 
     def forward(
@@ -491,6 +555,12 @@ class BertWithRope(nn.Module, SupportsQuant):
         return self.encoder(positions, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights with prefix mapping.
+        """
+
+
         weights = self.hf_to_vllm_mapper.apply(weights)
 
         if self.config.hidden_act in ["silu", "geglu"]:
@@ -534,6 +604,12 @@ class BertWithRope(nn.Module, SupportsQuant):
 
 
 class NomicBertModel(BertWithRope):
+
+    """
+    Nomic BERT model variant.
+    """
+
+
     # for https://huggingface.co/nomic-ai/nomic-bert-2048
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -555,6 +631,12 @@ class NomicBertModel(BertWithRope):
 
 
 class GteNewModel(BertWithRope):
+
+    """
+    GTE-new embedding model for text retrieval.
+    """
+
+
     # for https://huggingface.co/Alibaba-NLP/new-impl
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -576,6 +658,12 @@ class GteNewModel(BertWithRope):
             layer.mlp.gate_up_proj.skip_bias_add = True
 
     def split_up_gate_proj(self, weights: Iterable[tuple[str, torch.Tensor]]):
+
+        """
+        Split gate projection for compatibility.
+        """
+
+
         n = "mlp.up_gate_proj"
         for name, weight in weights:
             if n in name:
@@ -586,6 +674,12 @@ class GteNewModel(BertWithRope):
                 yield name, weight
 
     def ignore_unnecessary_layers(self, weights: Iterable[tuple[str, torch.Tensor]]):
+
+        """
+        Filter out unnecessary layers.
+        """
+
+
         for name, weight in weights:
             if name.startswith("classifier"):
                 continue
@@ -598,6 +692,12 @@ class GteNewModel(BertWithRope):
 
 
 class SnowflakeGteNewModel(GteNewModel):
+
+    """
+    Snowflake GTE-new embedding model variant.
+    """
+
+
     # for Snowflake/snowflake-arctic-embed-m-v2.0
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -610,6 +710,12 @@ class SnowflakeGteNewModel(GteNewModel):
 
 
 class JinaRobertaModel(BertWithRope):
+
+    """
+    Jina-RoBERTa model with LoRA merging.
+    """
+
+
     # for https://huggingface.co/jinaai/jina-embeddings-v3
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -626,6 +732,12 @@ class JinaRobertaModel(BertWithRope):
 
     @torch.inference_mode()
     def jina_merge_lora_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+
+        """
+        Merge LoRA adapter weights.
+        """
+
+
         # use for jina-embeddings-v3
         # Merge Lora weights into a single weight tensor.
         # This is a temporary solution until we have a better way to handle
@@ -678,6 +790,12 @@ class JinaRobertaModel(BertWithRope):
 
 @default_pooling_type(seq_pooling_type="CLS")
 class GteNewForSequenceClassification(nn.Module, SupportsCrossEncoding):
+
+    """
+    GTE-new model for sequence classification.
+    """
+
+
     is_pooling_model = True
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):

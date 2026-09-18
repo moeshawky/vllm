@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""NVFP4 emulation utilities.
+
+Provides Triton kernels and Python references for quantizing and
+dequantizing tensors to the NVFP4 (e2m1) format, along with helpers
+for swizzle conversion and scale computation.
+"""
+
 from types import SimpleNamespace
 
 import torch
@@ -301,6 +308,15 @@ def _triton_dequantize_nvfp4(
 
 
 def break_fp4_bytes(a, dtype):
+    """Break packed FP4 bytes into individual float values.
+
+    Args:
+        a: Packed FP4 tensor as uint8 (two nibbles per byte).
+        dtype: Target output dtype.
+
+    Returns:
+        Dequantized tensor with expanded dimensions.
+    """
     assert a.dtype == torch.uint8
     m, n = a.shape
     # Vectorized nibble processing
@@ -321,6 +337,17 @@ def break_fp4_bytes(a, dtype):
 
 
 def convert_swizzled_to_linear(a_sf_swizzled: torch.Tensor, m, k, block_size):
+    """Convert swizzled block-scales back to linear layout.
+
+    Args:
+        a_sf_swizzled: Swizzled scale tensor.
+        m: Number of rows.
+        k: Number of columns.
+        block_size: Quantization block size.
+
+    Returns:
+        Linear-layout scale tensor.
+    """
     m_tiles = (m + 128 - 1) // 128
     f = block_size * 4
     k_tiles = (k + f - 1) // f
@@ -388,6 +415,15 @@ def dequantize_to_dtype(
 
 
 def get_reciprocal(x):
+    """Compute the reciprocal of a value, handling zero safely.
+
+    Args:
+        x: Scalar float, int, or tensor.
+
+    Returns:
+        Reciprocal value, with 1e8 added to zero inputs to avoid
+        division-by-zero errors during graph capture.
+    """
     if isinstance(x, torch.Tensor):
         # torch.where yields operation not permitted when stream is capturing.
         return 1.0 / (x + (x == 0) * 1e8)
@@ -398,6 +434,17 @@ def get_reciprocal(x):
 
 
 def cast_to_fp4(x):
+    """Cast float values to the nearest E2M1 (FP4) representable value.
+
+    Applies rounding thresholds matching the NVFP4 e2m1 format
+    range: {-6, -4, -3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3, 4, 6}.
+
+    Args:
+        x: Input float tensor.
+
+    Returns:
+        Tensor with values rounded to nearest E2M1 level.
+    """
     sign = torch.sign(x)
     x = torch.abs(x)
     x[(x >= 0.0) & (x <= 0.25)] = 0.0
@@ -412,6 +459,19 @@ def cast_to_fp4(x):
 
 
 def ref_nvfp4_quant(x, global_scale, block_size):
+    """Reference NVFP4 quantization implementation.
+
+    Performs per-group quantization using the maximum absolute
+    value in each group to compute a scale factor.
+
+    Args:
+        x: Input tensor of shape [m, n].
+        global_scale: Global scale factor.
+        block_size: Quantization block size.
+
+    Returns:
+        Tuple of (FP4-quantized tensor, per-group scale tensor).
+    """
     assert global_scale.dtype == torch.float32
     assert x.ndim == 2
     m, n = x.shape
@@ -461,6 +521,22 @@ def run_nvfp4_emulations(
     weight_global_scale: torch.Tensor,
     swizzle: bool | None = True,
 ):
+    """Run NVFP4 quantization emulations for matmul verification.
+
+    Dequantizes weights and computes a reference matmul result
+    using NVFP4 quantization.
+
+    Args:
+        x: Activation tensor.
+        input_global_scale: Global scale for activations.
+        weight: Quantized weight tensor.
+        weight_scale_swizzled: Swizzled weight scales.
+        weight_global_scale: Global scale for weights.
+        swizzle: Whether to apply swizzle conversion to scales.
+
+    Returns:
+        Matmul result after NVFP4 dequantization.
+    """
     output_dtype = x.dtype
     group_size = 16
 

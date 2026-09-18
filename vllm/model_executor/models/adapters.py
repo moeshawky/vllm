@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Model adapters for pooling, embedding, and sequence classification."""
 
 import itertools
 from collections.abc import Iterable
@@ -118,6 +119,15 @@ def _load_dense_weights(
 
 
 def _get_pooling_model_name(orig_model_name: str, pooling_suffix: str) -> str:
+    """Derive a pooling model name from the original model name.
+
+    Args:
+        orig_model_name: Original model class name.
+        pooling_suffix: Suffix to append.
+
+    Returns:
+        The derived pooling model name.
+    """
     model_name = orig_model_name
 
     for generate_suffix in _GENERATE_SUFFIXES:
@@ -666,6 +676,18 @@ SEQ_CLS_LOAD_METHODS = {
 
 
 def seq_cls_model_loader(model, weights: Iterable[tuple[str, torch.Tensor]]):
+    """Load weights for sequence classification models.
+
+    Converts ForCausalLM into ForSequenceClassification model
+    using the specified load method.
+
+    Args:
+        model: The model instance.
+        weights: Iterable of (name, weight) tuples.
+
+    Returns:
+        Loaded weights set.
+    """
     # Online convert ForCausalLM into ForSequenceClassification model.
     # - from_2_way_softmax:
     #   - Qwen3ForCausalLM

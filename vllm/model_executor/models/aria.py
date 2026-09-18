@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Aria multimodal MoE model (vision tower + learned-query cross-attention
+projector + Llama-based MoE text stack) with HuggingFace checkpoint loading.
+Wraps the Idefics2 vision transformer, a two-branch projector that turns
+ViT patch outputs into text-space tokens, and a Llama model whose decoder
+layers use an MoE FFN with shared experts."""
+
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated, Literal
 
@@ -64,6 +70,8 @@ class AriaImagePixelInputs(TensorSchema):
 
 
 class AriaVisionTransformer(Idefics3VisionTransformer, SupportsQuant):
+    """AriaVisionTransformer module replacing post-layer norm with identity."""
+    
     packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
 
     def __init__(
@@ -72,6 +80,8 @@ class AriaVisionTransformer(Idefics3VisionTransformer, SupportsQuant):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """AriaVisionTransformer constructor."""
+        
         super().__init__(config, quant_config=quant_config, prefix=prefix)
         # Unlike Idefics3VisionTransformer which uses LayerNorm after the
         # final layer, Aria omits this normalization, so we replace it with an
@@ -89,11 +99,15 @@ class AriaVisionTransformer(Idefics3VisionTransformer, SupportsQuant):
     )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
+        
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 class AriaProjectorMLP(nn.Module):
+    """AriaProjectorMLP module with configurable activation function."""
+    
     def __init__(
         self,
         in_features: int,
@@ -101,6 +115,8 @@ class AriaProjectorMLP(nn.Module):
         output_dim: int,
         prefix: str = "",
     ) -> None:
+        """AriaProjectorMLP constructor."""
+        
         super().__init__()
 
         self.linear_in = ColumnParallelLinear(
@@ -112,6 +128,8 @@ class AriaProjectorMLP(nn.Module):
         self.act = get_act_fn("gelu_new")
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
+        
         hidden_states, _ = self.linear_in(hidden_states)
         hidden_states = self.act(hidden_states)
         hidden_states, _ = self.linear_out(hidden_states)
@@ -132,6 +150,8 @@ class AriaProjector(nn.Module):
     """
 
     def __init__(self, config: AriaConfig, prefix: str = "") -> None:
+        """AriaProjector constructor."""
+        
         super().__init__()
 
         self.patch_to_query_dict = config.projector_patch_to_query_dict
@@ -162,6 +182,8 @@ class AriaProjector(nn.Module):
         x: torch.Tensor,
         attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
+        
         batch_size, num_patches = x.shape[0], x.shape[1]
 
         if num_patches not in self.patch_to_query_dict:
@@ -201,6 +223,8 @@ class AriaTextMoELayer(nn.Module):
         quant_config: QuantizationConfig | None,
         prefix: str = "",
     ) -> None:
+        """AriaTextMoELayer constructor."""
+        
         super().__init__()
         self.config = config
 
@@ -251,6 +275,8 @@ class AriaTextDecoderLayer(LlamaDecoderLayer):
     """
 
     def __init__(self, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """AriaTextDecoderLayer constructor."""
+        
         super().__init__(vllm_config, prefix)
 
         config = vllm_config.model_config.hf_config
@@ -267,6 +293,8 @@ class AriaTextModel(LlamaModel, SupportsQuant):
     LlamaModel by replacing the `LlamaDecoderLayer` with `MoEDecoderLayer`.
     """
 
+    # Packed-module map: qkv_proj absorbs q/k/v_proj and gate_up_proj absorbs
+    # gate/up_proj (the shared LlamaMLP inside the MoE layers).
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -275,6 +303,10 @@ class AriaTextModel(LlamaModel, SupportsQuant):
     # Aria packs all experts into single (transposed) fc1/fc2 tensors, which is
     # exactly the pre-fused checkpoint layout FusedMoE self-loads once fc1/fc2
     # are renamed to the fused gate_up_proj/down_proj names.
+    # Extends LlamaModel's mapper with a substring rename: the checkpoint's packed
+    # expert tensors 'experts.fc1'/'experts.fc2' (transposed pre-fused layout) are
+    # renamed to the FusedMoE names 'experts.gate_up_proj'/'experts.down_proj' so
+    # FusedMoE self-loads them (comment at lines 275-277).
     hf_to_vllm_mapper = LlamaModel.hf_to_vllm_mapper | WeightsMapper(
         orig_to_new_substr={
             "experts.fc1": "experts.gate_up_proj",
@@ -283,12 +315,16 @@ class AriaTextModel(LlamaModel, SupportsQuant):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """AriaTextModel constructor."""
+        
         super().__init__(
             vllm_config=vllm_config, prefix=prefix, layer_type=AriaTextDecoderLayer
         )
 
 
 class AriaProcessingInfo(BaseProcessingInfo):
+    """AriaProcessingInfo module with patch embedding and position embedding."""
+    
     def get_hf_config(self):
         return self.ctx.get_hf_config(AriaConfig)
 
@@ -302,12 +338,18 @@ class AriaProcessingInfo(BaseProcessingInfo):
         return {"image": None}
 
     def get_num_image_tokens(self) -> int:
+        """Get the number of image tokens from projector config."""
+        
         hf_config = self.get_hf_config()
         return max(hf_config.projector_patch_to_query_dict.values())
 
 
 class AriaDummyInputsBuilder(BaseDummyInputsBuilder[AriaProcessingInfo]):
+    """AriaDummyInputsBuilder module."""
+    
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get the dummy text token for image modality."""
+        
         num_images = mm_counts.get("image", 0)
 
         processor = self.info.get_hf_processor()
@@ -322,6 +364,8 @@ class AriaDummyInputsBuilder(BaseDummyInputsBuilder[AriaProcessingInfo]):
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Get dummy multimodal data for testing."""
+        
         vision_config = self.info.get_vision_config()
 
         max_image_size = vision_config.image_size
@@ -341,11 +385,15 @@ class AriaDummyInputsBuilder(BaseDummyInputsBuilder[AriaProcessingInfo]):
 
 
 class AriaMultiModalProcessor(BaseMultiModalProcessor[AriaProcessingInfo]):
+    """AriaMultiModalProcessor module."""
+    
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
+        """Get multimodal field configuration."""
+        
         return dict(
             pixel_values=MultiModalFieldConfig.batched("image"),
             pixel_mask=MultiModalFieldConfig.batched("image"),
@@ -357,6 +405,8 @@ class AriaMultiModalProcessor(BaseMultiModalProcessor[AriaProcessingInfo]):
         hf_processor_mm_kwargs: Mapping[str, object],
         out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
+        """Get prompt replacement updates for image modality."""
+        
         hf_config = self.info.get_hf_config()
         image_token_id = hf_config.image_token_index
 
@@ -384,6 +434,11 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
     model to perform tasks that involve both image and text inputs.
     """
 
+    # Checkpoint name mapper for both the post-v4.52 checkpoint layout
+    # (model.language_model.* -> language_model.model.*, etc.) and the original layout
+    # (language_model.model -> language_model, language_model.lm_head -> lm_head);
+    # 'router.weight' is renamed to match the AriaTextMoELayer.router_weight parameter
+    # (line 398).
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             # mapping for new names in checkpoint saved after transformers v4.52
@@ -401,6 +456,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get the placeholder string for image modality."""
+        
         if modality.startswith("image"):
             return "<|fim_prefix|><|img|><|fim_suffix|>"
 
@@ -411,6 +468,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
         vllm_config: VllmConfig,
         prefix: str = "",
     ):
+        """AriaForConditionalGeneration constructor."""
+        
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -448,6 +507,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> AriaImagePixelInputs | None:
+        """Parse and validate image input arguments."""
+        
         pixel_values = kwargs.pop("pixel_values", None)
         pixel_mask = kwargs.pop("pixel_mask", None)
 
@@ -464,6 +525,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
         self,
         pixel_mask: torch.Tensor | None,
     ) -> torch.Tensor | None:
+        """Create patch-level attention mask from pixel mask."""
+        
         if pixel_mask is None:
             return None
 
@@ -481,6 +544,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
     def _process_image_input(
         self, image_input: AriaImagePixelInputs
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Process image input through vision tower and projector."""
+        
         pixel_values = image_input["pixel_values"]
         pixel_mask = image_input["pixel_mask"]
 
@@ -498,6 +563,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
         return self.multi_modal_projector(image_outputs, image_attn_mask)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embed multimodal inputs into text space."""
+        
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -512,6 +579,8 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+        
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -528,9 +597,13 @@ class AriaForConditionalGeneration(nn.Module, SupportsMultiModal):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+        
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        """Load model weights from checkpoint."""
+        
         loader = AutoWeightsLoader(self)
         loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

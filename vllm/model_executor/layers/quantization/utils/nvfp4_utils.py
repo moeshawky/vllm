@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""NVFP4 quantization utilities for CUTLASS/FlashInfer.
+
+Provides helpers for swizzling block-scales, padding weights
+and activations, and checking CUTLASS FP4 kernel support.
+"""
 
 import torch
 
@@ -54,6 +59,11 @@ def swizzle_blockscale(scale: torch.Tensor) -> torch.Tensor:
 
 
 def cutlass_fp4_supported() -> bool:
+    """Check if the current platform supports CUTLASS FP4 kernels.
+
+    Returns:
+        True if CUTLASS scaled MM supports FP4 on this platform.
+    """
     if not current_platform.is_cuda():
         return False
     capability_tuple = current_platform.get_device_capability()

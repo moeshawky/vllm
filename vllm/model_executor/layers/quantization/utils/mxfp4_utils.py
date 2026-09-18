@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""MXFP4 quantization utilities for AMD platforms.
+
+Provides Triton kernels and helpers for quantizing weights and activations
+to the MXFP4 format (e4m0 scale, e2m1 mantissa, packed 2 values per byte).
+"""
+
 from typing import Any
 
 import torch
@@ -177,10 +183,27 @@ except AttributeError as error:
 
 
 def xpu_mxfp4_quantize(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a tensor to MXFP4 using the XPU custom op.
+
+    Args:
+        x: Input tensor to quantize.
+
+    Returns:
+        Tuple of (quantized tensor, scale tensor).
+    """
     return torch.ops.vllm.xpu_mxfp4_quantize(x)
 
 
 def permute_shape(shape: tuple[int, ...], permute_order: list[int]) -> tuple[int, ...]:
+    """Permute a shape tuple according to the given order.
+
+    Args:
+        shape: The original shape tuple.
+        permute_order: The permutation order to apply.
+
+    Returns:
+        The permuted shape tuple.
+    """
     return tuple(shape[i] for i in permute_order)
 
 

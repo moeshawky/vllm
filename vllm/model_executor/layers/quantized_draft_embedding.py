@@ -121,6 +121,14 @@ class QuantizedVocabEmbedding(nn.Module):
         self.load_full_weight(loaded_weight)
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Compute the embedding lookup with dequantization.
+
+        Args:
+            input_ids: Indices into the vocabulary.
+
+        Returns:
+            Dequantized embedding tensor.
+        """
         rows = self.qweight[input_ids]
         if self.bits == 8:
             deq = rows.to(torch.float32)

@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""MXFP6 quantization utilities for AMD platforms.
+
+Provides helpers for quantizing weights and activations
+to the MXFP6 format using the amd-quark package.
+"""
+
 import torch
 
 from vllm.model_executor.layers.quantization.utils.ocp_mx_utils import OCP_MX_BLOCK_SIZE
@@ -122,6 +128,16 @@ def quant_dequant_mxfp6(
     quant_dtype: str,
     scale_calculation_mode: str = "even",
 ) -> torch.Tensor:
+    """Quantize and dequantize a tensor to MXFP6.
+
+    Args:
+        x: Input tensor.
+        quant_dtype: Target quantization dtype.
+        scale_calculation_mode: Mode for scale calculation.
+
+    Returns:
+        The quantize-dequantize result tensor.
+    """
     return torch.ops.vllm.quant_dequant_mxfp6(x, quant_dtype, scale_calculation_mode)
 
 
@@ -139,4 +155,15 @@ except AttributeError as error:
 def dequant_mxfp6(
     x: torch.Tensor, scale: torch.Tensor, float_dtype: torch.dtype, quant_dtype: str
 ) -> torch.Tensor:
+    """Dequantize an MXFP6 tensor.
+
+    Args:
+        x: Quantized tensor.
+        scale: Scale tensor.
+        float_dtype: Target float dtype.
+        quant_dtype: Quantization dtype used.
+
+    Returns:
+        The dequantized tensor.
+    """
     return torch.ops.vllm.dequant_mxfp6(x, scale, float_dtype, quant_dtype)

@@ -30,6 +30,16 @@ def get_token_bin_counts_and_mask(
     vocab_size: int,
     num_seqs: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute bin counts and mask for token IDs.
+
+    Args:
+        tokens: Token ID tensor.
+        vocab_size: Vocabulary size.
+        num_seqs: Number of sequences.
+
+    Returns:
+        Tuple of (bin_counts, mask).
+    """
     # Compute the bin counts for the tokens.
     # vocab_size + 1 for padding.
     bin_counts = torch.zeros(
@@ -89,6 +99,17 @@ def default_unquantized_gemm(
     weight: torch.Tensor,
     bias: torch.Tensor | None = None,
 ):
+    """Compute unquantized GEMM using PyTorch linear.
+
+    Args:
+        layer: The module layer.
+        x: Input tensor.
+        weight: Weight tensor.
+        bias: Optional bias tensor.
+
+    Returns:
+        Output tensor.
+    """
     return torch.nn.functional.linear(x, weight, bias)
 
 
@@ -236,6 +257,16 @@ _CPU_SGL_GEMM_MAX_WEIGHT_BYTES = 1 * 1024 * 1024
 
 
 def check_cpu_sgl_kernel(n: int, k: int, dtype: torch.dtype) -> bool:
+    """Check if the CPU SGL kernel should be used.
+
+    Args:
+        n: Batch size.
+        k: K dimension.
+        dtype: Data type.
+
+    Returns:
+        True if the SGL kernel is appropriate.
+    """
     if not torch.cpu._is_amx_tile_supported() or dtype not in (
         torch.bfloat16,
         torch.float16,
@@ -392,6 +423,11 @@ def cpu_unquantized_gemm(
 
 
 def dispatch_unquantized_gemm() -> Callable[..., torch.Tensor]:
+    """Select the appropriate unquantized GEMM dispatcher.
+
+    Returns:
+        A callable that computes unquantized GEMM.
+    """
     if current_platform.is_rocm():
         return rocm_unquantized_gemm
     elif current_platform.is_cpu():

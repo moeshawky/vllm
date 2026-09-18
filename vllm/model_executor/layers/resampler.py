@@ -251,6 +251,16 @@ class Resampler2(BaseResampler):
         tgt_sizes: torch.Tensor | None = None,
         attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass of the resampler.
+
+        Args:
+            x: Input tensor.
+            tgt_sizes: Target spatial sizes.
+            attn_mask: Optional attention mask.
+
+        Returns:
+            Output tensor after attention and projection.
+        """
         if tgt_sizes is None:
             tgt_sizes = int(math.sqrt(x.size(1)))
         if self.adaptive:

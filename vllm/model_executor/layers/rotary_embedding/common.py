@@ -17,12 +17,28 @@ logger = init_logger(__name__)
 
 # common functions
 def rotate_neox(x: torch.Tensor) -> torch.Tensor:
+    """Rotate half of the hidden dims of the input using the Neox-style.
+
+    Args:
+        x: Input tensor with even last dimension.
+
+    Returns:
+        Tensor with the first and second halves swapped and negated.
+    """
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
 
 
 def rotate_gptj(x: torch.Tensor) -> torch.Tensor:
+    """Rotate the input using the GPT-J-style interleaved rotation.
+
+    Args:
+        x: Input tensor with even last dimension.
+
+    Returns:
+        Tensor with interleaved dimensions rotated.
+    """
     x1 = x[..., ::2]
     x2 = x[..., 1::2]
     x = torch.stack((-x2, x1), dim=-1)
@@ -37,6 +53,17 @@ def yarn_find_correction_dim(
     base: float = 10000,
     max_position_embeddings: int = 2048,
 ) -> float:
+    """Compute the correction dimension for YaRN scaling.
+
+    Args:
+        num_rotations: Number of rotations.
+        dim: Dimension size.
+        base: Base for the frequency calculation.
+        max_position_embeddings: Maximum position embeddings.
+
+    Returns:
+        The correction dimension value.
+    """
     return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (
         2 * math.log(base)
     )
@@ -51,6 +78,19 @@ def yarn_find_correction_range(
     max_position_embeddings: int = 2048,
     truncate: bool = True,
 ) -> tuple[float | int, float | int]:
+    """Find the dim range bounds for YaRN correction.
+
+    Args:
+        low_rot: Lower rotation count.
+        high_rot: Higher rotation count.
+        dim: Dimension size.
+        base: Base for the frequency calculation.
+        max_position_embeddings: Maximum position embeddings.
+        truncate: Whether to clamp to integer bounds.
+
+    Returns:
+        Tuple of (low_bound, high_bound).
+    """
     low = yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings)
     high = yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings)
     if truncate:
@@ -62,6 +102,17 @@ def yarn_find_correction_range(
 def yarn_linear_ramp_mask(
     low: float, high: float, dim: int, dtype: torch.dtype
 ) -> torch.Tensor:
+    """Create a linear ramp mask for YaRN scaling.
+
+    Args:
+        low: Lower bound of the ramp.
+        high: Upper bound of the ramp.
+        dim: Dimension size.
+        dtype: Output dtype.
+
+    Returns:
+        A tensor with values clamped between 0 and 1.
+    """
     if low == high:
         high += 0.001  # Prevent singularity
 
@@ -71,6 +122,14 @@ def yarn_linear_ramp_mask(
 
 
 def yarn_get_mscale(scale: float = 1) -> float:
+    """Compute the mscale factor for YaRN.
+
+    Args:
+        scale: The scaling factor.
+
+    Returns:
+        The mscale value, 1.0 if scale <= 1.
+    """
     if scale <= 1:
         return 1.0
     return 0.1 * math.log(scale) + 1.0
@@ -123,6 +182,7 @@ direct_register_custom_op(
 # --8<-- [start:apply_rotary_emb]
 @CustomOp.register("apply_rotary_emb")
 class ApplyRotaryEmb(CustomOp):
+    """Apply rotary embedding to query and key tensors."""
     # --8<-- [end:apply_rotary_emb]
 
     def __init__(
@@ -131,6 +191,13 @@ class ApplyRotaryEmb(CustomOp):
         is_neox_style: bool = True,
         enable_fp32_compute: bool = False,
     ) -> None:
+        """Initialize the ApplyRotaryEmb layer.
+
+        Args:
+            enforce_enable: Whether to enforce the enable flag.
+            is_neox_style: Whether to use Neox-style rotation.
+            enable_fp32_compute: Use FP32 for compute.
+        """
         super().__init__(enforce_enable=enforce_enable)
         self.is_neox_style = is_neox_style
         self.enable_fp32_compute = enable_fp32_compute
@@ -190,6 +257,16 @@ class ApplyRotaryEmb(CustomOp):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Size, torch.dtype]:
+        """Pre-process input tensors for rotary embedding.
+
+        Args:
+            x: Input tensor.
+            cos: Cosine values.
+            sin: Sine values.
+
+        Returns:
+            Tuple of (x, cos, sin, origin_shape, origin_dtype).
+        """
         origin_shape = x.shape
         if len(origin_shape) == 3:
             # x: [seq_len, num_heads, head_size]
@@ -209,6 +286,16 @@ class ApplyRotaryEmb(CustomOp):
         origin_shape: torch.Size,
         origin_dtype: torch.dtype,
     ) -> torch.Tensor:
+        """Post-process the rotary embedding output.
+
+        Args:
+            output: The output tensor.
+            origin_shape: Original input shape.
+            origin_dtype: Original input dtype.
+
+        Returns:
+            The processed output tensor.
+        """
         if len(origin_shape) == 3:
             output = output.squeeze(0)
         if self.enable_fp32_compute:
@@ -221,6 +308,16 @@ class ApplyRotaryEmb(CustomOp):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply rotary embedding using the native PyTorch implementation.
+
+        Args:
+            x: Input tensor.
+            cos: Cosine values.
+            sin: Sine values.
+
+        Returns:
+            Tensor with rotary embedding applied.
+        """
         output = self.forward_static(
             x, cos, sin, self.is_neox_style, self.enable_fp32_compute
         )
@@ -232,6 +329,16 @@ class ApplyRotaryEmb(CustomOp):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply rotary embedding using the CUDA/flash_attn backend.
+
+        Args:
+            x: Input tensor.
+            cos: Cosine values.
+            sin: Sine values.
+
+        Returns:
+            Tensor with rotary embedding applied.
+        """
         from vllm.vllm_flash_attn.layers.rotary import apply_rotary_emb
 
         x, cos, sin, origin_shape, origin_dtype = self._pre_process(x, cos, sin)
@@ -255,6 +362,19 @@ class ApplyRotaryEmb(CustomOp):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply rotary embedding using the ROCm/AITER backend.
+
+        Falls back to the native PyTorch implementation when
+        the HIP grid dimensions exceed limits.
+
+        Args:
+            x: Input tensor.
+            cos: Cosine values.
+            sin: Sine values.
+
+        Returns:
+            Tensor with rotary embedding applied.
+        """
         _HIP_MAX_GRID_DIM = 65535
         """
         HIP/ROCm has a per-dim grid limit of 65535 on gridY/gridZ. The
@@ -306,10 +426,21 @@ class ApplyRotaryEmb(CustomOp):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply rotary embedding using the CPU backend.
+
+        Args:
+            x: Input tensor.
+            cos: Cosine values.
+            sin: Sine values.
+
+        Returns:
+            Tensor with rotary embedding applied.
+        """
         # TODO (bigPYJ1151): need to enable fused CPU ROPE here
         return self.forward_native(x, cos, sin)
 
     def extra_repr(self) -> str:
+        """Return a string representation of the layer parameters."""
         s = f"is_neox_style={self.is_neox_style}"
         s += f", enable_fp32_compute={self.enable_fp32_compute}"
         return s

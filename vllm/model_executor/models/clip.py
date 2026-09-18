@@ -80,6 +80,12 @@ class CLIPImagePixelInputs(TensorSchema):
 
 
 class CLIPEncoderInfo(VisionEncoderInfo[CLIPVisionConfig]):
+
+    """
+    Information about CLIP vision encoder.
+    """
+
+
     def get_num_image_tokens(
         self,
         *,
@@ -89,12 +95,30 @@ class CLIPEncoderInfo(VisionEncoderInfo[CLIPVisionConfig]):
         return self.get_patch_grid_length() ** 2 + 1
 
     def get_image_size(self) -> int:
+
+        """
+        Return image size from config.
+        """
+
+
         return self.vision_config.image_size
 
     def get_patch_size(self) -> int:
+
+        """
+        Return patch size from config.
+        """
+
+
         return self.vision_config.patch_size
 
     def get_patch_grid_length(self) -> int:
+
+        """
+        Return patch grid length.
+        """
+
+
         image_size, patch_size = self.get_image_size(), self.get_patch_size()
         assert image_size % patch_size == 0
         return image_size // patch_size
@@ -152,16 +176,46 @@ def merge_dual_encoder_text_and_vision(
 
 
 class CLIPProcessingInfo(BaseProcessingInfo):
+
+    """
+    Processing info for CLIP multimodal inputs.
+    """
+
+
     def get_hf_config(self):
+
+        """
+        Return the HuggingFace config.
+        """
+
+
         return self.ctx.get_hf_config(CLIPConfig)
 
     def get_vision_encoder_info(self):
+
+        """
+        Return vision encoder info.
+        """
+
+
         return CLIPEncoderInfo(self.get_hf_config())
 
     def get_hf_processor(self, **kwargs: object):
+
+        """
+        Return the HuggingFace processor.
+        """
+
+
         return self.ctx.get_hf_processor(CLIPProcessor, **kwargs)
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+
+        """
+        Return supported multimodal limits.
+        """
+
+
         return {"image": 1}
 
     def get_num_image_tokens(
@@ -185,11 +239,23 @@ class CLIPProcessingInfo(BaseProcessingInfo):
         )
 
     def get_image_size_with_most_features(self) -> ImageSize:
+
+        """
+        Return image size with most features.
+        """
+
+
         vision_encoder_info = self.get_vision_encoder_info()
         width = height = vision_encoder_info.get_image_size()
         return ImageSize(width=width, height=height)
 
     def get_max_image_tokens(self) -> int:
+
+        """
+        Return maximum image tokens.
+        """
+
+
         target_width, target_height = self.get_image_size_with_most_features()
 
         return self.get_num_image_tokens(
@@ -199,7 +265,19 @@ class CLIPProcessingInfo(BaseProcessingInfo):
 
 
 class CLIPDummyInputsBuilder(BaseDummyInputsBuilder[CLIPProcessingInfo]):
+
+    """
+    Dummy inputs builder for CLIP models.
+    """
+
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+
+        """
+        Generate dummy text tokens.
+        """
+
+
         return ""
 
     def get_dummy_mm_data(
@@ -225,6 +303,12 @@ class CLIPDummyInputsBuilder(BaseDummyInputsBuilder[CLIPProcessingInfo]):
 
 
 class CLIPMultiModalProcessor(BaseMultiModalProcessor[CLIPProcessingInfo]):
+
+    """
+    Multimodal processor for CLIP models.
+    """
+
+
     @cached_property
     def image_token_id(self) -> int:
         tokenizer = self.info.get_tokenizer()
@@ -287,7 +371,19 @@ class CLIPMultiModalProcessor(BaseMultiModalProcessor[CLIPProcessingInfo]):
 
 # Adapted from: https://github.com/huggingface/transformers/blob/v4.56.2/src/transformers/models/clip/modeling_clip.py
 class CLIPTextEmbeddings(nn.Module):
+
+    """
+    Text embedding layer for CLIP.
+    """
+
+
     def __init__(self, config: CLIPTextConfig):
+
+        """
+        Initialize CLIP text embeddings.
+        """
+
+
         super().__init__()
 
         embed_dim = config.hidden_size
@@ -318,6 +414,12 @@ class CLIPTextEmbeddings(nn.Module):
 
 
 class CLIPVisionEmbeddings(nn.Module):
+
+    """
+    Vision embedding layer for CLIP.
+    """
+
+
     def __init__(self, config: CLIPVisionConfig):
         super().__init__()
         self.config = config
@@ -361,6 +463,12 @@ class CLIPVisionEmbeddings(nn.Module):
 
 
 class CLIPAttention(nn.Module):
+
+    """
+    Attention module for CLIP.
+    """
+
+
     def __init__(
         self,
         config: CLIPTextConfig | CLIPVisionConfig,
@@ -428,6 +536,12 @@ class CLIPAttention(nn.Module):
 
 
 class CLIPMLP(nn.Module):
+
+    """
+    MLP layer for CLIP.
+    """
+
+
     def __init__(
         self,
         config: CLIPTextConfig | CLIPVisionConfig,
@@ -466,6 +580,12 @@ class CLIPMLP(nn.Module):
 
 
 class CLIPEncoderLayer(nn.Module):
+
+    """
+    Single CLIP encoder layer.
+    """
+
+
     def __init__(
         self,
         config: CLIPTextConfig | CLIPVisionConfig,
@@ -564,6 +684,12 @@ class CLIPEncoder(nn.Module):
 
 
 class CLIPTextTransformer(nn.Module):
+
+    """
+    Text transformer for CLIP.
+    """
+
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -599,6 +725,12 @@ class CLIPTextTransformer(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+
+        """
+        Convert input IDs to text embeddings.
+        """
+
+
         return self.embeddings.token_embedding(input_ids)
 
     def forward(
@@ -622,11 +754,23 @@ class CLIPTextTransformer(nn.Module):
         return last_hidden_state
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights into CLIP text.
+        """
+
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 class CLIPVisionTransformer(nn.Module):
+
+    """
+    Vision transformer for CLIP.
+    """
+
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -734,6 +878,12 @@ class CLIPVisionTransformer(nn.Module):
 
 
 class CLIPVisionModel(nn.Module):
+
+    """
+    CLIP vision model.
+    """
+
+
     def __init__(
         self,
         config: CLIPVisionConfig,
@@ -782,6 +932,12 @@ class CLIPVisionModel(nn.Module):
     dummy_inputs=CLIPDummyInputsBuilder,
 )
 class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
+
+    """
+    CLIP embedding model combining text and vision.
+    """
+
+
     is_pooling_model = True
 
     hf_to_vllm_mapper = WeightsMapper(orig_to_new_substr={".position_ids": None})
@@ -790,6 +946,12 @@ class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+
+        """
+        Return placeholder string.
+        """
+
+
         if modality.startswith("image"):
             return None
 
@@ -960,6 +1122,12 @@ class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         )
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+
+        """
+        Embed multimodal inputs.
+        """
+
+
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []

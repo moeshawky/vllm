@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+BERT model implementations for vLLM.
+"""
+
 from collections.abc import Iterable, Set
 from dataclasses import replace
 
@@ -48,7 +52,19 @@ from .utils import AutoWeightsLoader, WeightsMapper, maybe_prefix
 
 
 class BertEmbedding(nn.Module):
+
+    """
+    BERT embedding with word, position, token-type embeddings.
+    """
+
+
     def __init__(self, config: BertConfig):
+
+        """
+        Initialize BERT embedding components.
+        """
+
+
         super().__init__()
         self.size = config.hidden_size
         self.word_embeddings = VocabParallelEmbedding(
@@ -95,6 +111,12 @@ class BertEmbedding(nn.Module):
 
 
 class BertPooler(SequencePooler):
+
+    """
+    BERT pooler with dense layer and Tanh.
+    """
+
+
     def __init__(self, model_config: ModelConfig):
         pooler_config = model_config.pooler_config
         assert pooler_config is not None
@@ -125,6 +147,12 @@ class BertPooler(SequencePooler):
 
 
 class BertEncoder(nn.Module):
+
+    """
+    BERT encoder with ModuleList of BertLayer.
+    """
+
+
     def __init__(self, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -152,6 +180,12 @@ class BertEncoder(nn.Module):
 
 
 class BertLayer(nn.Module):
+
+    """
+    Single BERT transformer layer with attention and MLP.
+    """
+
+
     def __init__(
         self,
         config: BertConfig,
@@ -194,6 +228,12 @@ class BertLayer(nn.Module):
 
 
 class BertAttention(nn.Module):
+
+    """
+    BERT attention combining self-attention and output.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -229,6 +269,12 @@ class BertAttention(nn.Module):
 
 
 class BertSelfAttention(nn.Module):
+
+    """
+    BERT self-attention with QKV parallel projection.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -285,6 +331,12 @@ class BertSelfAttention(nn.Module):
 
 
 class BertSelfOutput(nn.Module):
+
+    """
+    BERT self-attention output with LayerNorm residual.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -311,6 +363,12 @@ class BertSelfOutput(nn.Module):
 
 
 class BertIntermediate(nn.Module):
+
+    """
+    BERT intermediate layer with dense and activation.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -336,6 +394,12 @@ class BertIntermediate(nn.Module):
 
 
 class BertOutput(nn.Module):
+
+    """
+    BERT output layer with dense projection.
+    """
+
+
     def __init__(
         self,
         hidden_size: int,
@@ -367,6 +431,12 @@ class BertOutput(nn.Module):
 @support_torch_compile
 @default_pooling_type(seq_pooling_type="CLS")
 class BertModel(nn.Module, SupportsQuant):
+
+    """
+    Core BERT model with embedding and encoder.
+    """
+
+
     is_pooling_model = True
 
     packed_modules_mapping = {"qkv_proj": ["query", "key", "value"]}
@@ -418,11 +488,23 @@ class BertModel(nn.Module, SupportsQuant):
         return self.encoder(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights with prefix remapping.
+        """
+
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 class BertPoolingModel(BertModel):
+
+    """
+    BERT model with pooling head.
+    """
+
+
     is_pooling_model = True
 
     # Unlike `BertModel`, this model has a pooler to load weights into.
@@ -508,6 +590,12 @@ class BertEmbeddingModel(nn.Module, SupportsQuant):
         )
 
     def _build_pooler(self, pooler_config: PoolerConfig) -> Pooler:
+
+        """
+        Build SPLADE sparse pooler.
+        """
+
+
         return DispatchPooler.for_embedding(pooler_config)
 
 
@@ -543,6 +631,12 @@ def _encode_token_type_ids(
 
 
 def _decode_token_type_ids(input_ids: torch.Tensor) -> torch.Tensor:
+
+    """
+    Decode token type IDs with masking.
+    """
+
+
     ids_mask = 1 << TOKEN_TYPE_SHIFT
     tokens_mask = ~ids_mask
 
@@ -554,6 +648,12 @@ def _decode_token_type_ids(input_ids: torch.Tensor) -> torch.Tensor:
 
 
 class BertMLMHead(nn.Module):
+
+    """
+    BERT masked language model head.
+    """
+
+
     def __init__(
         self, hidden_size: int, vocab_size: int, layer_norm_eps: float = 1e-12
     ):
@@ -840,6 +940,12 @@ class BertForSequenceClassification(nn.Module, SupportsCrossEncoding, SupportsQu
 @attn_type("encoder_only")
 @default_pooling_type(tok_pooling_type="ALL")
 class BertForTokenClassification(nn.Module):
+
+    """
+    BERT model for token classification.
+    """
+
+
     is_pooling_model = True
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):

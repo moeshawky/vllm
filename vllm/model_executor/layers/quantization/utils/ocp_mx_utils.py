@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""OCP MX quantization scheme definitions.
+
+Defines the OCP_MX_Scheme enumeration for specifying
+mixed-precision quantization configurations across MX
+dtypes (MXFP4, MXFP6, MXFP8, MXINT8).
+"""
+
 from enum import Enum
 
 from vllm.logger import init_logger
@@ -19,6 +26,11 @@ OCP_MX_DTYPES = {
 
 
 class OCP_MX_Scheme(str, Enum):
+    """Enumeration of OCP MX quantization schemes.
+
+    Each scheme specifies the quantization dtype for weights
+    and optionally activations in a mixed-precision setup.
+    """
     w_mxfp4 = "w_mxfp4"
     w_mxfp4_a_mxfp4 = "w_mxfp4_a_mxfp4"
     w_mxfp4_a_mxfp6_e3m2 = "w_mxfp4_a_mxfp6_e3m2"
@@ -33,6 +45,15 @@ class OCP_MX_Scheme(str, Enum):
 
     @classmethod
     def from_quant_dtype(cls, input_dtype: str | None, weight_dtype: str | None):
+        """Map input and weight dtypes to the corresponding OCP_MX_Scheme.
+
+        Args:
+            input_dtype: The activation quantization dtype.
+            weight_dtype: The weight quantization dtype.
+
+        Returns:
+            The matching OCP_MX_Scheme, or None if unsupported.
+        """
         if input_dtype not in OCP_MX_DTYPES and weight_dtype not in OCP_MX_DTYPES:
             return None
         elif input_dtype is None and weight_dtype == "mxfp4":

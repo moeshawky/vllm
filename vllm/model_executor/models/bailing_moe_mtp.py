@@ -46,6 +46,7 @@ def _get_draft_hf_config(vllm_config: VllmConfig) -> PretrainedConfig:
 
 
 class BailingMTPSharedHead(nn.Module):
+    """Shared head for Bailing MTP multi-token predictor."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -61,10 +62,12 @@ class BailingMTPSharedHead(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         return hidden_states
 
 
 class BailingMoeV25MultiTokenPredictorLayer(nn.Module):
+    """Multi-token predictor layer with attention and MLP."""
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -110,6 +113,7 @@ class BailingMoeV25MultiTokenPredictorLayer(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_index: int = 0,
     ) -> torch.Tensor:
+        """Forward pass."""
         assert inputs_embeds is not None
         inputs_embeds = torch.where(positions.unsqueeze(-1) == 0, 0, inputs_embeds)
         inputs_embeds = self.enorm(inputs_embeds)
@@ -132,6 +136,7 @@ class BailingMoeV25MultiTokenPredictorLayer(nn.Module):
 
 
 class BailingMoeV25MultiTokenPredictor(nn.Module):
+    """Bailing MoE v2.5 multi-token predictor."""
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         config = _get_draft_hf_config(vllm_config)
@@ -162,6 +167,7 @@ class BailingMoeV25MultiTokenPredictor(nn.Module):
         self.logits_processor = LogitsProcessor(config.vocab_size)
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -172,6 +178,7 @@ class BailingMoeV25MultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Forward pass."""
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         current_step_idx = spec_step_idx % self.num_mtp_layers
@@ -189,6 +196,7 @@ class BailingMoeV25MultiTokenPredictor(nn.Module):
         spec_step_idx: int = 0,
         lm_head: nn.Module | None = None,
     ) -> torch.Tensor:
+        """Compute logits from hidden states."""
         current_step_idx = spec_step_idx % self.num_mtp_layers
         mtp_layer = self.layers[str(self.mtp_start_layer_idx + current_step_idx)]
         head = lm_head if lm_head is not None else mtp_layer.shared_head.head
@@ -200,6 +208,7 @@ class BailingMoeV25MultiTokenPredictor(nn.Module):
 
 @support_torch_compile
 class BailingMoeV25MTPModel(nn.Module):
+    """Bailing MoE v2.5 MTP model for speculative decoding."""
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
         "fused_qkv_a_proj": ["q_a_proj", "kv_a_proj_with_mqa"],
@@ -215,6 +224,7 @@ class BailingMoeV25MTPModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -226,6 +236,7 @@ class BailingMoeV25MTPModel(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Forward pass."""
         return self.model(
             input_ids,
             positions,
@@ -239,9 +250,11 @@ class BailingMoeV25MTPModel(nn.Module):
         hidden_states: torch.Tensor,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Compute logits from hidden states."""
         return self.model.compute_logits(hidden_states, spec_step_idx, self.lm_head)
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        """Get expert parameter mapping for MoE layers."""
         return fused_moe_make_expert_params_mapping(
             self,
             ckpt_gate_proj_name="gate_proj",
@@ -252,6 +265,7 @@ class BailingMoeV25MTPModel(nn.Module):
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
         stacked_params_mapping = [
             (".fused_qkv_a_proj", ".q_a_proj", 0),
             (".fused_qkv_a_proj", ".kv_a_proj_with_mqa", 1),
@@ -268,6 +282,7 @@ class BailingMoeV25MTPModel(nn.Module):
             loaded_weight: torch.Tensor,
             shard_id=None,
         ) -> bool:
+            """Load a single parameter."""
             remapped_name = maybe_remap_kv_scale_name(name, params_dict)
             if remapped_name is None:
                 return False
@@ -295,6 +310,7 @@ class BailingMoeV25MTPModel(nn.Module):
             return True
 
         def get_spec_layer_idx(name: str) -> int | None:
+            """Get MTP layer index for parameter name."""
             if not name.startswith("model.layers."):
                 return None
             try:
@@ -307,6 +323,7 @@ class BailingMoeV25MTPModel(nn.Module):
             return None
 
         def normalize_name(name: str) -> str:
+            """Normalize checkpoint name to model parameter name."""
             name = name.replace(".attention.dense", ".self_attn.o_proj")
             name = name.replace(".attention.", ".self_attn.")
             return name.replace(
@@ -315,6 +332,7 @@ class BailingMoeV25MTPModel(nn.Module):
             )
 
         def load_lm_head(loaded_weight: torch.Tensor) -> None:
+            """Load lm_head weights for all MTP layers."""
             for layer_idx in range(
                 self.model.mtp_start_layer_idx,
                 self.model.mtp_start_layer_idx + self.model.num_mtp_layers,

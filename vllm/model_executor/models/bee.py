@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+Bee conditional generation model for LLaVA-OneVision.
+"""
+
 from collections.abc import Mapping
 
 import torch
@@ -22,10 +26,28 @@ from .utils import WeightsMapper
 
 
 class BeeProcessingInfo(LlavaNextProcessingInfo):
+
+    """
+    Processing info for Bee vision-language models.
+    """
+
+
     def get_hf_config(self):
+
+        """
+        Return the HuggingFace config.
+        """
+
+
         return self.ctx.get_hf_config()
 
     def get_hf_processor(self, **kwargs: object):
+
+        """
+        Return the HuggingFace processor.
+        """
+
+
         return self.ctx.get_hf_processor(**kwargs)
 
     def _get_num_unpadded_features(
@@ -80,7 +102,19 @@ class BeeProcessingInfo(LlavaNextProcessingInfo):
 
 
 class BeeDummyInputsBuilder(LlavaDummyInputsBuilder[BeeProcessingInfo]):
+
+    """
+    Dummy inputs builder for Bee vision-language models.
+    """
+
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+
+        """
+        Generate dummy text tokens per image.
+        """
+
+
         num_images = mm_counts.get("image", 0)
         image_token = "<image>"
 
@@ -110,7 +144,19 @@ class BeeDummyInputsBuilder(LlavaDummyInputsBuilder[BeeProcessingInfo]):
 
 
 class BeeMultiModalProjector(nn.Module):
+
+    """
+    Project multi-modal features into hidden dim.
+    """
+
+
     def __init__(self, config):
+
+        """
+        Initialize projector with normalization.
+        """
+
+
         super().__init__()
         self.pre_norm = nn.LayerNorm(config.vision_config.hidden_size, eps=1e-06)
         self.linear_1 = nn.Linear(
@@ -126,6 +172,12 @@ class BeeMultiModalProjector(nn.Module):
         )
 
     def forward(self, image_feature: torch.Tensor) -> torch.Tensor:
+
+        """
+        Project image features through layers.
+        """
+
+
         image_feature = self.pre_norm(image_feature)
         hidden_states = self.linear_1(image_feature)
         hidden_states = self.act(hidden_states)
@@ -140,6 +192,12 @@ class BeeMultiModalProjector(nn.Module):
     dummy_inputs=BeeDummyInputsBuilder,
 )
 class BeeForConditionalGeneration(LlavaOnevisionForConditionalGeneration):
+
+    """
+    Bee conditional generation model.
+    """
+
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             # mapping for new names in checkpoint saved after transformers

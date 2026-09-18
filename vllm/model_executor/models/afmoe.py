@@ -57,6 +57,8 @@ logger = init_logger(__name__)
 
 
 class AfmoeMoE(nn.Module):
+    """AfmoeMoE module with configurable dense/MoE layer cutoff."""
+    
     def __init__(
         self,
         config,  # AfmoeConfig
@@ -64,6 +66,8 @@ class AfmoeMoE(nn.Module):
         prefix: str = "",
         enable_eplb: bool = False,
     ):
+        """AfmoeMoE constructor."""
+        
         super().__init__()
         self.tp_size = get_tensor_model_parallel_world_size()
         self.route_scale = config.route_scale
@@ -137,6 +141,8 @@ class AfmoeMoE(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
+        
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -150,6 +156,8 @@ class AfmoeMoE(nn.Module):
 
 
 class AfmoeAttention(nn.Module):
+    """AfmoeAttention module with QK-norm attention and sigmoid gating."""
+    
     def __init__(
         self,
         config,  # AfmoeConfig
@@ -165,6 +173,8 @@ class AfmoeAttention(nn.Module):
         prefix: str = "",
         attn_type: str = AttentionType.DECODER,
     ) -> None:
+        """AfmoeAttention constructor."""
+        
         super().__init__()
         self.layer_idx = layer_idx
         self.hidden_size = hidden_size
@@ -251,6 +261,8 @@ class AfmoeAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass."""
+        
         qkv, _ = self.qkv_proj(hidden_states)
         gate, _ = self.gate_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
@@ -274,6 +286,8 @@ class AfmoeAttention(nn.Module):
 
 
 class AfmoeDecoderLayer(nn.Module):
+    """AfmoeDecoderLayer module with configurable dense/MoE layer cutoff."""
+    
     def __init__(
         self,
         config,  # AfmoeConfig
@@ -282,6 +296,8 @@ class AfmoeDecoderLayer(nn.Module):
         prefix: str = "",
         enable_eplb: bool = False,
     ) -> None:
+        """AfmoeDecoderLayer constructor."""
+        
         super().__init__()
         self.hidden_size = config.hidden_size
         max_position_embeddings = getattr(config, "max_position_embeddings", 131072)
@@ -335,6 +351,8 @@ class AfmoeDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass."""
+        
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -366,7 +384,11 @@ class AfmoeDecoderLayer(nn.Module):
     }
 )
 class AfmoeModel(nn.Module, EagleModelMixin):
+    """AfmoeModel module."""
+    
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """AfmoeModel constructor."""
+        
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -403,6 +425,8 @@ class AfmoeModel(nn.Module, EagleModelMixin):
             self.norm = PPMissingLayer()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
+        
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -412,6 +436,8 @@ class AfmoeModel(nn.Module, EagleModelMixin):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Forward pass."""
+        
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -452,6 +478,8 @@ class AfmoeModel(nn.Module, EagleModelMixin):
     def make_empty_intermediate_tensors(
         self, batch_size: int, dtype: torch.dtype, device: torch.device
     ) -> IntermediateTensors:
+        """Create empty intermediate tensors for pipeline parallelism."""
+        
         return IntermediateTensors(
             {
                 "hidden_states": torch.zeros(
@@ -467,6 +495,12 @@ class AfmoeModel(nn.Module, EagleModelMixin):
 class AfmoeForCausalLM(
     nn.Module, SupportsPP, SupportsEagle3, SupportsLoRA, MixtureOfExperts
 ):
+    """AfmoeForCausalLM module with configurable dense/MoE layer cutoff."""
+    
+    # Packed-module map for the weight loader: qkv_proj absorbs q/k/v_proj, and
+    # gate_up_proj absorbs gate_proj/up_proj for both the dense MLP and the shared
+    # experts (the .self_attn.gate_proj is a gated-attention projection and is NOT
+    # fused, per the comment at line 491).
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -479,6 +513,12 @@ class AfmoeForCausalLM(
         ],
     }
 
+    # Checkpoint name remap applied by load_weights (line 586): the suffix
+    # '.router.gate.weight' is rewritten to '.gate.weight' (the plain nn.Linear router
+    # in AfmoeMoE, lines 84-90), and the stacked map fuses q/k/v into qkv_proj and
+    # gate+up into gate_up_proj for the dense MLP and the shared experts. Note: there is
+    # no remap for the expert_bias parameter (lines 91-93), so a checkpoint that names
+    # it differently leaves it as the uninitialized torch.empty it was created with.
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_suffix={
             ".router.gate.weight": ".gate.weight",
@@ -499,6 +539,8 @@ class AfmoeForCausalLM(
     fall_back_to_pt_during_load = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """AfmoeForCausalLM constructor."""
+        
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -548,6 +590,8 @@ class AfmoeForCausalLM(
         num_physical_experts: int,
         num_local_physical_experts: int,
     ) -> None:
+        """Update physical expert metadata across layers."""
+        
         assert self.num_local_physical_experts == num_local_physical_experts
         self.num_physical_experts = num_physical_experts
         self.num_local_physical_experts = num_local_physical_experts
@@ -563,6 +607,8 @@ class AfmoeForCausalLM(
                 moe.experts.update_expert_map()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
+        
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -572,15 +618,21 @@ class AfmoeForCausalLM(
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Forward pass."""
+        
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+        
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
+        
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

@@ -74,6 +74,12 @@ def token_choice_with_bias(
 
 @torch.compile(backend=current_platform.simple_compile_backend)
 def rms_norm_func(hidden_states, weight, variance_epsilon):
+
+    """
+    Apply RMS normalization to hidden states.
+    """
+
+
     input_dtype = hidden_states.dtype
     hidden_states = hidden_states.to(torch.float32)
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -83,13 +89,31 @@ def rms_norm_func(hidden_states, weight, variance_epsilon):
 
 
 class RMSNorm(nn.Module):
+
+    """
+    RMS normalization layer.
+    """
+
+
     def __init__(self, param_shape=None, eps=1e-6):
+
+        """
+        Initialize RMS normalization.
+        """
+
+
         super().__init__()
         self.weight = nn.Parameter(torch.ones(param_shape))
         self.variance_epsilon = eps
         set_weight_attrs(self.weight, {"weight_loader": row_parallel_weight_loader})
 
     def forward(self, hidden_states, residuals=None):
+
+        """
+        Apply RMS normalization.
+        """
+
+
         hidden_states = rms_norm_func(hidden_states, self.weight, self.variance_epsilon)
         return hidden_states, residuals
 
@@ -329,6 +353,12 @@ class Cohere2Moe(nn.Module):
 
 
 class Cohere2MoeDecoderLayer(nn.Module):
+
+    """
+    Single Cohere2 decoder layer.
+    """
+
+
     def __init__(
         self,
         config: CohereConfig,
@@ -431,6 +461,12 @@ class Cohere2MoeModel(nn.Module):
         )
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
+
+        """
+        Return input embedding layer.
+        """
+
+
         return self.embed_tokens(input_ids)
 
     def forward(
@@ -461,6 +497,12 @@ class Cohere2MoeModel(nn.Module):
 
 
 class Cohere2MoeForCausalLM(nn.Module, SupportsPP, SupportsQuant):
+
+    """
+    Cohere2 model for causal language modeling.
+    """
+
+
     is_text_generation_model = True
 
     hf_to_vllm_mapper = WeightsMapper(
@@ -508,6 +550,12 @@ class Cohere2MoeForCausalLM(nn.Module, SupportsPP, SupportsQuant):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+
+        """
+        Convert input IDs to embeddings.
+        """
+
+
         return self.model.get_input_embeddings(input_ids)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
@@ -530,5 +578,11 @@ class Cohere2MoeForCausalLM(nn.Module, SupportsPP, SupportsQuant):
         return self.logits_processor(self.model.embed_tokens, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights into Cohere2.
+        """
+
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

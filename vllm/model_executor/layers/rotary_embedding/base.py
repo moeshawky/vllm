@@ -137,6 +137,8 @@ class RotaryEmbeddingBase(CustomOp):
 
 
 class RotaryEmbedding(RotaryEmbeddingBase):
+    """Rotary embedding with multiple backend implementations."""
+
     def __init__(
         self,
         head_size: int,
@@ -224,6 +226,16 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query: torch.Tensor,
         key: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Apply rotary embedding using the CUDA backend.
+
+        Args:
+            positions: Token positions.
+            query: Query tensor.
+            key: Optional key tensor.
+
+        Returns:
+            Tuple of (query, key) with rotary embedding applied.
+        """
         if self.use_flashinfer:
             torch.ops.vllm.flashinfer_rotary_embedding(
                 positions,
@@ -257,6 +269,18 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query: torch.Tensor,
         key: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Apply rotary embedding using the ROCm/AITER backend.
+
+        Falls back to CUDA path if AITER is unavailable.
+
+        Args:
+            positions: Token positions.
+            query: Query tensor.
+            key: Optional key tensor.
+
+        Returns:
+            Tuple of (query, key) with rotary embedding applied.
+        """
         if self.use_aiter:
             cos_sin_cache = self._match_cos_sin_cache_dtype(query)
             self.rocm_aiter_triton_rotary_embedding(
@@ -276,6 +300,16 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query: torch.Tensor,
         key: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Apply rotary embedding using the XPU backend.
+
+        Args:
+            positions: Token positions.
+            query: Query tensor.
+            key: Optional key tensor.
+
+        Returns:
+            Tuple of (query, key) with rotary embedding applied.
+        """
         self._match_cos_sin_cache_dtype(query)
         # ops.rotary_embedding() is an in-place operation
         # that updates the query and key tensors.
@@ -301,6 +335,16 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         query: torch.Tensor,
         key: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Apply rotary embedding using the CPU backend.
+
+        Args:
+            positions: Token positions.
+            query: Query tensor.
+            key: Optional key tensor.
+
+        Returns:
+            Tuple of (query, key) with rotary embedding applied.
+        """
         from vllm import _custom_ops as ops
 
         cos_sin_cache = self._match_cos_sin_cache_dtype(query)
@@ -318,6 +362,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         return query, key
 
     def extra_repr(self) -> str:
+        """Return a string representation of the embedding parameters."""
         s = f"head_size={self.head_size}, rotary_dim={self.rotary_dim}"
         s += f", max_position_embeddings={self.max_position_embeddings}"
         s += f", base={self.base}, is_neox_style={self.is_neox_style}"

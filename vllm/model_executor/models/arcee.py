@@ -8,6 +8,15 @@
 # Inference-only Arcee (AFM) model – adds support for ReLU^2 feed-forward
 # activation.
 
+"""Inference-only Arcee (AFM) language model: a LLaMA-shaped decoder stack
+with ReLU^2 feed-forward activations instead of the gated SwiGLU MLP.
+
+ArceeMLP is the un-gated up/ReLU^2/down MLP; ArceeDecoderLayer reuses
+LlamaAttention with a bias policy read from the config; ArceeModel is
+the torch-compiled, pipeline-parallel backbone with EAGLE aux-hidden-state
+hooks; ArceeForCausalLM adds the ParallelLMHead, LogitsProcessor, and
+a weight mapper that drops LLaMA-style gate_proj weights."""
+
 from collections.abc import Iterable
 from itertools import islice
 from typing import Any
@@ -238,6 +247,8 @@ class ArceeModel(nn.Module, EagleModelMixin):
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
         # Embedding lookup (on first pipeline rank)
+        """Forward pass."""
+        
         if get_pp_group().is_first_rank:
             hidden_states = (
                 inputs_embeds

@@ -70,6 +70,8 @@ from .utils import (
 )
 
 
+
+"""Inference-only audioflamingo3 model."""
 class AudioFlamingo3FeatureInputs(TensorSchema):
     """
     Dimensions:
@@ -118,6 +120,7 @@ AudioFlamingo3Inputs: TypeAlias = (
 
 
 class AudioFlamingo3Encoder(Qwen2AudioEncoder):
+    """AudioFlamingo3 encoder using Qwen2 audio backbone."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -130,6 +133,7 @@ class AudioFlamingo3Encoder(Qwen2AudioEncoder):
         input_features: torch.Tensor | list[torch.Tensor],
         attention_mask: torch.Tensor = None,
     ):
+        """Forward pass."""
         if isinstance(input_features, list):
             input_features = torch.stack(input_features)
 
@@ -164,6 +168,7 @@ class AudioFlamingo3Encoder(Qwen2AudioEncoder):
 
 
 class AudioFlamingo3MultiModalProjector(nn.Module):
+    """Projector mapping audio features to language model space."""
     def __init__(self, config: PretrainedConfig):
         super().__init__()
         self.linear_1 = nn.Linear(
@@ -179,6 +184,7 @@ class AudioFlamingo3MultiModalProjector(nn.Module):
         )
 
     def forward(self, audio_features):
+        """Forward pass."""
         hidden_states = self.linear_1(audio_features)
         hidden_states = self.act(hidden_states)
         hidden_states = self.linear_2(hidden_states)
@@ -186,16 +192,21 @@ class AudioFlamingo3MultiModalProjector(nn.Module):
 
 
 class AudioFlamingo3ProcessingInfo(BaseProcessingInfo):
+    """Processing info for AudioFlamingo3 multimodal model."""
     def get_hf_config(self):
+        """Get HuggingFace configuration."""
         return self.ctx.get_hf_config(AudioFlamingo3Config)
 
     def get_hf_processor(self, **kwargs: object):
+        """Get HuggingFace processor."""
         return self.ctx.get_hf_processor(AudioFlamingo3Processor, **kwargs)
 
     def get_feature_extractor(self, **kwargs: object):
+        """Get the feature extractor."""
         return self.get_hf_processor(**kwargs).feature_extractor
 
     def get_data_parser(self) -> MultiModalDataParser:
+        """Get the data parser."""
         feature_extractor = self.get_feature_extractor()
         return AudioFlamingo3MultiModalDataParser(
             target_sr=feature_extractor.sampling_rate,
@@ -203,13 +214,16 @@ class AudioFlamingo3ProcessingInfo(BaseProcessingInfo):
         )
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Get supported multimodal limits."""
         return {"audio": 1}
 
 
 class AudioFlamingo3DummyInputsBuilder(
     BaseDummyInputsBuilder[AudioFlamingo3ProcessingInfo]
 ):
+    """Build dummy inputs for AudioFlamingo3 model profiling."""
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get dummy text input."""
         num_audios = mm_counts.get("audio", 0)
         hf_processor = self.info.get_hf_processor()
         audio_token = hf_processor.audio_token
@@ -221,6 +235,7 @@ class AudioFlamingo3DummyInputsBuilder(
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Get dummy multimodal data."""
         hf_processor = self.info.get_hf_processor()
         feature_extractor = self.info.get_feature_extractor()
         sampling_rate = feature_extractor.sampling_rate
@@ -360,6 +375,7 @@ def _count_audio_tokens_from_mask(
 
 
 class AudioFlamingo3MultiModalDataParser(MultiModalDataParser):
+    """Parse AudioFlamingo3 multimodal data items."""
     def _parse_audio_data(
         self,
         data: dict[str, torch.Tensor] | ModalityData[Any],
@@ -377,6 +393,7 @@ class AudioFlamingo3MultiModalDataParser(MultiModalDataParser):
 class AudioFlamingo3MultiModalProcessor(
     BaseMultiModalProcessor[AudioFlamingo3ProcessingInfo]
 ):
+    """Multimodal processor for AudioFlamingo3 model."""
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
@@ -460,6 +477,7 @@ class AudioFlamingo3MultiModalProcessor(
         chunk_counts = out_mm_data.get("chunk_counts")
 
         def get_replacement_audioflamingo3(item_idx: int):
+            """Get audio token replacement."""
             if feature_attention_mask is not None:
                 num_features = _count_audio_tokens_from_mask(
                     feature_attention_mask,
@@ -497,6 +515,7 @@ class AudioFlamingo3MultiModalProcessor(
 class AudioFlamingo3ForConditionalGeneration(
     nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
 ):
+    """AudioFlamingo3 model for conditional generation."""
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
@@ -653,6 +672,7 @@ class AudioFlamingo3ForConditionalGeneration(
         return tuple(grouped_embeddings)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """embed_multimodal."""
         audio_input = self._parse_and_validate_audio_input(**kwargs)
         if audio_input is None:
             return []
@@ -667,6 +687,7 @@ class AudioFlamingo3ForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -682,8 +703,10 @@ class AudioFlamingo3ForConditionalGeneration(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

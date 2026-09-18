@@ -50,6 +50,11 @@ def _assert_cutedsl_dcp_merge_supported(
     topk_indices: torch.Tensor,
     k: int,
 ) -> None:
+    """Verify that CuteDSL DCP merge prerequisites are met.
+
+    Raises:
+        RuntimeError: If constraints are not satisfied.
+    """
     # The DCP merge only supports the CuteDSL path (Triton pack kernel + CuteDSL
     # stable-topk selector); there is no PyTorch fallback. The first cut targets
     # Blackwell/Hopper with index_topk in (512, 1024, 2048) (the selector's radix
@@ -216,6 +221,20 @@ def fused_indexer_q_rope_quant(
     head_scale: float,
     is_neox: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fuse RoPE quantization into a single Triton kernel.
+
+    Args:
+        positions: Token positions.
+        q: Query tensor (bf16).
+        cos_sin_cache: Cosine/sine cache.
+        weights: Weight tensor.
+        softmax_scale: Softmax scale factor.
+        head_scale: Per-head scale factor.
+        is_neox: Whether to use Neox-style layout.
+
+    Returns:
+        Tuple of (q_fp8, weights_out).
+    """
     assert current_platform.is_cuda()
     assert q.dtype == torch.bfloat16
     assert q.shape[-1] == 128
@@ -317,6 +336,35 @@ def sparse_attn_indexer(
     cp_kv_cache_interleave_size: int = 1,
     skip_topk_buffer_clear: bool = False,
 ) -> torch.Tensor:
+    """Route sparse attention indexer computation.
+
+    Args:
+        hidden_states: Input hidden states.
+        k_cache_prefix: Key cache layer name prefix.
+        kv_cache: Key-value cache tensor.
+        q_quant: Quantized query tensor.
+        q_scale: Quantization scale for query.
+        k: Key tensor.
+        weights: Weight tensor.
+        quant_block_size: Quantization block size.
+        scale_fmt: Scale format string.
+        topk_tokens: Number of top-K tokens.
+        head_dim: Head dimension.
+        max_model_len: Maximum model length.
+        total_seq_lens: Total sequence lengths.
+        topk_indices_buffer: Buffer for top-K indices.
+        skip_k_cache_insert: Whether to skip K cache insert.
+        use_pcp: Whether to use prefill context parallel.
+        dense_mha_metadata_layer_name: Dense MHA layer name.
+        use_fp4_cache: Whether to use FP4 cache.
+        dcp_rank: DCP rank.
+        dcp_world_size: DCP world size.
+        cp_kv_cache_interleave_size: CP interleave size.
+        skip_topk_buffer_clear: Whether to skip buffer clear.
+
+    Returns:
+        Top-K indices buffer.
+    """
     # careful! this will be None in dummy run
     forward_context = get_forward_context()
     attn_metadata = forward_context.attn_metadata
@@ -713,6 +761,11 @@ def sparse_attn_indexer_fake(
     cp_kv_cache_interleave_size: int = 1,
     skip_topk_buffer_clear: bool = False,
 ) -> torch.Tensor:
+    """Fake implementation returning the topk indices buffer unchanged.
+
+    Returns:
+        The unmodified topk_indices_buffer.
+    """
     return topk_indices_buffer
 
 
@@ -752,6 +805,21 @@ class SparseAttnIndexer(CustomOp):
         use_fp4_cache: bool = False,
         compress_ratio: int = 1,
     ):
+        """Initialize the SparseAttnIndexer.
+
+        Args:
+            k_cache: Key cache object.
+            quant_block_size: Quantization block size.
+            scale_fmt: Scale format string.
+            topk_tokens: Number of top-K tokens.
+            head_dim: Head dimension.
+            max_model_len: Maximum model length.
+            max_total_seq_len: Maximum total sequence length.
+            topk_indices_buffer: Buffer for top-K indices.
+            skip_k_cache_insert: Skip K cache insert.
+            use_fp4_cache: Use FP4 cache format.
+            compress_ratio: Compression ratio.
+        """
         super().__init__()
         self.k_cache = k_cache
         self.quant_block_size = quant_block_size
@@ -786,6 +854,19 @@ class SparseAttnIndexer(CustomOp):
         k: torch.Tensor | None,
         weights: torch.Tensor,
     ):
+        """Forward pass using the native implementation.
+
+        Routes to CUDA, ROCm, or raises NotImplementedError.
+
+        Args:
+            hidden_states: Input hidden states.
+            q_quant: Quantized query tensor.
+            k: Key tensor.
+            weights: Weight tensor.
+
+        Returns:
+            Computed output tensor.
+        """
         if current_platform.is_cuda() or current_platform.is_xpu():
             return self.forward_cuda(hidden_states, q_quant, k, weights)
         elif current_platform.is_rocm():
@@ -803,6 +884,17 @@ class SparseAttnIndexer(CustomOp):
         k: torch.Tensor | None,
         weights: torch.Tensor,
     ):
+        """Forward pass on CUDA.
+
+        Args:
+            hidden_states: Input hidden states.
+            q_quant: Quantized query tensor.
+            k: Key tensor.
+            weights: Weight tensor.
+
+        Returns:
+            Computed output tensor.
+        """
         # FP8 path: single tensor (per-token scale is folded into `weights`).
         # FP4 path: (values, scales) tuple with scales required by the kernel.
         if isinstance(q_quant, tuple):
@@ -840,6 +932,17 @@ class SparseAttnIndexer(CustomOp):
         k: torch.Tensor | None,
         weights: torch.Tensor,
     ):
+        """Forward pass on XPU.
+
+        Args:
+            hidden_states: Input hidden states.
+            q_fp8: FP8 quantized query tensor.
+            k: Key tensor.
+            weights: Weight tensor.
+
+        Returns:
+            Computed output tensor.
+        """
         return self.forward_cuda(hidden_states, q_fp8, k, weights)
 
     def forward_hip(
@@ -849,6 +952,17 @@ class SparseAttnIndexer(CustomOp):
         k: torch.Tensor | None,
         weights: torch.Tensor,
     ):
+        """Forward pass on ROCm.
+
+        Args:
+            hidden_states: Input hidden states.
+            q_quant: Quantized query tensor.
+            k: Key tensor.
+            weights: Weight tensor.
+
+        Returns:
+            Computed output tensor.
+        """
         assert not self.use_fp4_cache, "AMD platform doesn't support fp4 cache yet"
         assert isinstance(q_quant, torch.Tensor), (
             "AMD sparse_attn_indexer expects a single FP8 q_quant tensor"

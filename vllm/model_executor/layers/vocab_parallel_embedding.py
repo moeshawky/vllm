@@ -92,6 +92,16 @@ def pad_vocab_size(vocab_size: int, pad_to: int = DEFAULT_VOCAB_PADDING_SIZE) ->
 def vocab_range_from_per_partition_vocab_size(
     per_partition_vocab_size: int, rank: int, offset: int = 0
 ) -> Sequence[int]:
+    """Get the vocab range for a per-partition split.
+
+    Args:
+        per_partition_vocab_size: Size of each partition.
+        rank: Tensor parallel rank.
+        offset: Offset into the vocabulary.
+
+    Returns:
+        Tuple of (start, end) indices.
+    """
     index_f = rank * per_partition_vocab_size
     index_l = index_f + per_partition_vocab_size
     return index_f + offset, index_l + offset
@@ -249,6 +259,18 @@ class VocabParallelEmbedding(PluggableLayer):
         *,
         disable_tp: bool = False,
     ):
+        """Initialize VocabParallelEmbedding.
+
+        Args:
+            num_embeddings: Vocabulary size.
+            embedding_dim: Embedding dimension.
+            params_dtype: Parameter dtype.
+            org_num_embeddings: Original vocab size.
+            padding_size: Padding size.
+            quant_config: Quantization config.
+            prefix: Parameter prefix.
+            disable_tp: Disable tensor parallelism.
+        """
         super().__init__()
 
         # Keep the input dimensions.
@@ -334,6 +356,7 @@ class VocabParallelEmbedding(PluggableLayer):
         self.update_param_tp_status()
 
     def update_param_tp_status(self):
+        """Update tensor parallel status for all parameters."""
         for param in self.parameters():
             if isinstance(param, BasevLLMParameter):
                 param.tp_rank = self.tp_rank
@@ -443,6 +466,12 @@ class VocabParallelEmbedding(PluggableLayer):
         return ret
 
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
+        """Load sharded weights into the embedding parameter.
+
+        Args:
+            param: The parameter to load into.
+            loaded_weight: The weight to load.
+        """
         output_dim = getattr(param, "output_dim", None)
         packed_dim = getattr(param, "packed_dim", None)
 
@@ -485,6 +514,14 @@ class VocabParallelEmbedding(PluggableLayer):
         param[loaded_weight.shape[0] :].data.fill_(0)
 
     def forward(self, input_):
+        """Forward pass for vocab parallel embedding.
+
+        Args:
+            input_: Input token IDs.
+
+        Returns:
+            Embedded tensor.
+        """
         if self.tp_size > 1:
             # Build the mask.
             masked_input, input_mask = get_masked_input_and_mask(
@@ -507,6 +544,7 @@ class VocabParallelEmbedding(PluggableLayer):
         return output_parallel
 
     def extra_repr(self) -> str:
+        """Return a string representation of the embedding parameters."""
         s = f"num_embeddings={self.num_embeddings}"
         s += f", num_embeddings_per_partition={self.num_embeddings_per_partition}"
         s += f", embedding_dim={self.embedding_dim}"
@@ -550,6 +588,19 @@ class ParallelLMHead(VocabParallelEmbedding):
         *,
         disable_tp: bool = False,
     ):
+        """Initialize ParallelLMHead.
+
+        Args:
+            num_embeddings: Vocabulary size.
+            embedding_dim: Embedding dimension.
+            bias: Whether to use bias.
+            params_dtype: Parameter dtype.
+            org_num_embeddings: Original vocab size.
+            padding_size: Padding size.
+            quant_config: Quantization config.
+            prefix: Parameter prefix.
+            disable_tp: Disable tensor parallelism.
+        """
         super().__init__(
             num_embeddings,
             embedding_dim,

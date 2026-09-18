@@ -28,6 +28,7 @@ from .xdrope import XDRotaryEmbedding
 from .yarn_scaling_rope import YaRNScalingRotaryEmbedding
 
 _ROPE_DICT: dict[tuple[Any, ...], RotaryEmbedding] = {}
+# Cache: (head_size, rotary_dim, ...) → RotaryEmbedding instance
 
 
 def get_rope(
@@ -38,6 +39,19 @@ def get_rope(
     dtype: torch.dtype | None = None,
     dual_chunk_attention_config: dict[str, Any] | None = None,
 ) -> RotaryEmbedding:
+    """Create or retrieve a cached RotaryEmbedding instance.
+
+    Args:
+        head_size: Size of each attention head.
+        max_position: Maximum sequence length.
+        is_neox_style: Whether to use Neox-style rotation.
+        rope_parameters: Optional RoPE configuration parameters.
+        dtype: Data type for the embedding cache.
+        dual_chunk_attention_config: Config for dual-chunk attention.
+
+    Returns:
+        The RotaryEmbedding instance for the given parameters.
+    """
     if dtype is None:
         dtype = torch.get_default_dtype()
     if rope_parameters is not None:

@@ -83,6 +83,12 @@ def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
 
 
 class BloomAttention(nn.Module):
+
+    """
+    BLOOM attention with causal masking.
+    """
+
+
     def __init__(
         self,
         config: BloomConfig,
@@ -148,6 +154,12 @@ class BloomAttention(nn.Module):
 
 
 class BloomMLP(nn.Module):
+
+    """
+    BLOOM MLP with activation and projection.
+    """
+
+
     def __init__(
         self,
         config: BloomConfig,
@@ -178,6 +190,12 @@ class BloomMLP(nn.Module):
 
 
 class BloomBlock(nn.Module):
+
+    """
+    Single BLOOM transformer block.
+    """
+
+
     def __init__(
         self,
         config: BloomConfig,
@@ -235,6 +253,12 @@ class BloomBlock(nn.Module):
 
 @support_torch_compile
 class BloomModel(nn.Module):
+
+    """
+    BLOOM model with embedding and blocks.
+    """
+
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -270,6 +294,12 @@ class BloomModel(nn.Module):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+
+        """
+        Convert input IDs to embeddings.
+        """
+
+
         return self.word_embeddings(input_ids)
 
     def forward(
@@ -310,11 +340,23 @@ class BloomModel(nn.Module):
             yield name, loaded_weight
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights into BLOOM.
+        """
+
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(self._repack_qkv(weights))
 
 
 class BloomForCausalLM(nn.Module, SupportsPP, SupportsQuant):
+
+    """
+    BLOOM model for causal language modeling.
+    """
+
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config

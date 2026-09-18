@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""W8A8 quantization utilities.
+
+Provides helpers for CUTLASS FP8 kernel support checks,
+per-tensor dequantization, channelwise scale conversion,
+and FP8-to-e4m3fnuz normalization.
+"""
 
 
 import torch
@@ -9,6 +15,11 @@ from vllm.platforms import current_platform
 
 
 def cutlass_fp8_supported() -> bool:
+    """Check if the current platform supports CUTLASS FP8 kernels.
+
+    Returns:
+        True if CUTLASS scaled MM supports FP8 on this platform.
+    """
     if not current_platform.is_cuda():
         return False
 
@@ -19,6 +30,11 @@ def cutlass_fp8_supported() -> bool:
 
 
 def cutlass_block_fp8_supported() -> bool:
+    """Check if the current platform supports CUTLASS block FP8 kernels.
+
+    Returns:
+        True if CUTLASS supports block FP8 on this platform.
+    """
     if not current_platform.is_cuda():
         return False
 
@@ -29,6 +45,11 @@ def cutlass_block_fp8_supported() -> bool:
 
 
 def cutlass_group_gemm_supported() -> bool:
+    """Check if the current platform supports CUTLASS grouped GEMM.
+
+    Returns:
+        True if CUTLASS group GEMM is supported on this platform.
+    """
     if not current_platform.is_cuda():
         return False
 
@@ -44,12 +65,29 @@ CUTLASS_BLOCK_FP8_SUPPORTED = cutlass_block_fp8_supported()
 def per_tensor_dequantize(
     tensor: torch.Tensor, inv_scale: float | torch.Tensor
 ) -> torch.Tensor:
+    """Dequantize a per-tensor quantized weight tensor.
+
+    Args:
+        tensor: Quantized weight tensor in FP8.
+        inv_scale: Inverse scale factor for dequantization.
+
+    Returns:
+        Dequantized tensor in float16.
+    """
     fake_qweight = tensor.to(torch.float16)
     dq_weight = fake_qweight * inv_scale
     return dq_weight
 
 
 def all_close_1d(x: torch.Tensor) -> bool:
+    """Check if all elements in a 1D tensor are close to the first.
+
+    Args:
+        x: 1D tensor to check.
+
+    Returns:
+        True if all elements are approximately equal to x[0].
+    """
     assert len(x.shape) == 1
     return all(torch.allclose(x[0], x[i]) for i in range(x.shape[0]))
 
@@ -57,6 +95,15 @@ def all_close_1d(x: torch.Tensor) -> bool:
 def convert_to_channelwise(
     weight_scale: torch.Tensor, logical_widths: list[int]
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Convert a uniform weight scale to per-channel scales.
+
+    Args:
+        weight_scale: Uniform scale tensor.
+        logical_widths: List of logical widths per channel.
+
+    Returns:
+        Tuple of (channelwise_scale, expanded_scale).
+    """
     # Create channelwise buffer
     weight_scale_channel = torch.empty(
         (sum(logical_widths), 1), dtype=torch.float32, device=weight_scale.device
@@ -75,6 +122,16 @@ def convert_to_channelwise(
 def requantize_with_max_scale(
     weight: torch.Tensor, weight_scale: torch.Tensor, logical_widths: list[int]
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Requantize weights using the maximum scale across channels.
+
+    Args:
+        weight: Quantized weight tensor.
+        weight_scale: Per-channel weight scales.
+        logical_widths: Logical widths for each shard.
+
+    Returns:
+        Tuple of (max_scale, requantized_weight).
+    """
     # Max scale to be used for requanitzation.
     max_w_scale = weight_scale.max()
 
@@ -111,6 +168,20 @@ def normalize_e4m3fn_to_e4m3fnuz(
     weight_scale: torch.Tensor,
     input_scale: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Convert FP8 e4m3fn values to e4m3fnuz representation.
+
+    The NaN value in e4m3fnuz at bit pattern 128 is replaced
+    with zero to match the e4m3fn zero-point convention.
+    Scaling factors are doubled to preserve the effective values.
+
+    Args:
+        weight: FP8 e4m3fn weight tensor.
+        weight_scale: Weight scale tensor.
+        input_scale: Optional input scale tensor.
+
+    Returns:
+        Tuple of (converted weight, converted weight scale, converted input scale).
+    """
     assert weight.dtype == torch.float8_e4m3fn
     # The bits pattern 10000000(-128) represents zero in e4m3fn
     # but NaN in e4m3fnuz. So here we set it to 0.

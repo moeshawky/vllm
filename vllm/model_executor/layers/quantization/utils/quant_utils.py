@@ -120,15 +120,35 @@ class GroupShape(_GroupShape):
     PER_CHANNEL: ClassVar["GroupShape"]
 
     def is_per_tensor(self) -> bool:
+        """Check if this is a per-tensor quantization shape.
+
+        Returns:
+            True if both row and col are -1 (per-tensor).
+        """
         return self.row == -1 and self.col == -1
 
     def is_per_token(self) -> bool:
+        """Check if this is a per-token quantization shape.
+
+        Returns:
+            True if row is 1 and col is -1 (per-token).
+        """
         return self.row == 1 and self.col == -1
 
     def is_per_channel(self) -> bool:
+        """Check if this is a per-channel quantization shape.
+
+        Returns:
+            True if row is -1 and col is 1 (per-channel).
+        """
         return self.row == -1 and self.col == 1
 
     def is_per_group(self) -> bool:
+        """Check if this is a per-group quantization shape.
+
+        Returns:
+            True if row is 1 and col >= 1 (per-group).
+        """
         return self.row == 1 and self.col >= 1
 
 
@@ -323,6 +343,17 @@ def create_fp8_quant_key(
     symmetric: bool = True,
     scale_dtype: torch.dtype = torch.float32,
 ) -> QuantKey:
+    """Create a QuantKey for FP8 quantization.
+
+    Args:
+        static: Whether the scale is static or dynamic.
+        group_shape: The quantization group shape.
+        symmetric: Whether quantization is symmetric.
+        scale_dtype: Dtype for the scale descriptor.
+
+    Returns:
+        A QuantKey configured for FP8 quantization.
+    """
     scale_desc = ScaleDesc(scale_dtype, static, group_shape)
     return QuantKey(FP8_DTYPE, scale_desc, symmetric=symmetric)
 
@@ -351,6 +382,16 @@ def _normalize_quant_group_shape(x: torch.Tensor, group_shape: GroupShape):
 # NOTE this function does not explicitly broadcast dimensions
 # with an extent of 1, since this can be done implicitly by pytorch
 def group_broadcast(t, shape):
+    """Broadcast a tensor to match a target shape via numpy-style
+    semantics.
+
+    Args:
+        t: Input tensor to broadcast.
+        shape: Target shape to broadcast to.
+
+    Returns:
+        The broadcasted tensor.
+    """
     for i, s in enumerate(shape):
         # If tensor has fewer dimensions than target shape, treat missing
         # dimensions as size 1 (standard PyTorch broadcasting behavior)
@@ -480,6 +521,17 @@ def scaled_dequantize(
     group_shape: GroupShape | None = None,
     out_dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
+    """Dequantize a scaled quantized tensor.
+
+    Args:
+        x_q: Quantized tensor.
+        x_s: Scale tensor.
+        group_shape: Quantization group shape.
+        out_dtype: Target output dtype.
+
+    Returns:
+        Dequantized tensor in the specified output dtype.
+    """
     x_s = prep_scale_for_group_broadcast(x_s, x_q, group_shape)
     if group_shape is not None:
         assert x_s.shape[-1] == x_q.shape[-1] // group_shape[1]
@@ -489,6 +541,18 @@ def scaled_dequantize(
 
 
 def get_attribute_fallback(obj, attributes: list[str]):
+    """Retrieve the first available attribute from an object.
+
+    Args:
+        obj: Object to search for attributes.
+        attributes: List of attribute names to check in order.
+
+    Returns:
+        The value of the first existing attribute.
+
+    Raises:
+        AttributeError: If none of the attributes exist on obj.
+    """
     for attr in attributes:
         if hasattr(obj, attr):
             return getattr(obj, attr)
@@ -561,6 +625,17 @@ def get_and_maybe_dequant_weights(
 def pack_quantized_values_into_int32(
     w_q: torch.Tensor, wtype: ScalarType, packed_dim: int = 0
 ):
+    """Pack quantized values into int32 by packing multiple values
+    per int32 element along the packed dimension.
+
+    Args:
+        w_q: Quantized weight tensor.
+        wtype: Scalar type defining bit width.
+        packed_dim: Dimension along which to pack.
+
+    Returns:
+        Tensor with values packed into int32.
+    """
     # move dim to pack to the end
     perm = (*[i for i in range(len(w_q.shape)) if i != packed_dim], packed_dim)
     inv_perm = tuple(perm.index(i) for i in range(len(perm)))
@@ -583,6 +658,16 @@ def pack_quantized_values_into_int32(
 def unpack_quantized_values_into_int32(
     w_q: torch.Tensor, wtype: ScalarType, packed_dim: int = 0
 ):
+    """Unpack int32 values back into individual quantized values.
+
+    Args:
+        w_q: Packed quantized weight tensor.
+        wtype: Scalar type defining bit width.
+        packed_dim: Dimension along which to unpack.
+
+    Returns:
+        Tensor with values unpacked from int32.
+    """
     # move dim to pack to the end
     perm = (*[i for i in range(len(w_q.shape)) if i != packed_dim], packed_dim)
     inv_perm = tuple(perm.index(i) for i in range(len(perm)))
@@ -608,17 +693,44 @@ def is_layer_skipped(
     *,
     match_mode: Literal["exact", "substring", "suffix"] = "exact",
 ) -> bool:
+    """Check whether a layer prefix should be skipped during
+    quantization.
+
+    Args:
+        prefix: Module path prefix to check.
+        ignored_layers: List of layer names to skip.
+        fused_mapping: Mapping of fused to unfused module names.
+        match_mode: Matching strategy (exact, substring, suffix).
+
+    Returns:
+        True if the layer should be skipped.
+    """
     def prefix_full_match(prefix: str, ignored_layers: list[str]) -> bool:
+        """Check if prefix exactly matches an ignored layer.
+
+        Returns True if prefix is a direct entry in ignored_layers.
+        """
         return prefix in ignored_layers
 
     # For case like: ignored_layers = ["self_attn"]
     def substr_match(prefix: str, ignored_layers: list[str]) -> bool:
+        """Check if any ignored layer is a substring of prefix.
+
+        Returns True if any layer in ignored_layers appears
+        as a substring within prefix.
+        """
         return any(layer in prefix for layer in ignored_layers)
 
     # Match abbreviated module paths at a component boundary. For example,
     # ``b_proj`` matches ``model.layers.0.self_attn.b_proj`` but not
     # ``model.layers.0.self_attn.q_b_proj``.
     def suffix_match(prefix: str, ignored_layers: list[str]) -> bool:
+        """Check if prefix matches an ignored layer at a component
+        boundary.
+
+        Returns True if prefix equals a layer or ends with
+        ".layer".
+        """
         return any(
             prefix == layer or prefix.endswith(f".{layer}") for layer in ignored_layers
         )
@@ -679,6 +791,14 @@ def is_layer_skipped(
 
 
 def get_pack_factor(num_bits):
+    """Compute the number of values packed per int32 element.
+
+    Args:
+        num_bits: Bit width of each quantized value.
+
+    Returns:
+        Number of values per int32 (32 // num_bits).
+    """
     assert 32 % num_bits == 0, f"Unsupported num_bits = {num_bits}"
     return 32 // num_bits
 
@@ -689,6 +809,18 @@ def permute_rows(
     group_size: int,
     test_perm: torch.Tensor | None = None,
 ):
+    """Permute rows of quantized weights and references by a
+    random permutation.
+
+    Args:
+        q_w: Quantized weight tensor.
+        w_ref: Reference weight tensor.
+        group_size: Quantization group size.
+        test_perm: Optional permutation tensor.
+
+    Returns:
+        Tuple of permuted (w_ref, q_w, g_idx, rand_perm).
+    """
     assert q_w.shape == w_ref.shape
 
     orig_device = q_w.device
@@ -720,6 +852,18 @@ def quantize_weights(
     zero_points: bool = False,
     ref_zero_points_after_scales: bool = False,
 ):
+    """Quantize a weight tensor to integer values.
+
+    Args:
+        w: Floating point weight tensor.
+        quant_type: Target integer quantization type.
+        group_size: Group size for quantization.
+        zero_points: Whether to use zero-point quantization.
+        ref_zero_points_after_scales: Compute zero points after scales.
+
+    Returns:
+        Tuple of (reference tensor, quantized tensor, scales, zero points).
+    """
     assert quant_type.is_integer(), (
         "Floating point quantization may work but has not been tested"
     )
@@ -787,6 +931,15 @@ def quantize_weights(
     if group_size is not None and group_size < size_k:
 
         def reshape_w(w):
+            """Reshape weights back to original dimensions after
+            group-wise quantization.
+
+            Args:
+                w: Tensor in group-wise layout.
+
+            Returns:
+                Tensor reshaped to [size_k, size_n].
+            """
             w = w.reshape((group_size, -1, size_n))
             w = w.permute(1, 0, 2)
             w = w.reshape((size_k, size_n)).contiguous()
@@ -819,6 +972,18 @@ def gptq_quantize_weights(
     act_order: bool,
     test_perm: torch.Tensor | None = None,
 ):
+    """Quantize weights using the GPTQ algorithm.
+
+    Args:
+        w: Weight tensor to quantize.
+        quant_type: Target quantization type.
+        group_size: Group size for GPTQ quantization.
+        act_order: Whether to apply act_order permutation.
+        test_perm: Optional permutation tensor for testing.
+
+    Returns:
+        Tuple of (reference, quantized, scales, g_idx, rand_perm).
+    """
     size_k, _ = w.shape
 
     assert w.is_floating_point(), "w must be float"
@@ -847,6 +1012,15 @@ def gptq_quantize_weights(
 
 
 def sort_weights(q_w: torch.Tensor, g_idx: torch.Tensor):
+    """Sort quantized weights and indices by group index.
+
+    Args:
+        q_w: Quantized weight tensor.
+        g_idx: Group index tensor.
+
+    Returns:
+        Tuple of (sorted q_w, sorted g_idx, sort_indices).
+    """
     orig_device = q_w.device
 
     sort_indices = torch.argsort(g_idx).to(dtype=torch.int32)  # Sort based on g_idx
@@ -867,6 +1041,17 @@ def pack_rows(
     size_k: int,
     size_n: int,
 ):
+    """Pack rows of quantized weights into a packed dimension.
+
+    Args:
+        q_w: Quantized weight tensor.
+        num_bits: Bit width per value.
+        size_k: Number of rows.
+        size_n: Number of columns.
+
+    Returns:
+        Packed weight tensor.
+    """
     assert q_w.shape == (size_k, size_n)
 
     pack_factor = get_pack_factor(num_bits)
@@ -891,6 +1076,17 @@ def pack_cols(
     size_k: int,
     size_n: int,
 ):
+    """Pack columns of quantized weights into a packed dimension.
+
+    Args:
+        q_w: Quantized weight tensor.
+        num_bits: Bit width per value.
+        size_k: Number of rows.
+        size_n: Number of columns.
+
+    Returns:
+        Packed weight tensor.
+    """
     assert q_w.shape == (size_k, size_n)
 
     pack_factor = get_pack_factor(num_bits)
@@ -917,6 +1113,17 @@ def unpack_cols(
     size_k: int,
     size_n: int,
 ):
+    """Unpack column-packing back to original weight dimensions.
+
+    Args:
+        packed_q_w: Packed weight tensor.
+        num_bits: Bit width per value.
+        size_k: Number of rows.
+        size_n: Number of columns.
+
+    Returns:
+        Unpacked weight tensor.
+    """
     pack_factor = get_pack_factor(num_bits)
     assert size_n % pack_factor == 0
     assert packed_q_w.shape == (size_k, size_n // pack_factor), (
@@ -948,6 +1155,17 @@ def gptq_pack(
     size_k: int,
     size_n: int,
 ):
+    """Pack GPTQ-quantized weights using row packing.
+
+    Args:
+        q_w: Quantized weight tensor.
+        num_bits: Bit width per value.
+        size_k: Number of rows.
+        size_n: Number of columns.
+
+    Returns:
+        Packed weight tensor.
+    """
     return pack_rows(q_w, num_bits, size_k, size_n)
 
 
@@ -957,6 +1175,17 @@ def awq_pack(
     size_k: int,
     size_n: int,
 ):
+    """Pack AWQ-quantized weights with column interleaving.
+
+    Args:
+        q_w: Quantized weight tensor.
+        num_bits: Bit width per value.
+        size_k: Number of rows.
+        size_n: Number of columns.
+
+    Returns:
+        Packed weight tensor.
+    """
     assert q_w.shape == (size_k, size_n)
 
     # Interleave column dim (for the dequantize code) and pack it to int32

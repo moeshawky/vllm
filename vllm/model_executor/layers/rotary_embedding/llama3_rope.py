@@ -9,6 +9,12 @@ from .base import RotaryEmbedding
 
 
 class Llama3RotaryEmbedding(RotaryEmbedding):
+    """Llama-3 style rotary embedding with dynamic frequency scaling.
+
+    Applies frequency interpolation based on low and high frequency
+    factors to extend context length beyond the original training.
+    """
+
     def __init__(
         self,
         head_size: int,
@@ -22,6 +28,20 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
         high_freq_factor: float,
         orig_max_position: int,
     ) -> None:
+        """Initialize Llama3RotaryEmbedding.
+
+        Args:
+            head_size: Size of each attention head.
+            rotary_dim: Dimension of the rotary embedding.
+            max_position_embeddings: Maximum position embeddings.
+            base: Base frequency.
+            is_neox_style: Whether to use Neox-style rotation.
+            dtype: Data type.
+            scaling_factor: Factor for scaling frequencies.
+            low_freq_factor: Low frequency threshold factor.
+            high_freq_factor: High frequency threshold factor.
+            orig_max_position: Original maximum position.
+        """
         self.scaling_factor = scaling_factor
         self.low_freq_factor = low_freq_factor
         self.high_freq_factor = high_freq_factor
@@ -31,6 +51,17 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
         )
 
     def _compute_inv_freq(self, base: float) -> torch.Tensor:
+        """Compute inverse frequencies with Llama-3 scaling.
+
+        Applies smooth interpolation between low and high
+        frequency factors based on the original max position.
+
+        Args:
+            base: Base frequency.
+
+        Returns:
+            Tensor of inverse frequencies.
+        """
         inv_freqs = super()._compute_inv_freq(base)
         low_freq_wavelen = self.orig_max_position / self.low_freq_factor
         high_freq_wavelen = self.orig_max_position / self.high_freq_factor

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""MXFP8 quantization utilities.
+
+Provides Triton kernels and helpers for quantizing weights and
+activations to the MXFP8 format (e4m3, packed 2 values per byte).
+"""
 
 import torch
 
@@ -218,6 +223,16 @@ def mxfp8_e4m3_quantize(
     is_sf_swizzled_layout: bool = False,
     alignment: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a tensor to MXFP8 (e4m3 format).
+
+    Args:
+        x: Input tensor to quantize.
+        is_sf_swizzled_layout: Whether scales use swizzled layout.
+        alignment: Alignment constraint for quantization.
+
+    Returns:
+        Tuple of (quantized tensor, scale tensor).
+    """
     return torch.ops.vllm.mxfp8_quantize(x, is_sf_swizzled_layout, alignment)
 
 
@@ -287,4 +302,13 @@ direct_register_custom_op(
 def xpu_mxfp8_quantize(
     x: torch.Tensor, dtype: torch.dtype | None = None
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a tensor to MXFP8 using the XPU custom op.
+
+    Args:
+        x: Input tensor to quantize.
+        dtype: Optional target dtype.
+
+    Returns:
+        Tuple of (quantized tensor, scale tensor).
+    """
     return torch.ops.vllm.xpu_mxfp8_quantize(x, dtype)

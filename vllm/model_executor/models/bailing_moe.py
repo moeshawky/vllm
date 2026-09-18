@@ -69,6 +69,7 @@ from .utils import (
 
 
 class BailingAttention(nn.Module):
+    """Bailing MoE attention module with rotary embeddings."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -155,6 +156,7 @@ class BailingAttention(nn.Module):
         hidden_states: torch.Tensor,
         position_ids: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass."""
         qkv, _ = self.query_key_value(hidden_states)
         q, k, v = qkv.split(
             [self.q_size_per_rank, self.kv_size_per_rank, self.kv_size_per_rank], dim=-1
@@ -177,6 +179,7 @@ class BailingAttention(nn.Module):
 
 
 class BailingMLP(nn.Module):
+    """Bailing MoE MLP with gate-up and down projections."""
     def __init__(
         self,
         intermediate_size: int,
@@ -204,6 +207,7 @@ class BailingMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Forward pass."""
         x, _ = self.gate_up_proj(x)
         x = self.act_fn(x)
         x, _ = self.down_proj(x)
@@ -211,6 +215,7 @@ class BailingMLP(nn.Module):
 
 
 class BailingMoE(nn.Module):
+    """Bailing MoE expert layer with routed and shared experts."""
     def __init__(
         self,
         intermediate_size: int,
@@ -308,6 +313,7 @@ class BailingMoE(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         num_tokens, hidden_size = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_size)
 
@@ -322,6 +328,7 @@ class BailingMoE(nn.Module):
 
 
 class BailingMoeBlock(nn.Module):
+    """Single Bailing MoE decoder layer with attention and MLP."""
     def __init__(
         self,
         config: PretrainedConfig,
@@ -357,6 +364,7 @@ class BailingMoeBlock(nn.Module):
         position_ids: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Forward pass."""
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
@@ -375,6 +383,7 @@ class BailingMoeBlock(nn.Module):
 
 @support_torch_compile
 class BailingMoeModel(nn.Module):
+    """Bailing MoE model with embedding and decoder layers."""
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # .experts.gate_up_proj must be handled by MoERunner.load_weights for EP
@@ -436,6 +445,7 @@ class BailingMoeModel(nn.Module):
             self.norm = PPMissingLayer()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
         return self.word_embeddings(input_ids)
 
     def forward(
@@ -445,6 +455,7 @@ class BailingMoeModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -475,11 +486,13 @@ class BailingMoeModel(nn.Module):
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 class BailingMoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
+    """Bailing MoE model for causal language modeling."""
     packed_modules_mapping = {
         "query_key_value": ["query_key_value"],
         "gate_up_proj": [
@@ -526,6 +539,7 @@ class BailingMoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Embed input token IDs."""
         return self.model.embed_input_ids(input_ids)
 
     def forward(
@@ -535,6 +549,7 @@ class BailingMoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
         model_output = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -544,6 +559,7 @@ class BailingMoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
@@ -557,9 +573,11 @@ class BailingMoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
             yield name, loaded_weight
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights from checkpoint."""
         loader = AutoWeightsLoader(self)
         return loader.load_weights(self._normalize_lm_head(weights))
 
 
 class BailingMoeV2ForCausalLM(BailingMoeForCausalLM):
+    """Bailing MoE v2 model for causal language modeling."""
     pass

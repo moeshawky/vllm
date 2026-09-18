@@ -77,6 +77,12 @@ Blip2ImageInputs: TypeAlias = Blip2ImagePixelInputs | Blip2ImageEmbeddingInputs
 
 
 class Blip2QFormerMultiHeadAttention(nn.Module):
+
+    """
+    Multi-head self-attention for BLIP-2 QFormer.
+    """
+
+
     def __init__(
         self,
         config: Blip2QFormerConfig,
@@ -120,6 +126,12 @@ class Blip2QFormerMultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def transpose_for_scores(self, x):
+
+        """
+        Reshape QKV for multi-head scoring.
+        """
+
+
         x = x.view(*x.size()[:-1], self.num_attention_heads, self.attention_head_size)
         return x.permute(0, 2, 1, 3)
 
@@ -159,6 +171,12 @@ class Blip2QFormerMultiHeadAttention(nn.Module):
 
 
 class Blip2QFormerSelfOutput(nn.Module):
+
+    """
+    Output projection for BLIP-2 QFormer.
+    """
+
+
     def __init__(self, config: Blip2QFormerConfig, prefix: str = "") -> None:
         super().__init__()
 
@@ -178,6 +196,12 @@ class Blip2QFormerSelfOutput(nn.Module):
 
 
 class Blip2QFormerAttention(nn.Module):
+
+    """
+    Complete attention module for BLIP-2 QFormer.
+    """
+
+
     def __init__(
         self,
         config: Blip2QFormerConfig,
@@ -214,6 +238,12 @@ class Blip2QFormerAttention(nn.Module):
 
 
 class Blip2QFormerIntermediate(nn.Module):
+
+    """
+    Intermediate layer for BLIP-2 QFormer.
+    """
+
+
     def __init__(self, config: Blip2QFormerConfig, prefix: str = "") -> None:
         super().__init__()
 
@@ -227,6 +257,12 @@ class Blip2QFormerIntermediate(nn.Module):
 
 
 class Blip2QFormerOutput(nn.Module):
+
+    """
+    Output layer for BLIP-2 QFormer.
+    """
+
+
     def __init__(self, config: Blip2QFormerConfig, prefix: str = "") -> None:
         super().__init__()
 
@@ -246,6 +282,12 @@ class Blip2QFormerOutput(nn.Module):
 
 
 class Blip2QFormerLayer(nn.Module):
+
+    """
+    Single BLIP-2 QFormer layer.
+    """
+
+
     def __init__(
         self,
         config: Blip2QFormerConfig,
@@ -328,17 +370,35 @@ class Blip2QFormerLayer(nn.Module):
         return layer_output
 
     def feed_forward_chunk(self, attention_output: torch.Tensor) -> torch.Tensor:
+
+        """
+        Apply feed-forward in chunks.
+        """
+
+
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
 
     def feed_forward_chunk_query(self, attention_output: torch.Tensor) -> torch.Tensor:
+
+        """
+        Apply feed-forward to query chunk.
+        """
+
+
         intermediate_output = self.intermediate_query(attention_output)
         layer_output = self.output_query(intermediate_output, attention_output)
         return layer_output
 
 
 class Blip2QFormerEncoder(nn.Module):
+
+    """
+    BLIP-2 QFormer encoder.
+    """
+
+
     def __init__(
         self,
         config: Blip2QFormerConfig,
@@ -384,6 +444,12 @@ class Blip2QFormerEncoder(nn.Module):
 
 # Adapted from https://github.com/huggingface/transformers/blob/v4.41.2/src/transformers/models/blip_2/modeling_blip_2.py#L1025
 class Blip2QFormerModel(nn.Module):
+
+    """
+    BLIP-2 QFormer model with encoder.
+    """
+
+
     def __init__(
         self,
         config: Blip2QFormerConfig,
@@ -426,19 +492,55 @@ class Blip2QFormerModel(nn.Module):
 
 
 class Blip2ProcessingInfo(BaseProcessingInfo):
+
+    """
+    Processing info for BLIP-2 inputs.
+    """
+
+
     def get_hf_config(self):
+
+        """
+        Return the HuggingFace config.
+        """
+
+
         return self.ctx.get_hf_config(Blip2Config)
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+
+        """
+        Return supported multimodal limits.
+        """
+
+
         return {"image": 1}
 
     def get_num_image_tokens(self) -> int:
+
+        """
+        Compute number of image tokens.
+        """
+
+
         hf_config = self.get_hf_config()
         return hf_config.num_query_tokens
 
 
 class Blip2DummyInputsBuilder(BaseDummyInputsBuilder[Blip2ProcessingInfo]):
+
+    """
+    Dummy inputs builder for BLIP-2 models.
+    """
+
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+
+        """
+        Generate dummy text tokens.
+        """
+
+
         return ""
 
     def get_dummy_mm_data(
@@ -467,6 +569,12 @@ class Blip2DummyInputsBuilder(BaseDummyInputsBuilder[Blip2ProcessingInfo]):
 
 
 class Blip2MultiModalProcessor(BaseMultiModalProcessor[Blip2ProcessingInfo]):
+
+    """
+    Multimodal processor for BLIP-2.
+    """
+
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -511,6 +619,12 @@ class Blip2ForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+
+        """
+        Return placeholder string.
+        """
+
+
         if modality.startswith("image"):
             return None
 
@@ -617,6 +731,12 @@ class Blip2ForConditionalGeneration(
         return self.language_projection(query_output)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+
+        """
+        Embed multimodal inputs.
+        """
+
+
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -677,10 +797,22 @@ class Blip2ForConditionalGeneration(
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+
+        """
+        Load pretrained weights.
+        """
+
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)
 
     def get_mm_mapping(self) -> MultiModelKeys:
+
+        """
+        Get multimodal-to-text mapping.
+        """
+
+
         return MultiModelKeys.from_string_field(
             language_model="language_model",
             connector=["qformer", "language_projection"],

@@ -94,10 +94,17 @@ logger = init_logger(__name__)
 
 
 class AXK1MLP(DeepseekV2MLP):
+    """MLP block for the AXK1 model."""
+
     pass
 
 
 class AXK1MoE(nn.Module):
+    """Mixture of Experts block for the AXK1 model.
+
+    Routes tokens to top-k experts with load balancing.
+    """
+
     def __init__(
         self,
         config: AXK1Config,
@@ -105,6 +112,14 @@ class AXK1MoE(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize AXK1MoE.
+
+        Args:
+            config: AXK1 model configuration.
+            parallel_config: Parallel configuration.
+            quant_config: Quantization config.
+            prefix: Parameter prefix.
+        """
         super().__init__()
         self.tp_size = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tensor_model_parallel_rank()
@@ -203,6 +218,14 @@ class AXK1MoE(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the MoE block.
+
+        Args:
+            hidden_states: Input hidden states.
+
+        Returns:
+            Output hidden states after MoE computation.
+        """
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -229,6 +252,16 @@ class AXK1MoE(nn.Module):
 def _get_llama_4_scaling(
     original_max_position_embeddings: int, scaling_beta: float, positions: torch.Tensor
 ) -> torch.Tensor:
+    """Compute Llama-4 style scaling for rotary embeddings.
+
+    Args:
+        original_max_position_embeddings: Original max position.
+        scaling_beta: Scaling beta factor.
+        positions: Token positions.
+
+    Returns:
+        Scaling tensor broadcast over heads.
+    """
     scaling = 1 + scaling_beta * torch.log(
         1 + torch.floor(positions / original_max_position_embeddings)
     )
@@ -237,6 +270,11 @@ def _get_llama_4_scaling(
 
 
 class AXK1Attention(nn.Module):
+    """Attention module for the AXK1 model.
+
+    Implements multi-head attention with rotary positional embedding.
+    """
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -254,6 +292,24 @@ class AXK1Attention(nn.Module):
         topk_indices_buffer: torch.Tensor | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize AXK1Attention.
+
+        Args:
+            vllm_config: vLLM configuration.
+            config: AXK1 model configuration.
+            hidden_size: Hidden state dimension.
+            num_heads: Number of attention heads.
+            qk_nope_head_dim: Non-ROPE head dimension.
+            qk_rope_head_dim: ROPE head dimension.
+            v_head_dim: Value head dimension.
+            q_lora_rank: Q LoRA rank.
+            kv_lora_rank: KV LoRA rank.
+            max_position_embeddings: Maximum position embeddings.
+            cache_config: Cache configuration.
+            quant_config: Quantization config.
+            topk_indices_buffer: Top-K indices buffer.
+            prefix: Parameter prefix.
+        """
         super().__init__()
         self.hidden_size = hidden_size
         self.qk_nope_head_dim = qk_nope_head_dim
@@ -358,6 +414,16 @@ class AXK1Attention(nn.Module):
         hidden_states: torch.Tensor,
         llama_4_scaling: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Forward pass through AXK1 attention.
+
+        Args:
+            positions: Token positions.
+            hidden_states: Input hidden states.
+            llama_4_scaling: Optional Llama-4 scaling tensor.
+
+        Returns:
+            Attention output tensor.
+        """
         if self.q_lora_rank is not None:
             q = self.q_a_proj(hidden_states)[0]
             q = self.q_a_layernorm(q)
@@ -425,6 +491,24 @@ class AXK1MLAAttention(nn.Module):
         prefix: str = "",
         topk_indices_buffer: torch.Tensor | None = None,
     ) -> None:
+        """Initialize AXK1MLAAttention.
+
+        Args:
+            vllm_config: vLLM configuration.
+            config: AXK1 model configuration.
+            hidden_size: Hidden state dimension.
+            num_heads: Number of attention heads.
+            qk_nope_head_dim: Non-ROPE head dimension.
+            qk_rope_head_dim: ROPE head dimension.
+            v_head_dim: Value head dimension.
+            q_lora_rank: Q LoRA rank.
+            kv_lora_rank: KV LoRA rank.
+            max_position_embeddings: Maximum position embeddings.
+            cache_config: Cache configuration.
+            quant_config: Quantization config.
+            prefix: Parameter prefix.
+            topk_indices_buffer: Top-K indices buffer.
+        """
         super().__init__()
         self.hidden_size = hidden_size
         self.qk_nope_head_dim = qk_nope_head_dim
@@ -556,16 +640,38 @@ class AXK1MLAAttention(nn.Module):
         hidden_states: torch.Tensor,
         llama_4_scaling: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Forward pass through MLA attention.
+
+        Args:
+            positions: Token positions.
+            hidden_states: Input hidden states.
+            llama_4_scaling: Optional Llama-4 scaling tensor.
+
+        Returns:
+            Attention output tensor.
+        """
         return self.mla_attn(positions, hidden_states, llama_4_scaling)
 
 
 class AXK1DecoderLayer(nn.Module):
+    """Single decoder layer for the AXK1 model.
+
+    Contains attention and MLP sub-blocks with residual connections.
+    """
+
     def __init__(
         self,
         vllm_config: VllmConfig,
         prefix: str,
         config: AXK1Config | None = None,
     ) -> None:
+        """Initialize AXK1DecoderLayer.
+
+        Args:
+            vllm_config: vLLM configuration.
+            prefix: Parameter prefix.
+            config: AXK1 model configuration.
+        """
         super().__init__()
 
         if config is None:
@@ -646,6 +752,11 @@ class AXK1DecoderLayer(nn.Module):
         self.routed_scaling_factor = config.routed_scaling_factor
 
     def _is_layer_sparse(self) -> bool:
+        """Check if this layer uses sparse (MoE) computation.
+
+        Returns:
+            True if the layer is a sparse MoE layer.
+        """
         assert self.config.moe_layer_freq is not None
         return (
             self.config.n_routed_experts is not None
@@ -660,6 +771,17 @@ class AXK1DecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         llama_4_scaling: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the decoder layer.
+
+        Args:
+            positions: Token positions.
+            hidden_states: Input hidden states.
+            residual: Residual connection tensor.
+            llama_4_scaling: Optional Llama-4 scaling tensor.
+
+        Returns:
+            Tuple of (hidden_states, residual).
+        """
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -708,9 +830,20 @@ class AXK1DecoderLayer(nn.Module):
 
 @support_torch_compile
 class AXK1Model(nn.Module):
+    """The AXK1 transformer model.
+
+    A Mixture-of-Experts language model with rotary positional embeddings.
+    """
+
     fall_back_to_pt_during_load = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize AXK1Model.
+
+        Args:
+            vllm_config: vLLM configuration.
+            prefix: Parameter prefix.
+        """
         super().__init__()
 
         config: AXK1Config = vllm_config.model_config.hf_config
@@ -765,6 +898,17 @@ class AXK1Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass through the AXK1 model.
+
+        Args:
+            input_ids: Input token IDs.
+            positions: Token positions.
+            intermediate_tensors: Intermediate tensors for pipeline.
+            inputs_embeds: Optional pre-computed embeddings.
+
+        Returns:
+            Hidden states or intermediate tensors.
+        """
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -1053,12 +1197,20 @@ class AXK1MixtureOfExperts(MixtureOfExperts):
 class AXK1ForCausalLM(
     nn.Module, SupportsPP, AXK1MixtureOfExperts, SupportsLoRA, SupportsEagle
 ):
+    """Causal LM head for the AXK1 model."""
+
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
     }
     model_cls = AXK1Model
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize AXK1ForCausalLM.
+
+        Args:
+            vllm_config: vLLM configuration.
+            prefix: Parameter prefix.
+        """
         super().__init__()
         config: AXK1Config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -1134,6 +1286,17 @@ class AXK1ForCausalLM(
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass through the AXK1 causal LM.
+
+        Args:
+            input_ids: Input token IDs.
+            positions: Token positions.
+            intermediate_tensors: Intermediate tensors.
+            inputs_embeds: Optional pre-computed embeddings.
+
+        Returns:
+            Hidden states or intermediate tensors.
+        """
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -1143,6 +1306,14 @@ class AXK1ForCausalLM(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states.
+
+        Args:
+            hidden_states: Hidden states from the model.
+
+        Returns:
+            Logits tensor, or None.
+        """
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 

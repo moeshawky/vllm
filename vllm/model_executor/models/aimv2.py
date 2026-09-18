@@ -3,6 +3,13 @@
 
 # A modified implementation of the AIMv2 Transformer
 # inserted here also the image tokenizer used by Ovis2
+"""Modified AIMv2 vision transformer (the image tokenizer reused by Ovis2).
+Stacks Conv2d patch-embed -> zero-init learnable pos-embed -> N pre-norm
+blocks (TP-sharded MMEncoderAttention + SwiGLU MLP) -> optional post-trunk
+RMSNorm. All linears use vLLM parallel variants (QKVParallelLinear,
+MergedColumnParallelLinear, RowParallelLinear); AIMv2Model merges the
+checkpoint split fc1/fc3 into stacked fc13 via a WeightsMapper."""
+
 from collections.abc import Iterable
 
 import torch
@@ -25,6 +32,8 @@ from vllm.transformers_utils.configs.ovis import AIMv2Config
 
 
 class AIMv2SwiGLUFFN(nn.Module):
+    """AIMv2SwiGLUFFN module with merged fc1/fc3 projection."""
+    
     def __init__(
         self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str
     ):
@@ -57,6 +66,8 @@ class AIMv2SwiGLUFFN(nn.Module):
 
 
 class AIMv2PatchEmbed(nn.Module):
+    """AIMv2PatchEmbed module with patch embedding and position embedding."""
+    
     def __init__(self, config: AIMv2Config):
         super().__init__()
         self.proj = Conv2dLayer(
@@ -74,6 +85,8 @@ class AIMv2PatchEmbed(nn.Module):
 
 
 class AIMv2ViTPreprocessor(nn.Module):
+    """AIMv2ViTPreprocessor module with patch embedding and position embedding."""
+    
     def __init__(self, config: AIMv2Config):
         super().__init__()
         num_patches = (config.image_size // config.patch_size) ** 2
@@ -90,6 +103,8 @@ class AIMv2ViTPreprocessor(nn.Module):
 
 
 class AIMv2Attention(nn.Module):
+    """AIMv2Attention module with tensor-parallel attention heads."""
+    
     def __init__(
         self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str
     ):
@@ -143,6 +158,8 @@ class AIMv2Attention(nn.Module):
 
 
 class AIMv2Block(nn.Module):
+    """AIMv2Block module."""
+    
     def __init__(
         self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str
     ):
@@ -163,6 +180,8 @@ class AIMv2Block(nn.Module):
 
 
 class AIMv2Transformer(nn.Module):
+    """AIMv2Transformer module with QK-norm attention and sigmoid gating."""
+    
     def __init__(
         self,
         config: AIMv2Config,
@@ -196,6 +215,8 @@ class AIMv2Transformer(nn.Module):
 
 
 class AIMv2Model(torch.nn.Module):
+    """AIMv2Model module with QK-norm attention and sigmoid gating."""
+    
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".fc1": (".fc13", 0),
@@ -211,6 +232,8 @@ class AIMv2Model(torch.nn.Module):
         require_post_norm: bool | None = None,
         prefix: str = "",
     ):
+        """AIMv2Model constructor."""
+        
         super().__init__()
         self.preprocessor = AIMv2ViTPreprocessor(config)
         self.trunk = AIMv2Transformer(
