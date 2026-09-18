@@ -31,6 +31,7 @@ logger = init_logger(__name__)
 # --8<-- [start:modular_fused_moe]
 @CustomOp.register("modular_fused_moe")
 class FusedMoEModularMethod(FusedMoEMethodBase, CustomOp):
+    """MoE layer implementation."""
     # --8<-- [end:modular_fused_moe]
 
     def __init__(
@@ -44,22 +45,27 @@ class FusedMoEModularMethod(FusedMoEMethodBase, CustomOp):
 
     @property
     def wraps_legacy_quant_method(self) -> bool:
+        """wraps_legacy_quant_method implementation."""
         return not self.old_quant_method.supports_internal_mk
 
     @property
     def skip_forward_padding(self) -> bool:
+        """skip_forward_padding implementation."""
         return self.old_quant_method.skip_forward_padding
 
     @property
     def has_unpadded_output(self) -> bool:
+        """has_unpadded_output implementation."""
         return self.old_quant_method.has_unpadded_output
 
     @property
     def supports_eplb(self) -> bool:
+        """supports_eplb implementation."""
         return self.old_quant_method.supports_eplb
 
     @property
     def method_name(self) -> str:
+        """create_weights implementation."""
         return self.old_quant_method.method_name
 
     def create_weights(
@@ -76,6 +82,7 @@ class FusedMoEModularMethod(FusedMoEMethodBase, CustomOp):
     def get_fused_moe_quant_config(
         self, layer: "RoutedExperts"
     ) -> FusedMoEQuantConfig | None:
+        """apply implementation."""
         return self.moe_quant_config
 
     def apply(

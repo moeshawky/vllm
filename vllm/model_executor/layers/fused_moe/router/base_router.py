@@ -32,6 +32,7 @@ if current_platform.is_cuda_alike():
         HAS_NUM_UNPADDED: tl.constexpr,
         BLOCK_SIZE: tl.constexpr,
     ):
+        """MoE layer implementation for base_router.py."""
         pid = tl.program_id(0)
         offs = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offs < numel
@@ -153,6 +154,7 @@ else:
         record_enabled: torch.Tensor,
         num_unpadded_tokens: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """eplb_map_to_physical_and_record implementation."""
         return topk_ids
 
 

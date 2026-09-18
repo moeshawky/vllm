@@ -41,6 +41,7 @@ from vllm.utils.import_utils import (
 
 @dataclass(frozen=True)
 class FlashInferOneSidedDispatchLayout:
+    """MoE layer implementation."""
     x_bytes_per_token: int
     x_sf_bytes_per_token: int
 
@@ -105,6 +106,7 @@ if current_platform.is_cuda_alike():
 
 
 def get_ep_all2all_manager(eep_stage: bool = False) -> Any:
+    """get_ep_all2all_manager implementation."""
     if eep_stage:
         from vllm.distributed.elastic_ep.standby_state import get_standby_ep_group
 
@@ -170,6 +172,7 @@ def maybe_make_prepare_finalize(
     use_monolithic: bool = False,
     eep_stage: bool = False,
 ) -> FusedMoEPrepareAndFinalize | None:
+    """maybe_make_prepare_finalize implementation."""
     if not moe.moe_parallel_config.use_all2all_kernels:
         if not allow_new_interface:
             return None

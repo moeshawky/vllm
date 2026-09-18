@@ -440,6 +440,7 @@ def invoke_moe_batched_triton_kernel(
     per_act_token_quant: bool,
     block_shape: list[int] | None = None,
 ):
+    """invoke_moe_batched_triton_kernel implementation."""
     assert not use_int4_w4a16
     max_num_tokens = A.size(1)
     K = A.size(2)
@@ -640,6 +641,7 @@ class NaiveBatchedExperts(mk.FusedMoEExpertsModular):
         return (workspace13, workspace2, output)
 
     def dequant(self, t: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+        """dequant implementation."""
         assert self.quant_config.is_quantized
         f32 = torch.float32
         if self.quant_config.is_per_act_token or self.quant_config.is_per_tensor:
@@ -717,6 +719,7 @@ def batched_moe_kernel_quantize_input(
     per_act_token_quant: bool,
     block_shape: list[int] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """batched_moe_kernel_quantize_input implementation."""
     if _is_capturing_or_compiling():
         # Note: this does a bunch of extra work because expert_num_tokens is
         # ignored but it does support torch.compile + cudagraphs.
@@ -799,6 +802,7 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     @staticmethod
@@ -855,6 +859,7 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
         return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         # Let PrepareAndFinalize::finalize() decide the impl.
         return TopKWeightAndReduceDelegate()
 
@@ -865,6 +870,7 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
         input: torch.Tensor,
         **kwargs,
     ) -> None:
+        """activation implementation."""
         gemm1_clamp_limit = self.quant_config.gemm1_clamp_limit
         if activation == MoEActivation.SILU and gemm1_clamp_limit is not None:
             swiglu_limit_func(output, input, float(gemm1_clamp_limit))
@@ -883,6 +889,7 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         assert self.num_dispatchers is not None
         assert self.max_num_tokens is not None
         num_dp = self.num_dispatchers
@@ -912,6 +919,7 @@ class BatchedTritonExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         # Check constraints.
         if self.quant_config.use_int4_w4a16:
             assert hidden_states.size(-1) // 2 == w1.size(2), "Hidden size mismatch"

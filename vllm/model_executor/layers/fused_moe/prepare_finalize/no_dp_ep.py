@@ -16,6 +16,7 @@ def _quantize_input(
     quant_config: FusedMoEQuantConfig,
     defer_input_quant: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """MoE layer implementation for no_dp_ep.py."""
     # Defer input quant to moe kernel for backends (e.g. AITER, FI)
     # which use a single kernel call for quant + experts.
     if defer_input_quant:
@@ -40,18 +41,23 @@ def _quantize_input(
 class MoEPrepareAndFinalizeNoDPEPModular(mk.FusedMoEPrepareAndFinalizeModular):
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return None
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return None
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return 1
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return False
 
     def prepare(
@@ -65,6 +71,7 @@ class MoEPrepareAndFinalizeNoDPEPModular(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             # TODO: this only works for topK=1, will need to update for topK>1
@@ -86,6 +93,7 @@ class MoEPrepareAndFinalizeNoDPEPModular(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         if isinstance(weight_and_reduce_impl, TopKWeightAndReduceDelegate):
             weight_and_reduce_impl = TopKWeightAndReduceContiguous()
         weight_and_reduce_impl.apply(
@@ -103,6 +111,7 @@ class MoEPrepareAndFinalizeNoDPEPMonolithic(mk.FusedMoEPrepareAndFinalizeMonolit
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """supports_deferred_moe_finalize implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
@@ -137,6 +146,7 @@ class MoEPrepareAndFinalizeNoDPEPMonolithic(mk.FusedMoEPrepareAndFinalizeMonolit
 def make_moe_prepare_and_finalize_no_dp_ep(
     use_monolithic: bool,
 ) -> MoEPrepareAndFinalizeNoDPEPModular | MoEPrepareAndFinalizeNoDPEPMonolithic:
+    """make_moe_prepare_and_finalize_no_dp_ep implementation."""
     return (
         MoEPrepareAndFinalizeNoDPEPMonolithic()
         if use_monolithic

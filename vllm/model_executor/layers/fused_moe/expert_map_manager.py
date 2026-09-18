@@ -120,6 +120,7 @@ def determine_expert_placement_strategy(
     num_redundant_experts: int,
     enable_eplb: bool,
 ) -> ExpertPlacementStrategy:
+    """determine_expert_placement_strategy implementation."""
     if expert_placement_strategy == "round_robin":
         round_robin_supported = (
             (num_expert_group is not None and num_expert_group > 1)
@@ -271,26 +272,32 @@ class ExpertMapManager:
 
     @property
     def use_ep(self) -> int:
+        """use_ep implementation."""
         return self.moe_parallel_config.use_ep
 
     @property
     def ep_size(self) -> int:
+        """ep_size implementation."""
         return self.moe_parallel_config.ep_size
 
     @property
     def ep_rank(self) -> int:
+        """ep_rank implementation."""
         return self.moe_parallel_config.ep_rank
 
     @property
     def tp_size(self) -> int:
+        """tp_size implementation."""
         return self.moe_parallel_config.tp_size
 
     @property
     def tp_rank(self) -> int:
+        """tp_rank implementation."""
         return self.moe_parallel_config.tp_rank
 
     @property
     def local_num_experts(self) -> int:
+        """local_num_experts implementation."""
         return self._local_num_experts
 
     @property

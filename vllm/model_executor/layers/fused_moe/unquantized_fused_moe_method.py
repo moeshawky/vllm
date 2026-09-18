@@ -51,6 +51,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
 
     @property
     def supports_eplb(self) -> bool:
+        """supports_eplb implementation."""
         return True
 
     def create_weights(
@@ -62,6 +63,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """create_weights implementation."""
         if self.moe.is_act_and_mul:
             w13_up_dim = 2 * intermediate_size_per_partition
         else:
@@ -173,6 +175,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
                 self.moe_kernel.fused_experts.process_weights_after_loading(layer)
 
     def process_weights_after_loading(self, layer: "RoutedExperts") -> None:
+        """process_weights_after_loading implementation."""
         super().process_weights_after_loading(layer)
 
         # Padding the weight for better performance on ROCm.
@@ -212,6 +215,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
             )
 
     def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig:
+        """get_fused_moe_quant_config implementation."""
         # SwiGLU/swigluoai gate params live on the layer; plumb them into the
         # quant config so the fused activation (e.g. swigluoai_uninterleave on
         # MiniMax-M3) receives gemm1_clamp_limit/alpha/beta.
@@ -243,6 +247,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """apply implementation."""
         return self.forward(
             layer=layer,
             x=x,
@@ -261,6 +266,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """forward_native implementation."""
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(
             hidden_states=x,
@@ -285,6 +291,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """forward_cuda implementation."""
         return self.forward_native(
             layer,
             x,
@@ -301,6 +308,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor | UnfinalizedMoEOutput:
+        """apply_monolithic implementation."""
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(

@@ -92,6 +92,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         self.w2_sf_mma: torch.Tensor | None = None
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         # Normalise block scales to absorb the per-expert weight global scale
         # (w_gs).  vLLM's NVFP4 convention stores:
         #   block_scale = max_abs * w_gs / fp4_max,  g1_alphas = 1/w_gs
@@ -159,6 +160,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -202,9 +204,11 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         return not moe_parallel_config.use_ep
 
     def supports_expert_map(self) -> bool:
+        """supports_expert_map implementation."""
         return False
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         # b12x_fused_moe applies topk weights internally.
         return TopKWeightAndReduceNoOP()
 
@@ -219,6 +223,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         # b12x_fused_moe manages its own internal workspace.
         workspace1 = (1,)
         workspace2 = (0,)
@@ -227,6 +232,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         # B12xMoEWrapper expects BF16 hidden states and performs its own FP4
         # quantization internally.  Returning True prevents the modular kernel
         # from pre-quantizing activations.
@@ -268,6 +274,7 @@ class FlashInferB12xExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
+        """apply implementation."""
         assert self.w1_scale is not None and self.w2_scale is not None, (
             "w1_scale and w2_scale must not be None for FlashInferB12xExperts"
         )

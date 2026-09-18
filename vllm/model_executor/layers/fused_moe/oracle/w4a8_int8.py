@@ -26,6 +26,7 @@ logger = init_logger(__name__)
 
 
 class W4A8Int8MoeBackend(Enum):
+    """MoE layer implementation."""
     CPU_INT4 = "CPU_INT4"
 
 

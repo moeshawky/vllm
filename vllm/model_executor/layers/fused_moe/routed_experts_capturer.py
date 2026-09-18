@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class RoutedExpertsCaptureSource(Protocol):
+    """MoE layer implementation for routed_experts_capturer.py."""
     layer_id: int
     capture_fn: Callable[[torch.Tensor], None] | None
 
@@ -274,6 +275,7 @@ def bind_routed_experts_capturer(
             layer_id: int = layer_id,
             capturer: RoutedExpertsCapturer = capturer,
         ) -> None:
+            """capture_fn implementation."""
             capturer.capture(layer_id, topk_ids)
 
         quant_method = module._quant_method

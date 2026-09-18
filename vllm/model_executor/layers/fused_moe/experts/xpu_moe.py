@@ -37,6 +37,7 @@ def prepare_fp8_moe_layer_for_xpu(
     w2: torch.Tensor,
     w2_scale: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """prepare_fp8_moe_layer_for_xpu implementation."""
     if w13_scale is not None and w13_scale.ndim == 3:
         w13_scale = w13_scale.transpose(-1, -2).contiguous()
     if w2_scale is not None and w2_scale.ndim == 3:
@@ -74,10 +75,12 @@ class XPUExperts(mk.FusedMoEExpertsModular):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return self._expects_unquantized_inputs
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -115,6 +118,7 @@ class XPUExperts(mk.FusedMoEExpertsModular):
         return (weight_key, activation_key) in SUPPORTED_W_A
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -128,6 +132,7 @@ class XPUExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         workspace1 = (0,)
         workspace2 = (0,)
         output = (M, K)
@@ -151,6 +156,7 @@ class XPUExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         if self.fused_moe_impl is None:
             topk = topk_ids.size(-1)
             if (

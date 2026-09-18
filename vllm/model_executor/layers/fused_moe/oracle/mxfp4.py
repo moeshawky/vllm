@@ -71,6 +71,7 @@ def _pack_deepgemm_mxfp4_scales(
     w13_weight_scale: torch.Tensor,
     w2_weight_scale: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """MoE layer implementation."""
     from vllm.model_executor.layers.quantization.utils.fp8_utils import (
         deepgemm_post_process_weight_scale_block,
     )
@@ -154,6 +155,7 @@ B12X_BACKENDS = (
 def backend_to_kernel_cls(
     backend: Mxfp4MoeBackend,
 ) -> list[type[mk.FusedMoEExperts]]:
+    """backend_to_kernel_cls implementation."""
     if backend in B12X_BACKENDS:
         from vllm.model_executor.layers.fused_moe.b12x import B12xExperts
 

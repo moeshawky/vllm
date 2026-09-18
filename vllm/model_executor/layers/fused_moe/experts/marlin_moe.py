@@ -647,6 +647,7 @@ class MarlinExpertsBase(mk.FusedMoEExpertsModular):
 
     @property
     def quant_type_id(self) -> int:
+        """quant_type_id implementation."""
         if self.quant_config.use_int4_w4a16:
             if self.w1_zp is not None or self.w2_zp is not None:
                 return scalar_types.uint4.id
@@ -670,6 +671,7 @@ class MarlinExpertsBase(mk.FusedMoEExpertsModular):
         w2: torch.Tensor,
         topk_ids: torch.Tensor,
     ) -> tuple[int, int, int, int, int]:
+        """moe_problem_size implementation."""
         assert w1.dim() == 3 and w2.dim() == 3
 
         E = w1.size(0)
@@ -915,6 +917,7 @@ class MarlinExperts(LoRAExpertsMixin, MarlinExpertsBase):
         topk_ids: torch.Tensor,
         expert_map: torch.Tensor | None,
     ) -> None:
+        """moe_sum implementation."""
         if expert_map is not None:
             ops.moe_sum(input, output, topk_ids, expert_map)
         else:
@@ -949,10 +952,12 @@ class BatchedMarlinExperts(MarlinExpertsBase):
         )
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceDelegate()
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     def workspace_shapes(
@@ -966,6 +971,7 @@ class BatchedMarlinExperts(MarlinExpertsBase):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         assert self.num_dispatchers is not None
         assert self.max_num_tokens is not None
         num_dispatchers = self.num_dispatchers
@@ -994,6 +1000,7 @@ class BatchedMarlinExperts(MarlinExpertsBase):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         assert expert_tokens_meta is not None, "Num valid tokens per batch is required"
 
         def activation_func(

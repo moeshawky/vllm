@@ -179,6 +179,7 @@ class GateLinear(ReplicatedLinear):
     def forward(
         self, x: torch.Tensor
     ) -> torch.Tensor | tuple[torch.Tensor, Parameter | None]:
+        """forward implementation."""
         # Tier 1: cuteDSL ll_bf16_gemm (SM90+, any dims)
         if self.allow_ll_bf16_gemm and x.shape[0] <= 16 and x.dtype == torch.bfloat16:
             from vllm.model_executor.kernels.linear.cute_dsl.ll_bf16 import (
@@ -265,6 +266,7 @@ def fp32_router_gemm_dispatch_fake(
     weight: torch.Tensor,
     allow_bf16x3_router_gemm: bool,
 ) -> torch.Tensor:
+    """fp32_router_gemm_dispatch_fake implementation."""
     return x.new_empty((x.shape[0], weight.shape[0]), dtype=torch.float32)
 
 

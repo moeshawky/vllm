@@ -46,6 +46,7 @@ class TrtLlmBf16ExpertsBase:
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """Check if the config is supported by TRTLLM BF16 experts."""
         supported, reason = mk.FusedMoEExperts.is_supported_config(
             cls,
             moe_config,
@@ -61,6 +62,7 @@ class TrtLlmBf16ExpertsBase:
         )
 
     def supports_routing_replay_capture(self) -> bool:
+        """Return True; TRTLLM BF16 supports routing replay capture."""
         return True
 
     def __init__(
@@ -68,6 +70,7 @@ class TrtLlmBf16ExpertsBase:
         moe_config: FusedMoEConfig,
         quant_config: FusedMoEQuantConfig,
     ):
+        """Initialize the TRTLLM BF16 experts base."""
         self.routing_method_type = moe_config.routing_method
         self.topk = moe_config.experts_per_token
         self.intermediate_size_per_partition = (
@@ -82,6 +85,7 @@ class TrtLlmBf16ExpertsBase:
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """Return the activation format used by TRTLLM BF16 experts."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -117,6 +121,7 @@ class TrtLlmBf16ExpertsBase:
         router_logits_dtype: torch.dtype | None,
         routing_method: RoutingMethodType,
     ) -> bool:
+        """Return True; TRTLLM BF16 supports any router logits dtype."""
         return True
 
     @property
@@ -133,6 +138,7 @@ class TrtLlmBf16ExpertsModular(TrtLlmBf16ExpertsBase, mk.FusedMoEExpertsModular)
     def _supports_parallel_config(
         moe_parallel_config: FusedMoEParallelConfig,
     ) -> bool:
+        """Check if the parallel config is supported by modular BF16 TRTLLM."""
         return (
             moe_parallel_config.use_all2all_kernels
             and not moe_parallel_config.use_ag_rs_all2all_kernels
@@ -168,6 +174,7 @@ class TrtLlmBf16ExpertsModular(TrtLlmBf16ExpertsBase, mk.FusedMoEExpertsModular)
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Return workspace shapes; workspaces are managed by FlashInfer."""
         # The workspaces for this implementation are managed by FlashInfer.
         workspace1 = (0,)
         workspace2 = (0,)
@@ -176,6 +183,7 @@ class TrtLlmBf16ExpertsModular(TrtLlmBf16ExpertsBase, mk.FusedMoEExpertsModular)
         return workspace1, workspace2, output
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """Return the weight finalizer and reducer for BF16 TRTLLM."""
         return TopKWeightAndReduceNoOP()
 
     def apply(
@@ -196,6 +204,7 @@ class TrtLlmBf16ExpertsModular(TrtLlmBf16ExpertsBase, mk.FusedMoEExpertsModular)
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """Apply TRTLLM BF16 monolithic MoE computation."""
         import flashinfer
         from flashinfer.fused_moe import WeightLayout
 
@@ -246,6 +255,7 @@ class TrtLlmBf16ExpertsMonolithic(TrtLlmBf16ExpertsBase, mk.FusedMoEExpertsMonol
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
+        """Check if the routing method is supported by the monolithic BF16 TRTLLM."""
         return routing_method in [
             RoutingMethodType.DeepSeekV3,
             RoutingMethodType.Llama4,

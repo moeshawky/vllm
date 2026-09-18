@@ -25,6 +25,7 @@ class TritonOrDeepGemmExperts(FallbackExperts):
     """DeepGemm with fallback to Triton for low latency shapes."""
 
     def __init__(self, moe_config: FusedMoEConfig, quant_config: FusedMoEQuantConfig):
+        """Initialize the Triton or DeepGemm expert."""
         super().__init__(
             experts=DeepGemmExperts(moe_config, quant_config),
             fallback_experts=TritonExperts(moe_config, quant_config),
@@ -35,6 +36,7 @@ class TritonOrDeepGemmExperts(FallbackExperts):
         type[mk.FusedMoEExpertsModular],
         type[mk.FusedMoEExpertsModular],
     ]:
+        """Return the ordered expert classes for the fallback mechanism."""
         return (DeepGemmExperts, TritonExperts)
 
     def workspace_shapes(
@@ -48,6 +50,7 @@ class TritonOrDeepGemmExperts(FallbackExperts):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Return workspace shapes, preferring DeepGemm when valid."""
         # Note: the deep gemm workspaces are strictly larger than the triton
         # workspaces so we can be pessimistic here and allocate for DeepGemm
         # even if we fall back to triton later, e.g. if expert maps are set.
@@ -80,6 +83,7 @@ class TritonOrDeepGemmExperts(FallbackExperts):
         w1: torch.Tensor,
         w2: torch.Tensor,
     ) -> mk.FusedMoEExpertsModular:
+        """Select between DeepGemm and Triton experts based on validity."""
         if is_deep_gemm_e8m0_used() or _valid_deep_gemm(hidden_states, w1, w2):
             return self.experts
         else:

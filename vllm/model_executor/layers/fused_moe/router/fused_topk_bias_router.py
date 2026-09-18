@@ -21,6 +21,7 @@ from vllm.model_executor.layers.fused_moe.router.dsv4_topk import (
 
 
 def _get_padding_mask(num_tokens: int) -> torch.Tensor | None:
+    """MoE layer implementation."""
     if envs.VLLM_MOE_SKIP_PADDING and is_forward_context_available():
         is_padding = get_forward_context().is_padding
         return is_padding[:num_tokens] if is_padding is not None else None
@@ -35,6 +36,7 @@ def vllm_topk_softmax(
     renormalize: bool = False,
     e_score_correction_bias: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, ...]:
+    """vllm_topk_softmax implementation."""
     ops.topk_softmax(
         topk_weights,
         topk_indices,
@@ -57,6 +59,7 @@ def vllm_topk_sigmoid(
     e_score_correction_bias: torch.Tensor | None = None,
     routed_scaling_factor: float = 1.0,
 ) -> tuple[torch.Tensor, ...]:
+    """vllm_topk_sigmoid implementation."""
     ops.topk_sigmoid(
         topk_weights,
         topk_indices,
@@ -82,6 +85,7 @@ def vllm_topk_softplus_sqrt(
     hash_indices_table: torch.Tensor | None = None,
     routed_scaling_factor: float = 1.0,
 ) -> tuple[torch.Tensor, ...]:
+    """vllm_topk_softplus_sqrt implementation."""
     ops.topk_hash_softplus_sqrt(
         topk_weights,
         topk_indices,
@@ -123,6 +127,7 @@ def fused_topk_bias(
     hash_indices_table: torch.Tensor | None = None,
     routed_scaling_factor: float = 1.0,
 ):
+    """fused_topk_bias implementation."""
     if (
         input_tokens is not None
         and hash_indices_table is not None
@@ -326,6 +331,7 @@ class FusedTopKBiasRouter(BaseRouter):
 
     @property
     def routing_method_type(self) -> RoutingMethodType:
+        """routing_method_type implementation."""
         return get_routing_method_type(
             scoring_func=self.scoring_func,
             top_k=self.top_k,

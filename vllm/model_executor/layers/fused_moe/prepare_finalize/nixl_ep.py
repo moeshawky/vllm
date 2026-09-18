@@ -62,6 +62,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
 
     @staticmethod
     def maybe_roundup_layer_hidden_size(hidden_size: int) -> int:
+        """maybe_roundup_layer_hidden_size implementation."""
         # Round up hidden size to the closest supported hidden size.
         _supported_hs = NixlEPPrepareAndFinalize.SUPPORTED_HIDDEN_SIZES
 
@@ -112,6 +113,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         self.use_ue8m0_dispatch = False
 
     def post_init_setup(self, fused_experts: mk.FusedMoEExperts):
+        """post_init_setup implementation."""
         if not fused_experts.supports_packed_ue8m0_act_scales():
             # Early exit.
             return
@@ -129,19 +131,23 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
             )
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     def max_num_tokens_per_rank(self) -> int | None:
         return self.max_tokens_per_rank
 
     def on_commit(self) -> None:
+        """max_num_tokens_per_rank implementation."""
         device_communicator = get_ep_group().device_communicator
         assert device_communicator is not None
         all2all_manager = device_communicator.all2all_manager
@@ -153,6 +159,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         all2all_manager.commit_staged_state()
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """on_commit implementation."""
         return NIXL_EP_TOPK_INDICES_DTYPE
 
     def _map_global_to_physical_ids(self, topk_ids: torch.Tensor) -> torch.Tensor:
@@ -166,6 +173,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         a1_dtype: torch.dtype,
         quant_config: FusedMoEQuantConfig,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """topk_indices_dtype implementation."""
         if self.use_fp8_dispatch:
             block_k = (
                 quant_config.block_shape[1]
@@ -208,6 +216,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         return x, x_scales
 
     def supports_async(self) -> bool:
+        """supports_async implementation."""
         return True
 
     def prepare_async(
@@ -221,6 +230,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> tuple[Callable, mk.ReceiverType]:
+        """prepare_async implementation."""
         if defer_input_quant:
             raise NotImplementedError(
                 f"{self.__class__.__name__} does not support defer_input_quant=True. "
@@ -315,6 +325,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         if defer_input_quant:
             raise NotImplementedError(
                 f"{self.__class__.__name__} does not support defer_input_quant=True. "
@@ -381,6 +392,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> tuple[Callable, Callable]:
+        """finalize_async implementation."""
         return self._finalize(
             output,
             fused_expert_output,
@@ -400,6 +412,7 @@ class NixlEPPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         self._finalize(
             output,
             fused_expert_output,

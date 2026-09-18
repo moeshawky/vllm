@@ -34,6 +34,7 @@ logger = init_logger(__name__)
 
 
 def _triton_kernel_moe_supports_current_device() -> bool:
+    """MoE layer implementation."""
     # Shared device gate for the OAI Triton MoE expert classes.
     # Platform-aware to avoid ROCm capability aliasing — cap (9, 0)
     # matches both gfx90a (verified) and gfx906 (unverified), so we
@@ -555,6 +556,7 @@ def triton_kernel_moe_forward(
     unpadded_N_w2=None,
     unpadded_K_w2=None,
 ) -> torch.Tensor:
+    """triton_kernel_moe_forward implementation."""
     sm_first = not renormalize
 
     # When no expert map is provided (no EP), call the fused `routing()`
@@ -732,6 +734,7 @@ def make_routing_data(
     topk_weights: torch.Tensor,
     num_local_experts: int,
 ) -> tuple["RoutingData", torch.Tensor, torch.Tensor]:
+    """make_routing_data implementation."""
     topk_ids = topk_ids.to(torch.int16)
     topk_weights = topk_weights.to(torch.bfloat16)
 
@@ -829,6 +832,7 @@ def masked_moe_sum(
     topk_ids: torch.Tensor,  # (M, topk) int, -1 = invalid / non-local slot
     output: torch.Tensor,  # (M, K)
 ) -> None:
+    """masked_moe_sum implementation."""
     M, topk, K = intermediate.shape
     BLOCK_K = 1024
     grid = (M, triton.cdiv(K, BLOCK_K))
@@ -948,6 +952,7 @@ class BaseOAITritonExperts(mk.FusedMoEExpertsModular):
         return E, M, N, K, topk
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         # Weight application and reduction happens in the fused_experts kernel.
         return TopKWeightAndReduceNoOP()
 
@@ -1078,6 +1083,7 @@ class UnfusedOAITritonExperts(LoRAExpertsMixin, BaseOAITritonExperts):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         # workspace are allocated inside the kernel
         activation_out_dim = self.adjust_N_for_activation(N, activation)
         workspace1 = (M * topk, activation_out_dim)
@@ -1092,6 +1098,7 @@ class UnfusedOAITritonExperts(LoRAExpertsMixin, BaseOAITritonExperts):
         input: torch.Tensor,
         **kwargs,
     ) -> None:
+        """activation implementation."""
         quant_config = self.quant_config or FUSED_MOE_UNQUANTIZED_CONFIG
         if activation == MoEActivation.SWIGLUOAI:
             alpha = (
@@ -1302,6 +1309,7 @@ class OAITritonMxfp4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -1356,6 +1364,7 @@ class OAITritonMxfp4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     def apply(
@@ -1375,6 +1384,7 @@ class OAITritonMxfp4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """apply implementation."""
         return triton_kernel_moe_forward(
             hidden_states=hidden_states,
             w1=w1,

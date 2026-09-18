@@ -56,6 +56,12 @@ def _unpermute_activation_kernel(
     stride_or,
     BLOCK_I: tl.constexpr,
 ):
+    """
+    Triton kernel to unpermute activations from permuted to sequential order.
+
+    Gathers permuted activation rows based on the index map,
+    zeroing out rows with negative indices (non-local tokens).
+    """
     row = tl.program_id(0)
     col_offs = tl.program_id(1) * BLOCK_I + tl.arange(0, BLOCK_I)
     col_mask = col_offs < num_cols
@@ -86,6 +92,7 @@ def _finalize_lora_kernel(
     TOP_K: tl.constexpr,
     BLOCK_K: tl.constexpr,
 ):
+    """Triton kernel to fuse base MoE output with W2 LoRA delta."""
     token = tl.program_id(0)
     col = tl.program_id(1) * BLOCK_K + tl.arange(0, BLOCK_K)
     mask = col < K
@@ -119,6 +126,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         moe_config: FusedMoEConfig,
         quant_config: FusedMoEQuantConfig,
     ):
+        """Initialize the TRTLLM LoRA experts base."""
         super().__init__(moe_config, quant_config)
         self.routing_method_type = moe_config.routing_method
         self.topk = moe_config.experts_per_token
@@ -131,10 +139,12 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """Return the activation format used by TRTLLM LoRA experts."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
     def _supports_current_device() -> bool:
+        """Return whether TRTLLM LoRA is supported on the current device."""
         p = current_platform
         return (
             p.is_cuda()
@@ -153,6 +163,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         expert_tokens_meta,
         activation,
     ):
+        """Return workspace shapes; FlashInfer manages its own workspace."""
         # flashinfer manages its own workspace; only declare output (M, K)
         return (0,), (0,), (M, K)
 
@@ -174,6 +185,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         return E, M, N, K, topk
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """Return the weight finalizer and reducer for TRTLLM LoRA."""
         # apply() writes the fully finalized result into `output` (fused base
         # finalize + W2 LoRA reduction), so this is a No-Op.
         return TopKWeightAndReduceNoOP()
@@ -182,6 +194,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
     def _supports_parallel_config(
         moe_parallel_config: FusedMoEParallelConfig,
     ) -> bool:
+        """Check if the parallel config is supported by TRTLLM LoRA."""
         return (
             not moe_parallel_config.use_all2all_kernels
             or moe_parallel_config.use_ag_rs_all2all_kernels
@@ -189,10 +202,12 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_router_logits_dtype(router_logits_dtype, routing_method) -> bool:
+        """Return True; TRTLLM LoRA supports any router logits dtype."""
         return True
 
     @staticmethod
     def _supports_no_act_and_mul() -> bool:
+        """Return False; TRTLLM LoRA supports gated activations only."""
         return False  # gated only
 
     @property
@@ -243,6 +258,7 @@ class _TrtLlmLoRAExpertsBase(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """Apply TRTLLM BF16 MoE with LoRA support."""
         lora_context = self._lora_context
         assert lora_context is not None, "LoRA context must be set"
         num_tokens = hidden_states.size(0)
@@ -497,14 +513,17 @@ class TrtLlmBf16LoRAExperts(_TrtLlmLoRAExpertsBase):
 
     @staticmethod
     def _supports_quant_scheme(weight_key, activation_key) -> bool:
+        """Return True only for unquantized inputs."""
         return weight_key is None and activation_key is None
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
+        """Check if the activation function is supported by TRTLLM LoRA."""
         return activation in [MoEActivation.SILU]
 
     @staticmethod
     def _supports_routing_method(routing_method, weight_key, activation_key) -> bool:
+        """Check if the routing method is supported by TRTLLM LoRA."""
         return routing_method in [
             RoutingMethodType.DeepSeekV3,
             RoutingMethodType.Llama4,

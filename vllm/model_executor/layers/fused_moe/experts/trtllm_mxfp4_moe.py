@@ -46,6 +46,7 @@ class TrtLlmMxfp4ExpertsBase:
         quant_config: FusedMoEQuantConfig,
         **kwargs,
     ):
+        """Initialize the MXFP4 TRTLLM experts base."""
         self.moe_config = moe_config
         self.quant_config = quant_config
 
@@ -122,11 +123,13 @@ class TrtLlmMxfp4ExpertsBase:
 
     @staticmethod
     def _supports_current_device() -> bool:
+        """Return whether MXFP4 TRTLLM is supported on the current device."""
         p = current_platform
         return p.is_cuda() and p.is_device_capability_family(100) and has_flashinfer()
 
     @staticmethod
     def _supports_no_act_and_mul() -> bool:
+        """Return False; MXFP4 does not support no-activation and mul."""
         return False
 
     @staticmethod
@@ -134,6 +137,7 @@ class TrtLlmMxfp4ExpertsBase:
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
+        """Check if the quantization scheme is supported by MXFP4 TRTLLM."""
         SUPPORTED_W_A = [
             (kMxfp4Static, None),
             (kMxfp4Static, kMxfp8Dynamic),
@@ -142,6 +146,7 @@ class TrtLlmMxfp4ExpertsBase:
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
+        """Check if the activation function is supported by MXFP4 TRTLLM."""
         if activation == MoEActivation.SITU:
             return has_flashinfer_situ_activation()
         return activation in (
@@ -151,14 +156,17 @@ class TrtLlmMxfp4ExpertsBase:
 
     @staticmethod
     def _flashinfer_activation_type(activation: MoEActivation) -> int:
+        """Map MoEActivation to FlashInfer activation integer."""
         return activation_to_flashinfer_int(activation)
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return False
 
 
@@ -171,12 +179,14 @@ class TrtLlmMxfp4ExpertsMonolithic(
     """
 
     def supports_routing_replay_capture(self) -> bool:
+        """supports_routing_replay_capture implementation."""
         return True
 
     @staticmethod
     def _supports_parallel_config(
         moe_parallel_config: FusedMoEParallelConfig,
     ) -> bool:
+        """Return True; MXFP4 modular supports any parallel config."""
         return (
             not moe_parallel_config.use_all2all_kernels
             and not moe_parallel_config.enable_eplb
@@ -189,6 +199,7 @@ class TrtLlmMxfp4ExpertsMonolithic(
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
+        """Return True; MXFP4 modular handles routing externally."""
         return routing_method in [
             RoutingMethodType.DeepSeekV3,
             RoutingMethodType.Renormalize,
@@ -200,6 +211,7 @@ class TrtLlmMxfp4ExpertsMonolithic(
         router_logits_dtype: torch.dtype | None,
         routing_method: RoutingMethodType,
     ) -> bool:
+        """Return True; MXFP4 kernel converts to bfloat16 internally."""
         # Kernel converts to bfloat16 internally
         return True
 
@@ -311,6 +323,7 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
         return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -324,6 +337,7 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         # The workspaces for this implementation are managed by flashinfer.
         workspace1 = (0,)
         workspace2 = (0,)
@@ -361,6 +375,7 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
         local_expert_offset: int,
         topk: int,
     ) -> None:
+        """Invoke the MXFP4 block-scale routed MoE kernel."""
         from flashinfer import trtllm_fp4_block_scale_routed_moe
 
         packed_tensor = trtllm_moe_pack_topk_ids_weights(topk_ids, topk_weights)
@@ -417,6 +432,7 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         topk = topk_ids.size(-1)
         local_num_experts = w1.size(0)
         local_expert_offset = self.moe_config.ep_rank * local_num_experts

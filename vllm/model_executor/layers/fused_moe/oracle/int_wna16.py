@@ -49,6 +49,7 @@ logger = init_logger(__name__)
 
 
 class WNA16MoEBackend(Enum):
+    """MoE layer implementation."""
     MARLIN = "MARLIN"
     BATCHED_MARLIN = "BATCHED_MARLIN"
     HUMMING = "HUMMING"
@@ -365,6 +366,7 @@ def make_wna16_moe_kernel(
     w2_g_idx_sort_indices: torch.Tensor | None = None,
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> mk.FusedMoEKernel:
+    """make_wna16_moe_kernel implementation."""
     from vllm.model_executor.layers.fused_moe.all2all_utils import (
         maybe_make_prepare_finalize,
     )

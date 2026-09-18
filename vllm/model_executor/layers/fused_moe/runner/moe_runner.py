@@ -59,6 +59,7 @@ def register_layer_for_moe_forward_op(
     vllm_config: VllmConfig,
     layer: "MoERunner",
 ):
+    """MoE layer implementation."""
     # For smuggling this layer into the fused moe custom op
     prefix = layer.layer_name
     compilation_config = vllm_config.compilation_config
@@ -69,6 +70,7 @@ def register_layer_for_moe_forward_op(
 
 
 def get_layer_from_name(layer_name: str) -> MoERunnerInterface:
+    """get_layer_from_name implementation."""
     forward_context: ForwardContext = get_forward_context()
     if not _USE_LAYERNAME and layer_name == "from_forward_context":
         all_moe_layers = forward_context.all_moe_layers
@@ -301,6 +303,7 @@ class MoERunner(MoERunnerInterface):
     def load_weights(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[str]:
+        """load_weights implementation."""
         return self.routed_experts.load_weights(weights)
 
     def _select_forward(self) -> Callable:
@@ -318,6 +321,7 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def shared_experts(self) -> SharedExperts | None:
+        """shared_experts implementation."""
         return self._shared_experts
 
     # TODO(bnell): Temporary hack. Get rid of this.
@@ -784,6 +788,7 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def do_naive_dispatch_combine(self) -> bool:
+        """do_naive_dispatch_combine implementation."""
         return (
             self.moe_config.dp_size > 1 or self.moe_config.is_sequence_parallel
         ) and not self._quant_method.supports_internal_mk
@@ -924,6 +929,7 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def layer_id(self):
+        """layer_id implementation."""
         # Delayed import to avoid circular dependency
         from vllm.model_executor.models.utils import extract_layer_index
 
@@ -935,10 +941,12 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def is_monolithic(self) -> bool:
+        """is_monolithic implementation."""
         return self.routed_experts.quant_method.is_monolithic
 
     @property
     def activation(self) -> MoEActivation:
+        """activation implementation."""
         return self.routed_experts.activation
 
     #
@@ -952,10 +960,12 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def expert_placement_strategy(self) -> ExpertPlacementStrategy:
+        """expert_placement_strategy implementation."""
         return self.expert_map_manager.placement_strategy
 
     @property
     def expert_global_to_physical(self) -> torch.Tensor | None:
+        """expert_global_to_physical implementation."""
         tables = self.expert_map_manager.routing_tables
         return tables[0] if tables else None
 
@@ -973,6 +983,7 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def expert_map(self) -> torch.Tensor | None:
+        """expert_map implementation."""
         return self.routed_experts.expert_map
 
     def _expert_routing_tables(
@@ -981,6 +992,7 @@ class MoERunner(MoERunnerInterface):
         return self.routed_experts._expert_routing_tables()
 
     def update_expert_map(self):
+        """update_expert_map implementation."""
         self.routed_experts.update_expert_map()
 
     def _map_global_expert_id_to_local_expert_id(self, expert_id: int) -> int:
@@ -988,6 +1000,7 @@ class MoERunner(MoERunnerInterface):
         return self.routed_experts._map_global_expert_id_to_local_expert_id(expert_id)
 
     def get_expert_weights(self) -> Iterable[torch.Tensor]:
+        """get_expert_weights implementation."""
         return self.routed_experts.get_expert_weights()
 
     #
@@ -996,6 +1009,7 @@ class MoERunner(MoERunnerInterface):
 
     @property
     def eplb_state(self) -> EplbLayerState | None:
+        """eplb_state implementation."""
         return self.router.eplb_state
 
     def set_eplb_state(

@@ -72,6 +72,7 @@ def _get_padding_mask() -> torch.Tensor | None:
 def patch_gating_output(
     gating_output: torch.Tensor, global_num_experts: int
 ) -> torch.Tensor:
+    """patch_gating_output implementation."""
     if global_num_experts != 128:
         is_padding = _get_padding_mask()
 
@@ -99,6 +100,7 @@ def aiter_triton_kernel_w4a8_moe_forward(
     unpadded_N_w2=None,
     unpadded_K_w2=None,
 ):
+    """aiter_triton_kernel_w4a8_moe_forward implementation."""
     assert (
         quant_config is not None
         and quant_config.use_mxfp4_w4a8
@@ -171,6 +173,7 @@ def triton_kernel_fused_mxfp4_w4a8_experts(
     unpadded_N_w2=None,
     unpadded_K_w2=None,
 ) -> torch.Tensor:
+    """triton_kernel_fused_mxfp4_w4a8_experts implementation."""
     assert quant_config is not None
     # type check, uint8 means mxfp4
     assert hidden_states.dtype == torch.bfloat16
@@ -485,6 +488,7 @@ def aiter_triton_kernel_w4a16_moe_forward(
     routed_scaling_factor: float | None = None,
     score_mode: str | None = None,
 ):
+    """aiter_triton_kernel_w4a16_moe_forward implementation."""
     assert quant_config is not None and rocm_aiter_ops.is_enabled()
     from vllm.platforms.rocm import on_gfx1250
 
@@ -628,6 +632,7 @@ class AiterW4A16ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -684,6 +689,7 @@ class AiterW4A16ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     def apply(
@@ -702,6 +708,7 @@ class AiterW4A16ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """apply implementation."""
         assert self.moe_config.intermediate_size_per_partition_unpadded is not None
         assert self.moe_config.hidden_dim_unpadded is not None
         score_mode = (

@@ -51,6 +51,7 @@ logger = init_logger(__name__)
 
 
 def _valid_deep_gemm_shape(M: int, N: int, K: int) -> bool:
+    """MoE layer implementation."""
     align = get_mk_alignment_for_contiguous_layout()[0]
     return align <= M and N % align == 0 and K % align == 0
 
@@ -417,6 +418,7 @@ class DeepGemmFP4Experts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -461,6 +463,7 @@ class DeepGemmFP4Experts(mk.FusedMoEExpertsModular):
         )
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -474,6 +477,7 @@ class DeepGemmFP4Experts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         block_m = get_mk_alignment_for_contiguous_layout()[0]
         M_sum, align_used = compute_aligned_M_and_alignment(
             M, topk, local_num_experts, block_m, expert_tokens_meta
@@ -550,6 +554,7 @@ class DeepGemmFP4Experts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         assert a1q_scale is not None
         assert a2_scale is None
         assert self.w1_scale is not None

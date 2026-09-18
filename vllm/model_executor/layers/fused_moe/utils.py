@@ -368,6 +368,7 @@ def moe_kernel_quantize_input(
     quantization_emulation: bool = False,
     mx_alignment: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """moe_kernel_quantize_input implementation."""
     if quant_dtype == current_platform.fp8_dtype():
         if quantization_emulation:
             return _fp8_quantize_dequantize(A, A_scale)
@@ -433,6 +434,7 @@ def moe_kernel_quantize_input(
 
 
 def normalize_scales_shape(scales: torch.Tensor | None) -> torch.Tensor | None:
+    """normalize_scales_shape implementation."""
     if scales is not None:
         if scales.numel() == 1:
             scales = scales.view(1, 1)
@@ -445,6 +447,7 @@ def normalize_batched_scales_shape(
     scales: torch.Tensor | None,
     num_experts: int,
 ) -> torch.Tensor | None:
+    """normalize_batched_scales_shape implementation."""
     if scales is not None and scales.ndim < 3:
         if scales.numel() == 1:
             scales = scales.view(1)
@@ -508,6 +511,7 @@ def trtllm_moe_pack_topk_ids_weights(
     topk_weights: torch.Tensor,
     block_size: int = 1024,
 ) -> torch.Tensor:
+    """trtllm_moe_pack_topk_ids_weights implementation."""
     assert topk_ids.shape == topk_weights.shape
     assert topk_ids.is_contiguous() and topk_weights.is_contiguous()
 
@@ -642,6 +646,7 @@ def swiglu_limit_func(
     topk_ids: torch.Tensor | None = None,
     expert_map: torch.Tensor | None = None,
 ) -> None:
+    """swiglu_limit_func implementation."""
     # The pad-aware Triton kernel skips unrouted token slots (topk_ids == -1)
     # and, when expert_map is given, slots routed to non-local experts, so it
     # requires topk_ids. Fall back to the torch implementation otherwise.
@@ -653,6 +658,7 @@ def swiglu_limit_func(
 
 @functools.lru_cache
 def enable_swap_ab(BLOCK_SIZE_M: int, BLOCK_SIZE_N: int) -> bool:
+    """enable_swap_ab implementation."""
     return (
         current_platform.is_device_capability(90)
         and BLOCK_SIZE_M < 64

@@ -64,6 +64,7 @@ def is_valid_flashinfer_cutlass_fused_moe(
 
 class FlashInferExperts(mk.FusedMoEExpertsModular):
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         if self.quant_config.use_nvfp4_w4a4:
             layer.w13_weight_scale_2.data.mul_(layer.w13_input_scale)
             layer.w2_weight_scale_2.data.mul_(layer.w2_input_scale)
@@ -123,6 +124,7 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return self.quant_config.use_fp8_w8a8 and self.quant_config.is_block_quantized
 
     @staticmethod
@@ -201,9 +203,11 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -262,6 +266,7 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
+        """apply implementation."""
         quant_scales = None
         fc1_expert_weights = None
         fc2_expert_weights = None
@@ -391,6 +396,7 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
         )
 
     def moe_sum(self, input: torch.Tensor, output: torch.Tensor) -> None:
+        """moe_sum implementation."""
         # No support for LoRA in flashinfer_cutlass_fused_moe.
         # See TODOs in flashinfer functions runMoe and runMoeMinLatency.
         raise NotImplementedError("LoRA is not supported for flashinfer_cutlass_moe")

@@ -26,10 +26,12 @@ class LoRAExpertsMixin:
     _lora_context: MoELoRAContext | None = None
 
     def set_lora_context(self, ctx: MoELoRAContext) -> None:
+        """set_lora_context implementation."""
         self._lora_context = ctx
 
     @staticmethod
     def supports_lora() -> bool:
+        """supports_lora implementation."""
         return True
 
     def apply_w13_lora(
@@ -53,6 +55,7 @@ class LoRAExpertsMixin:
         torch.Tensor | None,
         torch.Tensor | None,
     ]:
+        """apply_w13_lora implementation."""
         w13_lora_a_stacked = lora_context.w13_lora_a_stacked
         w13_lora_b_stacked = lora_context.w13_lora_b_stacked
         if lora_context.enable_moe_shared_loras:
@@ -111,6 +114,7 @@ class LoRAExpertsMixin:
         top_k_num: int,
         add_inputs: bool = True,
     ) -> None:
+        """apply_w2_lora implementation."""
         w2_lora_b_stacked = lora_context.w2_lora_b_stacked
         if lora_context.enable_moe_shared_loras:
             # w2 lora_B is shared across experts (collapsed expert-dim 1);

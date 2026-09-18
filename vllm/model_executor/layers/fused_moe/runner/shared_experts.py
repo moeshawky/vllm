@@ -23,6 +23,7 @@ logger = init_logger(__name__)
 
 
 class SharedExpertsOrder(IntEnum):
+    """MoE layer implementation."""
     # No shared experts.
     NONE = (0,)
 
@@ -122,6 +123,7 @@ class SharedExperts(torch.nn.Module):
         self,
         shared_experts_input: torch.Tensor,
     ):
+        """maybe_sync_shared_experts_stream implementation."""
         experts_order = self._determine_shared_experts_order(shared_experts_input)
 
         if experts_order == SharedExpertsOrder.MULTI_STREAM_OVERLAPPED:
@@ -157,6 +159,7 @@ class SharedExperts(torch.nn.Module):
 
     @property
     def output(self) -> torch.Tensor:
+        """output implementation."""
         assert self._output[self._output_idx] is not None
         output = self._output[self._output_idx]
         self._output[self._output_idx] = None
@@ -167,6 +170,7 @@ class SharedExperts(torch.nn.Module):
         shared_experts_input: torch.Tensor,
         order: SharedExpertsOrder,
     ):
+        """forward implementation."""
         experts_order = self._determine_shared_experts_order(shared_experts_input)
 
         if order != experts_order:

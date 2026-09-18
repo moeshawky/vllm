@@ -24,11 +24,13 @@ class FusedMoERouter(ABC):
         self,
         capture_fn: Callable[[torch.Tensor], None] | None,
     ) -> None:
+        """set_capture_fn implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def routing_method_type(self) -> RoutingMethodType:
+        """routing_method_type implementation."""
         raise NotImplementedError
 
     @abstractmethod

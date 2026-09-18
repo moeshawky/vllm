@@ -32,6 +32,7 @@ logger = init_logger(__name__)
 
 
 class FlashInferCuteDSLBatchedExperts(mk.FusedMoEExpertsModular):
+    """MoE layer implementation."""
     def __init__(
         self,
         moe_config: FusedMoEConfig,
@@ -54,11 +55,13 @@ class FlashInferCuteDSLBatchedExperts(mk.FusedMoEExpertsModular):
         )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         layer.w13_weight_scale_2.data.mul_(layer.w13_input_scale)
         layer.w2_weight_scale_2.data.mul_(layer.w2_input_scale)
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     @staticmethod
@@ -93,6 +96,7 @@ class FlashInferCuteDSLBatchedExperts(mk.FusedMoEExpertsModular):
         return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         # Let PrepareAndFinalize::finalize() decide the impl.
         return TopKWeightAndReduceDelegate()
 
@@ -150,6 +154,7 @@ class FlashInferCuteDSLBatchedExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
+        """apply implementation."""
         assert self.quant_dtype == "nvfp4", (
             "Only nvfp4 quantization are currently supported."
         )
@@ -188,6 +193,7 @@ class FlashInferCuteDSLBatchedExperts(mk.FusedMoEExpertsModular):
 
 
 def get_cute_dtype(input: torch.Tensor) -> str:
+    """get_cute_dtype implementation."""
     if input.dtype == torch.bfloat16:
         return "bfloat16"
     elif input.dtype == torch.float16:

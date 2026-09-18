@@ -29,6 +29,7 @@ logger = init_logger(__name__)
 
 
 class Int8MoeBackend(Enum):
+    """MoE layer implementation."""
     TRITON = "TRITON"
     HUMMING = "HUMMING"
     CPU = "CPU"
@@ -50,6 +51,7 @@ def _get_priority_backends(
 def backend_to_kernel_cls(
     backend: Int8MoeBackend,
 ) -> list[type[mk.FusedMoEExperts]]:
+    """backend_to_kernel_cls implementation."""
     if backend == Int8MoeBackend.TRITON:
         from vllm.model_executor.layers.fused_moe.experts.triton_moe import (
             TritonExperts,
@@ -183,6 +185,7 @@ def make_int8_moe_quant_config(
     per_act_token_quant: bool = False,
     layer: torch.nn.Module | None = None,
 ) -> FusedMoEQuantConfig:
+    """make_int8_moe_quant_config implementation."""
     if (a1_scale is None) != (a2_scale is None):
         raise ValueError("a1_scale and a2_scale must both be provided or both be None")
 
@@ -285,6 +288,7 @@ def make_int8_moe_kernel(
     experts_cls: type[mk.FusedMoEExperts],
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> mk.FusedMoEKernel:
+    """make_int8_moe_kernel implementation."""
     # Create Prepare/Finalize.
     prepare_finalize = maybe_make_prepare_finalize(
         moe=moe_config,

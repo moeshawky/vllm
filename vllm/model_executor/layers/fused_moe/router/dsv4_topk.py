@@ -19,6 +19,7 @@ def can_use_dsv4_topk(
     renormalize: bool,
     indices_dtype: torch.dtype,
 ) -> bool:
+    """MoE layer implementation."""
     return (
         current_platform.is_cuda()
         and gating_output.dtype == torch.float32
@@ -102,6 +103,7 @@ def dsv4_topk(
     indices_dtype: torch.dtype,
     routed_scaling_factor: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """dsv4_topk implementation."""
     num_tokens, num_experts = gating_output.shape
     shape = (num_tokens, _TOPK)
     topk_weights = gating_output.new_empty(shape, dtype=torch.float32)

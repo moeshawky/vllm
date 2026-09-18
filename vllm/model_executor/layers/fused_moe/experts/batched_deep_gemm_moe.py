@@ -40,6 +40,7 @@ logger = init_logger(__name__)
 def scales_shape_stride_dtype(
     E: int, T: int, G: int, quant_scale_fmt: DeepGemmQuantScaleFMT
 ) -> tuple[tuple[int, ...], tuple[int, ...], torch.dtype]:
+    """MoE layer implementation."""
     shape = (E, T, G)
     strides = (T * G, 1, T)
     if quant_scale_fmt in [
@@ -323,6 +324,7 @@ class BatchedDeepGemmExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     @staticmethod
@@ -360,6 +362,7 @@ class BatchedDeepGemmExperts(mk.FusedMoEExpertsModular):
         )
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         # Let PrepareAndFinalize::finalize() decide the impl.
         return TopKWeightAndReduceDelegate()
 
@@ -374,6 +377,7 @@ class BatchedDeepGemmExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         # FIXME (varun): We should be able to dispatch only from the leader
         # DP ranks in the case of TP > 1. At the moment, all the Ranks
         # end up sending their tokens. This needs to be fixed.
@@ -391,6 +395,7 @@ class BatchedDeepGemmExperts(mk.FusedMoEExpertsModular):
     def estimate_expected_m(
         self, global_num_experts: int, max_tokens_per_expert: int, topk: int
     ) -> int:
+        """estimate_expected_m implementation."""
         dp_meta = (
             get_forward_context().dp_metadata
             if is_forward_context_available()
@@ -432,6 +437,7 @@ class BatchedDeepGemmExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         assert expert_tokens_meta is not None
         expert_num_tokens = expert_tokens_meta.expert_num_tokens
 

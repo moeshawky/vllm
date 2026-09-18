@@ -81,6 +81,7 @@ def run_cutlass_moe_fp8(
     *,
     activation_config: ApplyMoEActivationConfig | None = None,
 ):
+    """run_cutlass_moe_fp8 implementation."""
     a1q = hidden_states
 
     assert activation.is_gated, "Only gated activation is supported"
@@ -693,6 +694,7 @@ class CutlassExpertsFp4(mk.FusedMoEExpertsModular):
     """CUTLASS FP4 fused MoE expert implementation."""
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         # Fuse activation scales into w_scale_2 in-place so that
         # g1/g2_alphas (which reference the same tensor) stay in sync
         # when EPLB rearranges the parameter.
@@ -1010,6 +1012,7 @@ class CutlassExpertsMxfp4(mk.FusedMoEExpertsModular):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     @staticmethod
@@ -1303,6 +1306,7 @@ class CutlassExpertsW4A8Fp8(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -1313,6 +1317,7 @@ class CutlassExpertsW4A8Fp8(mk.FusedMoEExpertsModular):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         if moe_config.in_dtype != torch.bfloat16:
             return (
                 False,
@@ -1351,10 +1356,12 @@ class CutlassExpertsW4A8Fp8(mk.FusedMoEExpertsModular):
         return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         # topk weights and reduction are fused in moe_unpermute cuda kernel
         return TopKWeightAndReduceNoOP()
 
     def workspace_dtype(self, act_dtype: torch.dtype) -> torch.dtype:
+        """workspace_dtype implementation."""
         return self.out_dtype if self.out_dtype is not None else act_dtype
 
     def _get_permute_scratch(self) -> MoEPermuteScratch | None:
@@ -1379,6 +1386,7 @@ class CutlassExpertsW4A8Fp8(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         activation_out_dim = self.adjust_N_for_activation(N, activation)
         workspace1 = (M * topk, max(N, K))
         workspace2 = (M * topk, max(activation_out_dim, K))
@@ -1403,6 +1411,7 @@ class CutlassExpertsW4A8Fp8(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         assert self.w1_zp is None, "w1_zp is not supported in CUTLASS MoE"
         assert self.w2_zp is None, "w2_zp is not supported in CUTLASS MoE"
 

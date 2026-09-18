@@ -60,6 +60,7 @@ def grouped_topk(
     routed_scaling_factor: float = 1.0,
     e_score_correction_bias: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """grouped_topk implementation."""
     assert hidden_states.shape[0] == gating_output.shape[0], "Number of tokens mismatch"
 
     gating_output = gating_output.float()
@@ -120,6 +121,7 @@ def select_experts(
     routed_scaling_factor: float = 1.0,
     e_score_correction_bias: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """select_experts implementation."""
     if use_grouped_topk:
         assert topk_group is not None
         assert num_expert_group is not None
@@ -1158,6 +1160,7 @@ class CPUExpertsInt8(mk.FusedMoEExpertsMonolithic):
         return True
 
     def supports_expert_map(self) -> bool:
+        """supports_expert_map implementation."""
         return False
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
@@ -1230,10 +1233,12 @@ class ArmCPUExpertsInt8(mk.FusedMoEExpertsMonolithic):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -1244,6 +1249,7 @@ class ArmCPUExpertsInt8(mk.FusedMoEExpertsMonolithic):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         supported, reason = mk.FusedMoEExperts.is_supported_config(
             cls,
             moe_config,
@@ -1322,6 +1328,7 @@ class ArmCPUExpertsInt8(mk.FusedMoEExpertsMonolithic):
         return True
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         w13 = cpu_prepack_moe_weight_int8(layer.w13_weight, "neon")
         w2 = cpu_prepack_moe_weight_int8(layer.w2_weight, "neon")
         replace_parameter(layer, "w13_weight", w13)
@@ -1343,6 +1350,7 @@ class ArmCPUExpertsInt8(mk.FusedMoEExpertsMonolithic):
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """apply implementation."""
         topk_weights, topk_ids = select_experts(
             hidden_states=hidden_states,
             router_logits=router_logits,

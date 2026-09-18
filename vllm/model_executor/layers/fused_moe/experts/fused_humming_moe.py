@@ -104,6 +104,7 @@ def _is_supported_wna16_weight_key(weight_key: QuantKey | None) -> bool:
 
 
 def get_humming_moe_gemm_type() -> str:
+    """get_humming_moe_gemm_type implementation."""
     env_gemm_type: str | None = envs.VLLM_HUMMING_MOE_GEMM_TYPE
     gemm_type = "indexed"
     if env_gemm_type is not None:
@@ -181,6 +182,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         self._permute_scratch: MoEPermuteScratch | None = None
 
     def init_humming_moe(self):
+        """init_humming_moe implementation."""
         from vllm.utils.humming import get_heuristics_config
 
         self.compute_config = {
@@ -215,6 +217,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         quanted_input: torch.Tensor | None,
         input_scale: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """quantize_input implementation."""
         from vllm.utils.humming import may_quant_input
 
         # input_scale is set for block-FP8 (group-128) activations that were
@@ -236,6 +239,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         outputs: torch.Tensor,
         **kwargs: Any,
     ) -> torch.Tensor:
+        """humming_forward implementation."""
         from vllm.utils.humming import humming_forward
 
         is_w13 = sublayer_name == "w13"
@@ -271,6 +275,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         return self._permute_scratch
 
     def get_global_valid_shape_m(self, topk_ids: torch.Tensor):
+        """get_global_valid_shape_m implementation."""
         num_tokens = topk_ids.size(0)
         ctx = get_forward_context()
         if ctx.dp_metadata is not None:
@@ -279,6 +284,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         return num_tokens * topk_ids.size(1)
 
     def estimate_local_valid_shape_m(self, topk_ids: torch.Tensor):
+        """estimate_local_valid_shape_m implementation."""
         # estimate shape_m for kernel tuning
         global_valid_shape_m = self.get_global_valid_shape_m(topk_ids)
         num_experts = self.num_experts
@@ -291,6 +297,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
 
     @classmethod
     def is_batched(cls) -> bool:
+        """is_batched implementation."""
         return cls.activation_format() == mk.FusedMoEActivationFormat.BatchedExperts
 
     @staticmethod
@@ -415,6 +422,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         w2: torch.Tensor,
         topk_ids: torch.Tensor,
     ) -> tuple[int, int, int, int, int]:
+        """moe_problem_size implementation."""
         meta1 = self.humming_configs["w13"]
         meta2 = self.humming_configs["w2"]
 
@@ -438,6 +446,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         return meta1.num_experts, num_tokens, intermediate_dim, hidden_dim, top_k
 
     def get_buffer_metas(self, M: int, topk: int, activation: MoEActivation):
+        """get_buffer_metas implementation."""
         from vllm.utils.humming import GemmType as HummingGemmType
         from vllm.utils.humming import dtypes
 
@@ -583,9 +592,11 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         return self._workspace_shapes(M, topk, activation)
 
     def make_workspaces(self, M: int, topk: int, activation: MoEActivation):
+        """make_workspaces implementation."""
         shapes = self._workspace_shapes(M, topk, activation)
         workspace1_shape, workspace2_shape, output_shape = shapes
         torch_dtype = self.moe_config.in_dtype
@@ -604,6 +615,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         topk: int,
         activation: MoEActivation,
     ) -> dict[str, torch.Tensor]:
+        """prepare_buffers implementation."""
         buffer_metas, required_buffers = self.get_buffer_metas(M, topk, activation)
         buffers = {}
         for index, name in enumerate(required_buffers[::-1]):
@@ -625,6 +637,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         supported, reason = mk.FusedMoEExpertsModular.is_supported_config(
             cls,
             moe_config,
@@ -653,6 +666,7 @@ class HummingExpertsBase(mk.FusedMoEExpertsModular):
         input: torch.Tensor,
         valid_rows: torch.Tensor | None = None,
     ) -> None:
+        """apply_activation implementation."""
         activation_config = self.activation_config
         if (
             activation == MoEActivation.SILU
@@ -767,6 +781,7 @@ class HummingIndexedExperts(HummingExpertsBase):
         expert_map: torch.Tensor | None,
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """prepare_humming_moe_kwargs implementation."""
         valid_shape_m = self.estimate_local_valid_shape_m(topk_ids)
 
         moe_block_size = None
@@ -1050,14 +1065,17 @@ class HummingGroupedExperts(HummingExpertsBase):
 
 class BatchedHummingGroupedExperts(HummingExpertsBase):
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceDelegate()
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     @staticmethod
     def humming_gemm_type() -> "HummingGemmType":
+        """humming_gemm_type implementation."""
         from vllm.utils.humming import GemmType as HummingGemmType
 
         return HummingGemmType.GROUPED_MASKED

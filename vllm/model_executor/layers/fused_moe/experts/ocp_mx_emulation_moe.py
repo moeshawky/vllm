@@ -94,6 +94,11 @@ class OCP_MXQuantizationEmulationTritonExperts(TritonExperts):
         moe_config: FusedMoEConfig,
         quant_config: FusedMoEQuantConfig,
     ):
+        """
+        Initialize the OCP MX quantization emulation expert instance.
+
+        Sets up scale values, dequantization config, and validates the OCP MX scheme.
+        """
         super().__init__(moe_config, quant_config)
         logger.warning_once(
             "Using OCP_MXQuantizationEmulationTritonExperts MOE backend. This"
@@ -128,6 +133,7 @@ class OCP_MXQuantizationEmulationTritonExperts(TritonExperts):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """Check if the config is supported for OCP MX emulation via AITER."""
         if not has_quark():
             return False, "kernel requires amd-quark package"
 
@@ -141,6 +147,7 @@ class OCP_MXQuantizationEmulationTritonExperts(TritonExperts):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """expects_unquantized_inputs implementation."""
         return self._quant_dtype
 
     @property
@@ -152,6 +159,7 @@ class OCP_MXQuantizationEmulationTritonExperts(TritonExperts):
         weight_key,
         activation_key,
     ) -> bool:
+        """Return True unconditionally; this class is used for emulation only."""
         # This class is used for emulation only - the oracle selects it
         # directly rather than via quant scheme matching.
         return True

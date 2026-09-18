@@ -18,6 +18,7 @@ def _quantize_and_setup_dispatch(
     quant_config: FusedMoEQuantConfig,
     defer_input_quant: bool = False,
 ) -> tuple[torch.Tensor, list[torch.Tensor] | None, torch.Tensor | None]:
+    """MoE layer implementation for naive_dp_ep.py."""
     # Defer input quantization to the MoE kernel.
     if defer_input_quant:
         a1q = a1
@@ -91,19 +92,24 @@ class MoEPrepareAndFinalizeNaiveDPEPModular(mk.FusedMoEPrepareAndFinalizeModular
         self._lora_context = None
 
     def set_lora_context(self, ctx) -> None:
+        """set_lora_context implementation."""
         self._lora_context = ctx
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return None
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return None
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self._num_dispatchers
 
     def output_is_reduced(self) -> bool:
@@ -193,6 +199,7 @@ class MoEPrepareAndFinalizeNaiveDPEPModular(mk.FusedMoEPrepareAndFinalizeModular
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         if isinstance(weight_and_reduce_impl, TopKWeightAndReduceDelegate):
             weight_and_reduce_impl = TopKWeightAndReduceContiguous()
 
@@ -288,6 +295,7 @@ def make_moe_prepare_and_finalize_naive_dp_ep(
     is_sequence_parallel: bool = False,
     num_dispatchers: int = 1,
 ) -> MoEPrepareAndFinalizeNaiveDPEPModular | MoEPrepareAndFinalizeNaiveDPEPMonolithic:
+    """make_moe_prepare_and_finalize_naive_dp_ep implementation."""
     return (
         MoEPrepareAndFinalizeNaiveDPEPMonolithic(
             is_sequence_parallel=is_sequence_parallel,

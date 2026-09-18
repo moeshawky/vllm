@@ -34,6 +34,7 @@ logger = init_logger(__name__)
 
 
 class UnquantizedMoeBackend(Enum):
+    """MoE layer implementation."""
     FLASHINFER_TRTLLM = "FlashInfer TRTLLM"
     FLASHINFER_CUTLASS = "FlashInfer CUTLASS"
     AITER = "ROCm AITER"
@@ -332,6 +333,7 @@ def convert_to_unquantized_kernel_format(
     w13_weight: torch.Tensor,
     w2_weight: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """convert_to_unquantized_kernel_format implementation."""
     if unquantized_backend == UnquantizedMoeBackend.AITER:
         w13_weight, w2_weight = rocm_aiter_ops.shuffle_weights(w13_weight, w2_weight)
         w13_weight.is_shuffled = True
@@ -379,6 +381,7 @@ def make_unquantized_moe_kernel(
     experts_cls: type[mk.FusedMoEExperts],
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> mk.FusedMoEKernel:
+    """make_unquantized_moe_kernel implementation."""
     from vllm.model_executor.layers.fused_moe.utils import (
         warn_if_moe_use_td_ineffective,
     )
@@ -441,19 +444,23 @@ class UnquantizedMoEKernelOracle(MoEKernelOracle[UnquantizedMoeBackend]):
     """
 
     def backend_enum_cls(self) -> type[UnquantizedMoeBackend]:
+        """backend_enum_cls implementation."""
         return UnquantizedMoeBackend
 
     def get_priority_backends(
         self, moe_config: FusedMoEConfig
     ) -> list[UnquantizedMoeBackend]:
+        """get_priority_backends implementation."""
         return _get_priority_backends(moe_config)
 
     def backend_to_kernel_cls(
         self, backend: UnquantizedMoeBackend
     ) -> list[type[mk.FusedMoEExperts]]:
+        """backend_to_kernel_cls implementation."""
         return backend_to_kernel_cls(backend)
 
     def map_backend(self, runner_backend: MoEBackend) -> UnquantizedMoeBackend:
+        """map_backend implementation."""
         return map_unquantized_backend(runner_backend)
 
     def select_backend(
@@ -462,6 +469,7 @@ class UnquantizedMoEKernelOracle(MoEKernelOracle[UnquantizedMoeBackend]):
         weight_key: "QuantKey | None" = None,
         activation_key: "QuantKey | None" = None,
     ) -> tuple[UnquantizedMoeBackend, type[mk.FusedMoEExperts] | None]:
+        """select_backend implementation."""
         assert weight_key is None and activation_key is None, (
             "Weights and activations will never be quantized for "
             "UnquantizedMoEKernelOracle"
@@ -475,6 +483,7 @@ class UnquantizedMoEKernelOracle(MoEKernelOracle[UnquantizedMoeBackend]):
         w13_weight: torch.Tensor,
         w2_weight: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """convert_to_kernel_format implementation."""
         return convert_to_unquantized_kernel_format(
             backend, moe_config, w13_weight, w2_weight
         )
@@ -487,6 +496,7 @@ class UnquantizedMoEKernelOracle(MoEKernelOracle[UnquantizedMoeBackend]):
         experts_cls: type[mk.FusedMoEExperts],
         routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     ) -> mk.FusedMoEKernel:
+        """make_kernel implementation."""
         return make_unquantized_moe_kernel(
             quant_config, moe_config, backend, experts_cls, routing_tables
         )

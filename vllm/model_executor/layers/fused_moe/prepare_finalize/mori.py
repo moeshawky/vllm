@@ -32,21 +32,27 @@ class MoriPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     def num_dispatchers(self):
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return self.max_tokens_per_rank
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return torch.int32
 
     def supports_async(self) -> bool:
+        """supports_async implementation."""
         return False
 
     def prepare(
@@ -115,6 +121,7 @@ class MoriPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         num_token = output.shape[0]
         result = self.mori_op.combine(
             fused_expert_output,

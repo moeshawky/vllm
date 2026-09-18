@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Triton kernels for lightning (block-wise linear) attention
+with per-head exponential decay."""
+
 
 import torch
 from einops import rearrange
@@ -10,7 +13,10 @@ from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 
 
 @triton.jit
+
+
 def _fwd_diag_kernel(
+
     Q,
     K,
     V,
@@ -25,6 +31,7 @@ def _fwd_diag_kernel(
     NUM_BLOCK,
     CBLOCK: tl.constexpr,
 ):
+    """Triton kernel computing diagonal attention blocks with causal decay."""
     # This kernel computes the diagonal blocks of the attention matrix
     # Each diagonal block represents attention
     # where queries attend to keys in the same block
@@ -140,6 +147,7 @@ def _fwd_diag_kernel(
 
 @triton.jit
 def _fwd_kv_parallel(
+
     K,
     V,
     K_decay,
@@ -157,6 +165,7 @@ def _fwd_kv_parallel(
     CBLOCK: tl.constexpr,
     NUM_CBLOCK: tl.constexpr,
 ):
+    """Triton kernel computing per-block key-value outer products."""
     # This kernel computes the key-value outer
     # products for each block in parallel
     off_bh = tl.program_id(0)  # batch-head index
@@ -249,6 +258,7 @@ def _fwd_kv_parallel(
 
 @triton.jit
 def _fwd_kv_reduce(
+
     S,
     KV,
     KV_HISTORY,
@@ -262,6 +272,7 @@ def _fwd_kv_reduce(
     D_FBLOCK: tl.constexpr,
     E_FBLOCK: tl.constexpr,
 ):
+    """Triton kernel folding per-block KV outer products into running history."""
     # This kernel reduces the key-value outer products
     # across blocks and updates the KV history
     off_bh = tl.program_id(0)  # batch-head index
@@ -314,6 +325,7 @@ def _fwd_kv_reduce(
 
 @triton.jit
 def _fwd_none_diag_kernel(
+
     Q,
     Out,
     S,
@@ -329,6 +341,7 @@ def _fwd_none_diag_kernel(
     CBLOCK: tl.constexpr,
     NUM_CBLOCK: tl.constexpr,
 ):
+    """Triton kernel computing off-diagonal attention contribution."""
     # This kernel computes the non-diagonal blocks of the attention matrix
     # Each non-diagonal block represents attention
     # where queries attend to keys in different blocks
@@ -398,6 +411,7 @@ def _fwd_none_diag_kernel(
 class _attention(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q, k, v, s, kv_history):
+
         # Forward pass of the lightning attention algorithm
         q = q.contiguous()
         k = k.contiguous()
@@ -534,6 +548,7 @@ lightning_attention_ = _attention.apply
 
 
 def lightning_attention(
+
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
@@ -675,6 +690,7 @@ def _linear_attn_decode_kernel(
 
 
 def linear_decode_forward_triton(
+
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,

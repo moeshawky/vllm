@@ -184,6 +184,7 @@ def silu_and_mul_with_clamp(
     topk_ids: torch.Tensor | None = None,
     expert_map: torch.Tensor | None = None,
 ) -> None:
+    """silu_and_mul_with_clamp implementation."""
     if topk_ids is not None and expert_map is not None:
         from vllm.model_executor.layers.fused_moe.utils import swiglu_limit_func
 

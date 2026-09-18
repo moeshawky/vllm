@@ -40,6 +40,7 @@ logger = init_logger(__name__)
 
 
 class NvFp4MoeBackend(Enum):
+    """MoE layer implementation."""
     B12X = "B12X"
     FLASHINFER_TRTLLM = "FLASHINFER_TRTLLM"
     FLASHINFER_CUTLASS = "FLASHINFER_CUTLASS"
@@ -62,6 +63,7 @@ FLASHINFER_NVFP4_MOE_BACKENDS = [
 
 
 def is_global_sf_supported_for_nvfp4_backend(backend: NvFp4MoeBackend) -> bool:
+    """is_global_sf_supported_for_nvfp4_backend implementation."""
     # Checks whether `backend` supports quantizing with scaling factors
     # of all experts in Expert Parallel Mode when all experts are not
     # on the same rank.
@@ -72,6 +74,7 @@ def is_global_sf_supported_for_nvfp4_backend(backend: NvFp4MoeBackend) -> bool:
 def backend_to_kernel_cls(
     backend: NvFp4MoeBackend,
 ) -> list[type[mk.FusedMoEExperts]]:
+    """backend_to_kernel_cls implementation."""
     if backend == NvFp4MoeBackend.B12X:
         from vllm.model_executor.layers.fused_moe.b12x import B12xExperts
 
@@ -334,6 +337,7 @@ def convert_to_nvfp4_moe_kernel_format(
     torch.Tensor,
     torch.Tensor,
 ]:
+    """convert_to_nvfp4_moe_kernel_format implementation."""
     use_a16 = _use_a16(nvfp4_backend, use_a16)
     if nvfp4_backend == NvFp4MoeBackend.B12X:
         if a13_scale is None or a2_scale is None:
@@ -522,6 +526,7 @@ def make_nvfp4_moe_quant_config(
     layer: torch.nn.Module | None = None,
     use_a16: bool = False,
 ) -> FusedMoEQuantConfig:
+    """make_nvfp4_moe_quant_config implementation."""
     use_a16 = _use_a16(backend, use_a16)
     if backend == NvFp4MoeBackend.HUMMING:
         from vllm.model_executor.layers.fused_moe import RoutedExperts
@@ -600,6 +605,7 @@ def make_nvfp4_moe_kernel(
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     per_token_activation: bool = False,
 ) -> mk.FusedMoEKernel:
+    """make_nvfp4_moe_kernel implementation."""
     # Create Prepare/Finalize.
     prepare_finalize = maybe_make_prepare_finalize(
         moe=moe_config,

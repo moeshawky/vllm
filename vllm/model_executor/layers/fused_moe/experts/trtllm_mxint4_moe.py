@@ -33,6 +33,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         max_num_tokens: int | None = None,
         num_dispatchers: int | None = None,
     ):
+        """Initialize the MxInt4 TRTLLM monolithic expert."""
         super().__init__(moe_config, quant_config)
         self.topk = moe_config.experts_per_token
         self.intermediate_size_per_partition = (
@@ -44,6 +45,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @staticmethod
     def _supports_current_device() -> bool:
+        """Return whether MxInt4 TRTLLM is supported on the current device."""
         from vllm.model_executor.layers.quantization.utils.flashinfer_mxint4_moe import (  # noqa: E501
             is_flashinfer_mxint4_moe_available,
         )
@@ -57,6 +59,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @staticmethod
     def _supports_no_act_and_mul() -> bool:
+        """Return False; MxInt4 does not support no-activation and mul."""
         return False
 
     @staticmethod
@@ -64,10 +67,12 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
+        """Check if the quantization scheme is supported by MxInt4 TRTLLM."""
         return (weight_key, activation_key) == (kInt4Static32, None)
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
+        """Check if the activation function is supported by MxInt4 TRTLLM."""
         # FlashInfer MxInt4 names the standard gated SiLU path "SwiGLU".
         # In vLLM MoE configs that maps to SILU/silu_and_mul; SWIGLUOAI is
         # kept as an alias for consistency with other FlashInfer backends.
@@ -77,6 +82,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
     def _supports_parallel_config(
         moe_parallel_config: FusedMoEParallelConfig,
     ) -> bool:
+        """Check if the parallel config is supported by MxInt4."""
         return (
             not moe_parallel_config.use_all2all_kernels
             or moe_parallel_config.use_ag_rs_all2all_kernels
@@ -88,6 +94,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
+        """Check if the routing method is supported by MxInt4 TRTLLM."""
         return routing_method in [
             RoutingMethodType.Renormalize,
             RoutingMethodType.RenormalizeNaive,
@@ -101,6 +108,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         router_logits_dtype: torch.dtype | None,
         routing_method: RoutingMethodType,
     ) -> bool:
+        """Check if the router logits dtype is supported by MxInt4 TRTLLM."""
         if router_logits_dtype == torch.float32:
             # DeepSeekV3 routing handles float32 logits internally.
             # Simulated routing generates synthetic decisions.
@@ -112,17 +120,21 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def supports_expert_map(self) -> bool:
+        """supports_expert_map implementation."""
         return False
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         # The kernel handles quantization internally.
         return True
 
     def supports_routing_replay_capture(self) -> bool:
+        """supports_routing_replay_capture implementation."""
         return True
 
     def apply(
@@ -141,6 +153,7 @@ class TrtLlmMxint4ExpertsMonolithic(mk.FusedMoEExpertsMonolithic):
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """apply implementation."""
         from vllm.model_executor.layers.quantization.utils.flashinfer_mxint4_moe import (  # noqa: E501
             flashinfer_trtllm_mxint4_moe,
         )

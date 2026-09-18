@@ -47,6 +47,7 @@ class CPUExpertsInt4(mk.FusedMoEExpertsMonolithic):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -57,6 +58,7 @@ class CPUExpertsInt4(mk.FusedMoEExpertsMonolithic):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         if (
             not current_platform.is_cpu()
             or current_platform.get_cpu_architecture() != CpuArchEnum.ARM

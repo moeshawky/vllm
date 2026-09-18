@@ -17,6 +17,7 @@ from vllm.model_executor.layers.fused_moe.router.base_router import BaseRouter
 
 
 def _get_padding_mask(num_tokens: int) -> torch.Tensor | None:
+    """MoE layer implementation."""
     if envs.VLLM_MOE_SKIP_PADDING and is_forward_context_available():
         is_padding = get_forward_context().is_padding
         return is_padding[:num_tokens] if is_padding is not None else None
@@ -30,6 +31,7 @@ def vllm_topk_softmax(
     gating_output: torch.Tensor,
     renormalize: bool = False,
 ) -> tuple[torch.Tensor, ...]:
+    """vllm_topk_softmax implementation."""
     ops.topk_softmax(
         topk_weights,
         topk_indices,
@@ -49,6 +51,7 @@ def vllm_topk_sigmoid(
     gating_output: torch.Tensor,
     renormalize: bool = False,
 ) -> tuple[torch.Tensor, ...]:
+    """vllm_topk_sigmoid implementation."""
     ops.topk_sigmoid(
         topk_weights,
         topk_indices,
@@ -64,6 +67,7 @@ def vllm_topk_sigmoid(
 def dispatch_topk_softmax_func(
     use_rocm_aiter: bool = False,
 ) -> Callable[..., tuple[torch.Tensor, ...]]:
+    """dispatch_topk_softmax_func implementation."""
     if use_rocm_aiter:
         return rocm_aiter_ops.topk_softmax
     return vllm_topk_softmax
@@ -72,6 +76,7 @@ def dispatch_topk_softmax_func(
 def dispatch_topk_sigmoid_func(
     use_rocm_aiter: bool = False,
 ) -> Callable[..., tuple[torch.Tensor, ...]]:
+    """dispatch_topk_sigmoid_func implementation."""
     if use_rocm_aiter:
         return rocm_aiter_ops.topk_sigmoid
     return vllm_topk_sigmoid
@@ -85,6 +90,7 @@ def fused_topk(
     indices_type: torch.dtype | None = None,
     scoring_func: str = "softmax",
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """fused_topk implementation."""
     assert hidden_states.size(0) == gating_output.size(0), "Number of tokens mismatch"
 
     M, _ = hidden_states.size()
@@ -145,6 +151,7 @@ class FusedTopKRouter(BaseRouter):
 
     @property
     def routing_method_type(self) -> RoutingMethodType:
+        """routing_method_type implementation."""
         return get_routing_method_type(
             scoring_func=self.scoring_func,
             top_k=self.top_k,

@@ -66,14 +66,17 @@ class AiterMxfp8Experts(Mxfp8TritonExpertsBase):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         return self.quant_config.quant_dtype
 
     @property
     def block_shape(self) -> list[int] | None:
+        """block_shape implementation."""
         return self.quant_config.block_shape
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         # aiter.fused_moe MXFP8-quantizes the activations internally.
         return True
 
@@ -92,6 +95,7 @@ class AiterMxfp8Experts(Mxfp8TritonExpertsBase):
     def is_supported_config(
         cls, moe_config, weight_key, activation_key, activation_format
     ):
+        """is_supported_config implementation."""
         is_supported, reason = super().is_supported_config(
             cls, moe_config, weight_key, activation_key, activation_format
         )
@@ -142,6 +146,7 @@ class AiterMxfp8Experts(Mxfp8TritonExpertsBase):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         from aiter import ActivationType, QuantType
         from aiter.ops.flydsl.moe_common import GateMode
 

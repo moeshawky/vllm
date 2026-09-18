@@ -143,6 +143,7 @@ class TopKWeightAndReduceNaiveBatched(mk.TopKWeightAndReduce):
         topk_ids: torch.Tensor,
         apply_router_weight_on_input: bool,
     ) -> torch.Tensor:
+        """apply implementation."""
         assert fused_expert_output.ndim == 3
         num_tokens = topk_ids.size(0)
         num_local_experts = fused_expert_output.size(0)

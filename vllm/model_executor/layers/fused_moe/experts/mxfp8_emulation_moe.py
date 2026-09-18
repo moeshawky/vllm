@@ -75,15 +75,18 @@ class Mxfp8EmulationTritonExperts(Mxfp8TritonExpertsBase):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         # BF16 fallback: do not MXFP8-quantize activations in ``TritonExperts``.
         return None
 
     @property
     def block_shape(self) -> list[int] | None:
+        """block_shape implementation."""
         return None
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     @staticmethod
@@ -133,6 +136,7 @@ class Mxfp8EmulationTritonExperts(Mxfp8TritonExpertsBase):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         # If the weights were already dequantized to BF16 at load time
         # (process_weights_after_loading on devices without a native MXFP8 MoE
         # kernel), use them directly -- no per-step dequant. MXFP8 weights are

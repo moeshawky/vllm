@@ -152,6 +152,7 @@ class TrtLlmNvFp4ExpertsBase:
         return self.quant_config.g1_alphas * self.quant_config.a2_gscale
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         layer.w13_weight_scale_2.data.mul_(layer.w13_input_scale)
         layer.w2_weight_scale_2.data.mul_(layer.w2_input_scale)
         # Recompute g1_scale_c since g1_alphas was just fused in-place.
@@ -254,10 +255,12 @@ class TrtLlmNvFp4ExpertsBase:
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return self.per_token_activation
 
     def _quantize_per_token_input(
@@ -321,6 +324,7 @@ class TrtLlmNvFp4ExpertsModular(TrtLlmNvFp4ExpertsBase, mk.FusedMoEExpertsModula
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         if self.per_token_activation:
             # Deferred input quant leaves K unpacked here, breaking the
             # workspace assumptions below. Per-token NVFP4 is only supported on
@@ -342,6 +346,7 @@ class TrtLlmNvFp4ExpertsModular(TrtLlmNvFp4ExpertsBase, mk.FusedMoEExpertsModula
         return (workspace1, workspace2, output)
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def _invoke_kernel(
@@ -473,6 +478,7 @@ class TrtLlmNvFp4ExpertsMonolithic(
     """
 
     def supports_routing_replay_capture(self) -> bool:
+        """supports_routing_replay_capture implementation."""
         return True
 
     @staticmethod
@@ -525,6 +531,7 @@ class TrtLlmNvFp4ExpertsMonolithic(
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor | UnfinalizedMoEOutput:
+        """apply implementation."""
         import flashinfer
 
         assert self._supports_activation(activation)

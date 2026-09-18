@@ -40,6 +40,7 @@ logger = init_logger(__name__)
 
 
 class Fp8MoeBackend(Enum):
+    """MoE layer implementation."""
     NONE = "NONE"
     FLASHINFER_TRTLLM = "FLASHINFER_TRTLLM"
     FLASHINFER_CUTLASS = "FLASHINFER_CUTLASS"
@@ -136,6 +137,7 @@ def _get_priority_backends(
 def backend_to_kernel_cls(
     backend: Fp8MoeBackend,
 ) -> list[type[mk.FusedMoEExperts]]:
+    """backend_to_kernel_cls implementation."""
     if backend == Fp8MoeBackend.FLASHINFER_TRTLLM:
         from vllm.model_executor.layers.fused_moe.experts.trtllm_fp8_moe import (  # noqa: E501
             TrtLlmFp8ExpertsModular,
@@ -464,6 +466,7 @@ def convert_to_fp8_moe_kernel_format(
     w13_input_scale: torch.Tensor | None,
     w2_input_scale: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """convert_to_fp8_moe_kernel_format implementation."""
     block_quant = hasattr(layer, "weight_block_size")
     if fp8_backend in [Fp8MoeBackend.DEEPGEMM, Fp8MoeBackend.BATCHED_DEEPGEMM]:
         assert block_quant
@@ -693,6 +696,7 @@ def make_fp8_moe_kernel(
     fp8_backend: Fp8MoeBackend,
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> mk.FusedMoEKernel:
+    """make_fp8_moe_kernel implementation."""
     # Create Prepare/Finalize.
     prepare_finalize = maybe_make_prepare_finalize(
         moe=moe_config,

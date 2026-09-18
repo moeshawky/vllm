@@ -366,19 +366,23 @@ class Nvfp4QuantizationEmulationTritonExperts(TritonExperts):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         return "nvfp4"
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     @property
     def a1_scale(self) -> torch.Tensor:
+        """a1_scale implementation."""
         # Used in experts/triton_moe.py and passed to moe_kernel_quantize_input.
         return self.a1_gscale
 
     @staticmethod
     def supports_lora() -> bool:
+        """supports_lora implementation."""
         return False
 
     @staticmethod
@@ -389,6 +393,7 @@ class Nvfp4QuantizationEmulationTritonExperts(TritonExperts):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         if moe_config.is_lora_enabled:
             return False, "kernel does not support LoRA"
         if moe_config.has_bias:

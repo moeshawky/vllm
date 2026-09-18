@@ -45,6 +45,7 @@ class FallbackExperts(mk.FusedMoEExpertsModular, ABC):
     def activation_format(
         cls: type["FallbackExperts"],
     ) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         experts_cls, fallback_cls = cls.get_clses()
         assert experts_cls.activation_format() == fallback_cls.activation_format()
         return experts_cls.activation_format()
@@ -93,6 +94,7 @@ class FallbackExperts(mk.FusedMoEExpertsModular, ABC):
         ) and fallback_cls._supports_parallel_config(moe_parallel_config)
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         e_war = self.experts.finalize_weight_and_reduce_impl()
         fbe_war = self.fallback_experts.finalize_weight_and_reduce_impl()
         is_dge_war = e_war is not None
@@ -121,6 +123,7 @@ class FallbackExperts(mk.FusedMoEExpertsModular, ABC):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         raise NotImplementedError
 
     @abstractmethod
@@ -150,6 +153,7 @@ class FallbackExperts(mk.FusedMoEExpertsModular, ABC):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         experts = self._select_experts_impl(hidden_states, w1, w2)
         experts.apply(
             output,

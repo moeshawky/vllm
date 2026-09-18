@@ -36,6 +36,7 @@ def fused_grouped_topk(
     scoring_func: str = "softmax",
     routed_scaling_factor: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """MoE layer implementation."""
     assert hidden_states.size(0) == gating_output.size(0), "Number of tokens mismatch"
 
     if scoring_func == "sigmoid":
@@ -88,6 +89,7 @@ def grouped_topk(
     routed_scaling_factor: float = 1.0,
     e_score_correction_bias: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """grouped_topk implementation."""
     if (
         envs.VLLM_USE_FUSED_MOE_GROUPED_TOPK
         and current_platform.is_cuda()
@@ -194,6 +196,7 @@ class GroupedTopk(CustomOp):
         gating_output: torch.Tensor,
         e_score_correction_bias: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """forward_native implementation."""
         return self.native_impl(
             hidden_states,
             gating_output,
@@ -212,6 +215,7 @@ class GroupedTopk(CustomOp):
         gating_output: torch.Tensor,
         e_score_correction_bias: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """forward_cuda implementation."""
         return self.forward_native(
             hidden_states, gating_output, e_score_correction_bias
         )
@@ -222,6 +226,7 @@ class GroupedTopk(CustomOp):
         gating_output: torch.Tensor,
         e_score_correction_bias: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """forward_hip implementation."""
         if rocm_aiter_ops.is_fused_moe_enabled():
             if not rocm_aiter_ops.is_fusion_moe_shared_experts_enabled():
                 assert self.num_fused_shared_experts == 0
@@ -274,6 +279,7 @@ class GroupedTopKRouter(BaseRouter):
 
     @property
     def routing_method_type(self) -> RoutingMethodType:
+        """routing_method_type implementation."""
         return get_routing_method_type(
             scoring_func=self.scoring_func,
             top_k=self.top_k,

@@ -30,6 +30,7 @@ def _make_eep_experts(
     prepare_finalize: FusedMoEPrepareAndFinalizeModular,
     moe_config: FusedMoEConfig,
 ) -> FusedMoEExpertsModular:
+    """MoE layer implementation."""
     experts_cls = source_experts.__class__
     assert quant_method.moe_quant_config is not None
     experts_kwargs: dict[str, Any] = {
@@ -61,6 +62,7 @@ def make_eep_staged_quant_method(
     module: "MoERunner",
     moe_config: FusedMoEConfig,
 ) -> FusedMoEMethodBase | None:
+    """make_eep_staged_quant_method implementation."""
     quant_method = module._quant_method
     if not quant_method.supports_internal_mk:
         return None

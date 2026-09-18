@@ -35,6 +35,7 @@ logger = init_logger(__name__)
 
 
 class FusedMoeWeightScaleSupported(Enum):
+    """MoE layer implementation for routed_experts.py."""
     TENSOR = "tensor"
     CHANNEL = "channel"
     GROUP = "group"
@@ -223,10 +224,12 @@ class RoutedExperts(PluggableLayer):
 
     @property
     def use_ep(self) -> bool:
+        """use_ep implementation."""
         return self.moe_config.moe_parallel_config.use_ep
 
     @property
     def expert_map(self) -> torch.Tensor | None:
+        """expert_map implementation."""
         # AITER fused-MoE kernels consume the 0/1 expert_mask; every other
         # backend consumes the canonical -1/local-slot map. Ask the active
         # experts kernel which it wants (only AITER sets consumes_expert_mask)
@@ -238,6 +241,7 @@ class RoutedExperts(PluggableLayer):
         return self._expert_map
 
     def update_expert_map_info(self):
+        """update_expert_map_info implementation."""
         # Update local attributes from ExpertMapManager
         self.local_num_experts = self.expert_map_manager.local_num_experts
         self.expert_placement_strategy = self.expert_map_manager.placement_strategy
@@ -279,6 +283,7 @@ class RoutedExperts(PluggableLayer):
         return None
 
     def update_expert_map(self):
+        """update_expert_map implementation."""
         # Update ExpertMapManager with new EP configuration
         # The moe_parallel_config (including ep_size and ep_rank)
         # should already be updated.
@@ -620,6 +625,7 @@ class RoutedExperts(PluggableLayer):
         expert_id: int,
         return_success: bool = False,
     ) -> bool | None:
+        """weight_loader implementation."""
         quant_config_name = self.quant_config and self.quant_config.get_name()
         if quant_config_name == "gpt_oss_mxfp4":
             # (FIXME) for gpt-oss all experts are combined
@@ -878,6 +884,7 @@ class RoutedExperts(PluggableLayer):
     def load_weights(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[str]:
+        """load_weights implementation."""
         expert_mapping = self.get_expert_mapping(include_fused=True)
         for expert_name, loaded_weight in weights:
             qual_name = f"{self.layer_name}.{expert_name}"
@@ -969,6 +976,7 @@ class RoutedExperts(PluggableLayer):
         ckpt_up_proj_name: str | None = None,
         include_fused: bool = False,
     ) -> list[tuple[str, str, int, str]]:
+        """get_expert_mapping implementation."""
         moe_config = self.moe_config
         num_fused_shared_experts = self.expert_map_manager.num_fused_shared_experts
         num_redundant_experts = moe_config.num_experts - moe_config.num_logical_experts
@@ -1131,6 +1139,7 @@ class RoutedExperts(PluggableLayer):
         return fused_mapping + per_expert_mapping
 
     def get_expert_weights(self) -> Iterable[torch.Tensor]:
+        """get_expert_weights implementation."""
         def _maybe_make_contiguous(
             name: str, p: torch.nn.Parameter
         ) -> torch.nn.Parameter:
@@ -1281,6 +1290,7 @@ class RoutedExperts(PluggableLayer):
         *args,
         **kwargs,
     ) -> torch.Tensor:
+        """forward implementation."""
         raise AssertionError("Call forward_modular or forward_monolithic instead.")
 
 

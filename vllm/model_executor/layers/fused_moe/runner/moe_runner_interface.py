@@ -38,11 +38,13 @@ class MoERunnerInterface(PluggableLayer, ABC):
         input_ids: torch.Tensor | None = None,
         shared_experts_input: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """forward implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def shared_experts(self) -> SharedExperts | None:
+        """shared_experts implementation."""
         raise NotImplementedError
 
     @property
@@ -64,6 +66,7 @@ class MoERunnerInterface(PluggableLayer, ABC):
     @property
     @abstractmethod
     def layer_id(self):
+        """layer_id implementation."""
         raise NotImplementedError
 
     #
@@ -73,11 +76,13 @@ class MoERunnerInterface(PluggableLayer, ABC):
     @property
     @abstractmethod
     def is_monolithic(self) -> bool:
+        """is_monolithic implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def activation(self) -> MoEActivation:
+        """activation implementation."""
         raise NotImplementedError
 
     #
@@ -87,26 +92,31 @@ class MoERunnerInterface(PluggableLayer, ABC):
     @property
     @abstractmethod
     def expert_placement_strategy(self) -> ExpertPlacementStrategy:
+        """expert_placement_strategy implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def expert_global_to_physical(self) -> torch.Tensor | None:
+        """expert_global_to_physical implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def expert_physical_to_global(self) -> torch.Tensor | None:
+        """expert_physical_to_global implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def expert_local_to_global(self) -> torch.Tensor | None:
+        """expert_local_to_global implementation."""
         raise NotImplementedError
 
     @property
     @abstractmethod
     def expert_map(self) -> torch.Tensor | None:
+        """expert_map implementation."""
         raise NotImplementedError
 
     @abstractmethod
@@ -117,6 +127,7 @@ class MoERunnerInterface(PluggableLayer, ABC):
 
     @abstractmethod
     def update_expert_map(self):
+        """update_expert_map implementation."""
         raise NotImplementedError
 
     @abstractmethod
@@ -125,6 +136,7 @@ class MoERunnerInterface(PluggableLayer, ABC):
 
     @abstractmethod
     def get_expert_weights(self) -> Iterable[torch.Tensor]:
+        """get_expert_weights implementation."""
         raise NotImplementedError
 
     @abstractmethod
@@ -135,4 +147,5 @@ class MoERunnerInterface(PluggableLayer, ABC):
         logical_to_physical_map: torch.Tensor,
         logical_replica_count: torch.Tensor,
     ) -> None:
+        """set_eplb_state implementation."""
         raise NotImplementedError

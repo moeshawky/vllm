@@ -318,6 +318,7 @@ class RoutingSimulatorRouter(BaseRouter):
 
     @property
     def routing_method_type(self) -> RoutingMethodType:
+        """routing_method_type implementation."""
         return RoutingMethodType.Simulated
 
     def _compute_routing(

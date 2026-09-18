@@ -62,6 +62,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
 
     @staticmethod
     def maybe_roundup_layer_hidden_size(hidden_size: int) -> int:
+        """maybe_roundup_layer_hidden_size implementation."""
         # Round up hidden size to the closest supported hidden size.
         _supported_hs = DeepEPLLPrepareAndFinalize.SUPPORTED_HIDDEN_SIZES
         # Check sorted
@@ -120,6 +121,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         self.use_ue8m0_dispatch = False
 
     def post_init_setup(self, fused_experts: mk.FusedMoEExperts):
+        """post_init_setup implementation."""
         if not fused_experts.supports_packed_ue8m0_act_scales():
             # Early exit.
             return
@@ -137,19 +139,24 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
             )
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.BatchedExperts
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return self.max_tokens_per_rank
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return torch.int64
 
     def _map_global_to_physical_ids(self, topk_ids: torch.Tensor) -> torch.Tensor:
@@ -224,6 +231,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         return x, x_scales
 
     def supports_async(self) -> bool:
+        """supports_async implementation."""
         return True
 
     def prepare_async(
@@ -237,6 +245,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> tuple[Callable, mk.ReceiverType]:
+        """prepare_async implementation."""
         if defer_input_quant:
             raise NotImplementedError(
                 f"{self.__class__.__name__} does not support defer_input_quant=True. "
@@ -352,6 +361,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         if defer_input_quant:
             raise NotImplementedError(
                 f"{self.__class__.__name__} does not support defer_input_quant=True. "
@@ -418,6 +428,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> tuple[Callable, Callable]:
+        """finalize_async implementation."""
         return self._finalize(
             output,
             fused_expert_output,
@@ -437,6 +448,7 @@ class DeepEPLLPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         self._finalize(
             output,
             fused_expert_output,

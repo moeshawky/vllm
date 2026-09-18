@@ -22,6 +22,7 @@ def moe_fused_mul_sum_kernel(
     hidden_size: tl.constexpr,
     BLOCK_K: tl.constexpr,
 ):
+    """moe_fused_mul_sum_kernel implementation."""
     # One CTA owns one token's output row. Resolve which slots to sum once per
     # row (the decision is invariant over hidden tiles); the `if take` branch is
     # block-uniform, so padding slots are skipped rather than masked-and-loaded.

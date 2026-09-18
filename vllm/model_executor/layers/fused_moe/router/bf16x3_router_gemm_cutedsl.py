@@ -120,6 +120,7 @@ class Sm100BF16x3RouterGemm:
 
     @cute.kernel
     def kernel(self, X_tma: cpasync.TmaInfo, W_tma: cpasync.TmaInfo, out: cute.Tensor):
+        """kernel implementation."""
         tid, _, _ = cute.arch.thread_idx()
         bid_m, bid_n, bid_k = cute.arch.block_idx()
         _, _, split_k = cute.arch.grid_dim()
@@ -336,6 +337,7 @@ class Sm100BF16x3RouterGemm:
     @cache
     @staticmethod
     def compile(BN: int = 128, K: int = 6144):
+        """compile implementation."""
         N = cute.sym_int()
         M = cute.sym_int()
         SPLIT_K = cute.sym_int()
@@ -393,6 +395,7 @@ def _splitk_reduce_kernel(
 
 
 def splitk_reduce_triton(partials: torch.Tensor, out: torch.Tensor):
+    """splitk_reduce_triton implementation."""
     split_k, N, M = partials.shape
     block_s = 1 << (split_k - 1).bit_length()
     split_stride = partials.stride(0)

@@ -379,6 +379,7 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         return prepared
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         self._apply_router_weight_on_input = layer.apply_router_weight_on_input
         if self._apply_router_weight_on_input and self._quant_mode != "w4a16":
             raise ValueError(
@@ -405,6 +406,7 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         if moe_config.has_bias:
             return False, "kernel does not support expert biases"
         if moe_config.in_dtype not in (torch.float16, torch.bfloat16):
@@ -504,16 +506,20 @@ class B12xExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     def supports_expert_map(self) -> bool:
+        """supports_expert_map implementation."""
         return False
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def _prepared(self) -> Any:
@@ -530,6 +536,7 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         w2: torch.Tensor,
         topk_ids: torch.Tensor,
     ) -> tuple[int, int, int, int, int]:
+        """moe_problem_size implementation."""
         if w1.numel() and w2.numel():
             return super().moe_problem_size(a1, w1, w2, topk_ids)
         prepared = self._prepared()
@@ -591,6 +598,7 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         token_counts: tuple[int, ...],
         output_dtype: torch.dtype,
     ) -> B12xWarmupUnit:
+        """get_b12x_warmup_unit implementation."""
         assert output_dtype == self.moe_config.in_dtype
         prepared = self._prepared()
         activation = layer.activation
@@ -705,6 +713,7 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         del N, global_num_experts, local_num_experts, expert_tokens_meta
         plan = self._plan(
             tokens=M,
@@ -736,6 +745,7 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ) -> None:
+        """apply implementation."""
         del w1, w2, global_num_experts
         del a1q_scale, a2_scale, workspace13, expert_tokens_meta
         if expert_map is not None:
@@ -767,4 +777,5 @@ class B12xExperts(mk.FusedMoEExpertsModular):
         )
 
     def moe_sum(self, input: torch.Tensor, output: torch.Tensor) -> None:
+        """moe_sum implementation."""
         raise NotImplementedError("LoRA is not supported for B12xExperts")

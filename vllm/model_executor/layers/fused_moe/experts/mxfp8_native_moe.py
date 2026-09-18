@@ -256,6 +256,7 @@ def fused_moe_mxfp8_native(
     global_num_experts: int,
     expert_map: torch.Tensor | None,
 ) -> torch.Tensor:
+    """fused_moe_mxfp8_native implementation."""
     T, H = hidden_states.shape
     top_k = topk_ids.shape[1]
     M = T * top_k
@@ -329,14 +330,17 @@ class Mxfp8NativeTritonExperts(Mxfp8TritonExpertsBase):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         return self.quant_config.quant_dtype
 
     @property
     def block_shape(self) -> list[int] | None:
+        """block_shape implementation."""
         return self.quant_config.block_shape
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         # Activations are MXFP8-quantized inside ``fused_moe_mxfp8_native``.
         return True
 
@@ -362,6 +366,7 @@ class Mxfp8NativeTritonExperts(Mxfp8TritonExpertsBase):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         activation_config = self.activation_config
         out = fused_moe_mxfp8_native(
             hidden_states,

@@ -76,14 +76,17 @@ class Int4EmulationTritonExperts(TritonExperts):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         return None
 
     @property
     def block_shape(self) -> list[int] | None:
+        """block_shape implementation."""
         return None
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return True
 
     def apply(
@@ -104,6 +107,7 @@ class Int4EmulationTritonExperts(TritonExperts):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """apply implementation."""
         if w1.element_size() < 2:
             raise RuntimeError(
                 "Int4EmulationTritonExperts.apply() received packed int4 weights "

@@ -47,6 +47,7 @@ def make_parallel_config(
     is_sequence_parallel: bool,
     parallel_config: ParallelConfig,
 ) -> FusedMoEParallelConfig:
+    """make_parallel_config implementation."""
     tp_size_ = (
         tp_size if tp_size is not None else get_tensor_model_parallel_world_size()
     )
@@ -75,6 +76,7 @@ def determine_expert_counts(
     n_shared_experts: int | None,
     fuse_shared_experts: bool,
 ) -> tuple[int, int, int]:
+    """determine_expert_counts implementation."""
     global_num_experts = num_experts + num_redundant_experts
     logical_num_experts = num_experts
 

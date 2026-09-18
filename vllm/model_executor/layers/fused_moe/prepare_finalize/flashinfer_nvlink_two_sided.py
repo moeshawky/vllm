@@ -15,6 +15,7 @@ from vllm.utils.flashinfer import nvfp4_block_scale_interleave
 
 
 def get_local_sizes():
+    """MoE layer implementation."""
     dp_metadata = get_forward_context().dp_metadata
     assert dp_metadata is not None
     return dp_metadata.get_chunk_sizes_across_dp_rank()
@@ -38,18 +39,23 @@ class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return None
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return None
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     def _apply_router_weight_on_input(
@@ -78,6 +84,7 @@ class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         self._apply_router_weight_on_input(
             a1, topk_weights, topk_ids, apply_router_weight_on_input
         )
@@ -110,6 +117,7 @@ class FlashInferNVLinkTwoSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         top_k = topk_ids.size(1)
         token_count = output.shape[0]
         fused_expert_output = flashinfer_alltoall_combine(
@@ -134,6 +142,7 @@ def flashinfer_alltoall_dispatch(
     quant_config: FusedMoEQuantConfig,
     defer_input_quant: bool = False,
 ):
+    """flashinfer_alltoall_dispatch implementation."""
     from flashinfer.comm.trtllm_alltoall import MnnvlMoe
 
     assert all2all_manager.ensure_alltoall_workspace_initialized(), (  # type: ignore[attr-defined]
@@ -223,6 +232,7 @@ def flashinfer_alltoall_combine(
     token_count: int,
     alltoall_info,
 ):
+    """flashinfer_alltoall_combine implementation."""
     from flashinfer.comm.trtllm_alltoall import MnnvlMoe
 
     assert all2all_manager.ensure_alltoall_workspace_initialized(), (  # type: ignore[attr-defined]

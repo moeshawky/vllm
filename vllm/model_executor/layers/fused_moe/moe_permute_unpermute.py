@@ -8,6 +8,7 @@ import torch
 
 @dataclass
 class MoEPermuteScratch:
+    """MoE layer implementation."""
     # Reused metadata buffers for repeated grouped-MoE permutes.
     max_num_tokens: int
     topk: int
@@ -79,6 +80,7 @@ class MoEPermuteScratch:
         self.device = self.token_expert_indices.device
 
     def validate(self, hidden_states: torch.Tensor, topk_ids: torch.Tensor) -> None:
+        """validate implementation."""
         n_token, n_hidden = hidden_states.shape
         assert hidden_states.device == self.device
         assert topk_ids.device == self.device
@@ -91,9 +93,11 @@ class MoEPermuteScratch:
             assert self.permuted_hidden_states is not None
 
     def token_expert_indices_view(self, n_token: int) -> torch.Tensor:
+        """token_expert_indices_view implementation."""
         return self.token_expert_indices[: n_token * self.topk].view(n_token, self.topk)
 
     def prepare_topk_ids(self, topk_ids: torch.Tensor) -> torch.Tensor:
+        """prepare_topk_ids implementation."""
         if topk_ids.dtype == torch.int32:
             return topk_ids
         numel = topk_ids.numel()
@@ -280,4 +284,5 @@ def moe_unpermute(
 
 
 def moe_permute_unpermute_supported():
+    """moe_permute_unpermute_supported implementation."""
     return torch.ops._moe_C.moe_permute_unpermute_supported()

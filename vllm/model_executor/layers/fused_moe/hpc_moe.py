@@ -53,10 +53,12 @@ class HPCExperts(mk.FusedMoEExpertsModular):
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         return False
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -100,13 +102,16 @@ class HPCExperts(mk.FusedMoEExpertsModular):
         return True
 
     def supports_expert_map(self) -> bool:
+        """supports_expert_map implementation."""
         return False
 
     def supports_chunking(self) -> bool:
+        """supports_chunking implementation."""
         # This refers to TP chunking; DP chunking is handled separately.
         return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -163,6 +168,7 @@ class HPCExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
+        """apply implementation."""
         assert self._supports_activation(activation), f"{activation=} not supported"
         assert self.quant_config.w1_scale is not None, (
             "w13_weight_scale must be provided"

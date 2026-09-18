@@ -31,6 +31,12 @@ from vllm.model_executor.layers.quantization.utils.quant_utils import (
 
 
 class QuantMethod(IntEnum):
+    """
+    ROCm AITER-based fused MoE expert implementations.
+
+    Provides AITER kernel integration for ROCm devices, including
+    top-K metadata initialization, shared expert injection, and grouped top-K routing.
+    """
     # This allows interfacing with AITER QuantType Enum
     # without importing the QuantType from AITER globally.
 
@@ -47,6 +53,11 @@ class QuantMethod(IntEnum):
 
 
 class ActivationMethod(IntEnum):
+    """
+    Enumeration mapping AITER activation type constants to vLLM.
+
+    Values correspond to AITER ActivationType: SILU and GELU.
+    """
     # This allows interfacing with AITER ActivationType enum
     # without importing the ActivationType enum from AITER globally.
     SILU = 0
@@ -67,6 +78,13 @@ def init_aiter_topK_meta_data(
     max_num_tokens: int = 32768,
     is_EP: bool = False,
 ):
+    """
+    Initialize the shared AITER top-K metadata buffer.
+
+    Allocates GPU tensors for top-K IDs and weights that all MoE layers
+    share. Supports EP by using a sentinel element to mask shared expert
+    processing for tokens not owned by the current EP rank.
+    """
     global aiter_topK_meta_data
     fake_expertid = n_routed_experts + n_shared_experts
 
@@ -170,6 +188,13 @@ def rocm_aiter_grouped_topk(
     e_score_correction_bias: torch.Tensor | None = None,
     num_fused_shared_experts: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute grouped top-K routing using AITER kernels.
+
+    When shared expert fusion is enabled, returns the pre-allocated combined
+    buffer with both routed and shared expert slots. Otherwise allocates
+    temporary tensors and runs biased or unbiased grouped top-K.
+    """
     token = hidden_states.shape[0]
     device = hidden_states.device
     if (
@@ -418,10 +443,18 @@ def rocm_aiter_fused_experts(
 
 
 class AiterExperts(mk.FusedMoEExpertsModular):
+    """
+    AITER-based fused MoE expert implementation.
+
+    Uses AITER fused MoE kernels via rocm_aiter_ops. Supports various
+    quantization schemes including FP8 per-tensor/per-channel and MXFP4.
+    Manages workspace shapes and expert config validation.
+    """
     consumes_expert_mask = True
 
     @property
     def expects_unquantized_inputs(self) -> bool:
+        """expects_unquantized_inputs implementation."""
         # When paired with MoRI, the prepare/finalize handles FP8
         # quantization during dispatch to reduce network traffic,
         # so we should not defer input quantization.
@@ -431,12 +464,14 @@ class AiterExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """Return the activation format used by AITER experts."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
     def is_supported_config(
         cls, moe_config, weight_key, activation_key, activation_format
     ):
+        """Check if the config is supported by AITER MoE."""
         is_supported, reason = super().is_supported_config(
             cls, moe_config, weight_key, activation_key, activation_format
         )
@@ -450,10 +485,12 @@ class AiterExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_current_device() -> bool:
+        """Return whether AITER MoE is available on the current device."""
         return rocm_aiter_ops.is_fused_moe_enabled()
 
     @staticmethod
     def _supports_no_act_and_mul() -> bool:
+        """Return False; AITER does not support no-activation and mul."""
         return False
 
     @staticmethod
@@ -461,6 +498,7 @@ class AiterExperts(mk.FusedMoEExpertsModular):
         weight_key: QuantKey | None,
         activation_key: QuantKey | None,
     ) -> bool:
+        """Check if the quantization scheme is supported by AITER."""
         SUPPORTED_W_A = [
             (None, None),
             (kFp8Static128BlockSym, kFp8Dynamic128Sym),
@@ -481,6 +519,7 @@ class AiterExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
+        """Check if the activation function is supported by AITER."""
         return activation in [
             MoEActivation.SILU,
             MoEActivation.GELU,
@@ -491,12 +530,14 @@ class AiterExperts(mk.FusedMoEExpertsModular):
 
     @staticmethod
     def _supports_parallel_config(moe_parallel_config: FusedMoEParallelConfig) -> bool:
+        """Check if the parallel config is supported by AITER."""
         return not (
             moe_parallel_config.use_fi_nvl_two_sided_kernels
             or moe_parallel_config.use_fi_nvl_one_sided_kernels
         )
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """Return the weight finalizer and reducer for AITER."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -510,6 +551,7 @@ class AiterExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Return the workspace shapes required by AITER kernels."""
         # Workspaces are managed internally by AITER.
         workspace1 = (0,)
         workspace2 = (0,)
@@ -534,6 +576,13 @@ class AiterExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """
+        Apply AITER fused MoE computation to the input tensors.
+
+        Dispatches to rocm_aiter_fused_experts with appropriate parameters
+        including quantization config, expert mask, and sorting dispatch policy.
+        Handles output copy vs set depending on contiguity.
+        """
         # TODO(rob): rocm_aiter_fused_experts uses self.quant_config's
         # a_scales for static quantization. Update this to fit better
         # with the interface once all quant integrations are complete.

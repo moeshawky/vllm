@@ -24,6 +24,12 @@ class TritonOrCutlassExperts(FallbackExperts):
         moe_config: FusedMoEConfig,
         quant_config: FusedMoEQuantConfig,
     ):
+        """
+        Initialize the Triton or Cutlass expert with device capability check.
+
+        Selects CutlassExpertsFp8 as the primary expert on SM100, falling
+        back to TritonExperts for other devices or large batch sizes.
+        """
         self.is_sm100 = current_platform.has_device_capability(100)
         super().__init__(
             experts=CutlassExpertsFp8(moe_config, quant_config),
@@ -35,6 +41,7 @@ class TritonOrCutlassExperts(FallbackExperts):
         type[mk.FusedMoEExpertsModular],
         type[mk.FusedMoEExpertsModular],
     ]:
+        """Return the ordered expert classes for the fallback mechanism."""
         return (CutlassExpertsFp8, TritonExperts)
 
     def workspace_shapes(
@@ -48,6 +55,8 @@ class TritonOrCutlassExperts(FallbackExperts):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Return workspace shapes, delegating to Cutlass
+        or Triton based on batch size."""
         # Small batch fallback for sm100.
         if self.is_sm100 and M <= 8:
             return self.fallback_experts.workspace_shapes(
@@ -78,6 +87,7 @@ class TritonOrCutlassExperts(FallbackExperts):
         w1: torch.Tensor,
         w2: torch.Tensor,
     ) -> mk.FusedMoEExpertsModular:
+        """Select between Cutlass and Triton experts based on batch size."""
         # Small batch fallback for sm100.
         if self.is_sm100 and hidden_states.shape[0] <= 8:
             return self.fallback_experts

@@ -19,6 +19,7 @@ from vllm.utils.math_utils import round_up
 def expert_num_tokens_round_up_and_sum(
     expert_num_tokens: torch.Tensor, alignment: int
 ) -> int:
+    """expert_num_tokens_round_up_and_sum implementation."""
     # Round up each element in expert_num_tokens to the nearest multiple of
     # alignment.
     ent = (expert_num_tokens.to(torch.int64) + (alignment - 1)) // alignment * alignment
@@ -106,6 +107,7 @@ def compute_aligned_M(
 
 @triton.jit
 def apply_expert_map(expert_id, expert_map):
+    """apply_expert_map implementation."""
     if expert_id != -1:
         expert_id = tl.load(expert_map + expert_id).to(expert_id.dtype)
     return expert_id
@@ -287,6 +289,7 @@ def ep_scatter(
     block_size: int = 128,
     pack_ue8m0: bool = False,
 ):
+    """ep_scatter implementation."""
     # BLOCK_E is the m_indices fill-loop tile (masked), independent of align_m.
     BLOCK_E = 128
     BLOCK_D = block_size  # block size of activation-scale quantization
@@ -423,6 +426,7 @@ def ep_gather(
     expert_map: torch.Tensor | None,
     output_tensor: torch.Tensor,
 ):
+    """ep_gather implementation."""
     num_warps = 2
     num_tokens = output_tensor.shape[0]
     hidden_size = input_tensor.shape[1]
@@ -466,6 +470,7 @@ def deepgemm_moe_permute(
     aq_out: torch.Tensor | None = None,
     block_size: int | None = None,
 ):
+    """deepgemm_moe_permute implementation."""
     assert aq.ndim == 2
     assert topk_ids.dtype.is_signed, "The kernel uses -1 to represent invalid topk_ids"
     H = aq.size(1)
@@ -559,6 +564,7 @@ def deepgemm_unpermute_and_reduce(
     expert_map: torch.Tensor | None,
     output: torch.Tensor,
 ):
+    """deepgemm_unpermute_and_reduce implementation."""
     return ep_gather(
         input_tensor=a,
         recv_topk_ids=topk_ids,

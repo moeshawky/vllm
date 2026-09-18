@@ -26,6 +26,7 @@ logger = init_logger(__name__)
 
 
 class FusedMoEMethodBase(QuantizeMethodBase):
+    """MoE layer implementation."""
     def __init__(self, moe: FusedMoEConfig):
         super().__init__()
         self.moe: FusedMoEConfig = moe
@@ -34,12 +35,14 @@ class FusedMoEMethodBase(QuantizeMethodBase):
 
     @property
     def supports_internal_mk(self) -> bool:
+        """supports_internal_mk implementation."""
         # NOTE(rob): temporary attribute to indicate support for
         # completed migration to the new internal MK interface.
         return self.moe_kernel is not None
 
     @property
     def mk_can_overlap_shared_experts(self) -> bool:
+        """mk_can_overlap_shared_experts implementation."""
         # NOTE(rob): temporary attribute to indicate support for
         # completed migration to the new internal MK interface.
         return (
@@ -56,6 +59,7 @@ class FusedMoEMethodBase(QuantizeMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """create_weights implementation."""
         raise NotImplementedError
 
     def uses_weight_scale_2_pattern(self) -> bool:
@@ -103,11 +107,13 @@ class FusedMoEMethodBase(QuantizeMethodBase):
     @abstractmethod
     def get_fused_moe_quant_config(
         self, layer: "RoutedExperts"
+            """get_fused_moe_quant_config implementation."""
     ) -> FusedMoEQuantConfig | None:
         raise NotImplementedError
 
     @property
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         if self.moe_kernel is not None:
             return self.moe_kernel.prepare_finalize.topk_indices_dtype()
         return None
@@ -127,10 +133,12 @@ class FusedMoEMethodBase(QuantizeMethodBase):
 
     @property
     def supports_eplb(self) -> bool:
+        """method_name implementation."""
         return False
 
     @property
     def method_name(self) -> str:
+        """is_monolithic implementation."""
         return self.__class__.__name__
 
     @property

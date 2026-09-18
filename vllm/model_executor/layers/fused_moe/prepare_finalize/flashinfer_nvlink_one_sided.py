@@ -14,6 +14,7 @@ from vllm.utils.flashinfer import nvfp4_block_scale_interleave
 
 
 def get_local_sizes():
+    """MoE layer implementation."""
     dp_metadata = get_forward_context().dp_metadata
     assert dp_metadata is not None
     return dp_metadata.get_chunk_sizes_across_dp_rank()
@@ -57,18 +58,23 @@ class FlashInferNVLinkOneSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return None
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return torch.int32
 
     def prepare(
@@ -82,6 +88,7 @@ class FlashInferNVLinkOneSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             assert topk == 1, (
@@ -157,6 +164,7 @@ class FlashInferNVLinkOneSidedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeMo
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         assert self.all2all_manager.moe_alltoall is not None  # type: ignore[attr-defined]
 
         ep_size = self.all2all_manager.world_size

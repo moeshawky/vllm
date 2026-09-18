@@ -30,12 +30,14 @@ logger = init_logger(__name__)
 
 
 class W4A8MoeBackend(Enum):
+    """MoE layer implementation."""
     CUTLASS = "CUTLASS"
 
 
 def backend_to_kernel_cls(
     backend: W4A8MoeBackend,
 ) -> list[type["CutlassExpertsW4A8Fp8"]]:
+    """backend_to_kernel_cls implementation."""
     if backend == W4A8MoeBackend.CUTLASS:
         from vllm.model_executor.layers.fused_moe.experts.cutlass_moe import (
             CutlassExpertsW4A8Fp8,
@@ -51,6 +53,7 @@ def select_w4a8_moe_backend(
     weight_key: QuantKey | None = kInt4Static,
     activation_key: QuantKey | None = kFp8DynamicTokenSym,
 ) -> tuple[W4A8MoeBackend, type["CutlassExpertsW4A8Fp8"]]:
+    """select_w4a8_moe_backend implementation."""
     backend = W4A8MoeBackend.CUTLASS
 
     activation_format = (
@@ -94,6 +97,7 @@ def convert_to_w4a8_moe_kernel_format(
     torch.Tensor,
     torch.Tensor,
 ]:
+    """convert_to_w4a8_moe_kernel_format implementation."""
     from vllm import _custom_ops as ops
     from vllm.model_executor.layers.quantization.input_quant_fp8 import QuantFP8
     from vllm.model_executor.layers.quantization.utils.quant_utils import (
@@ -152,6 +156,7 @@ def make_w4a8_moe_quant_config(
     g1_alphas: torch.Tensor,
     g2_alphas: torch.Tensor,
 ) -> FusedMoEQuantConfig:
+    """make_w4a8_moe_quant_config implementation."""
     return int4_w4afp8_moe_quant_config(
         w1_scale=w1_scale,
         w2_scale=w2_scale,
@@ -171,6 +176,7 @@ def make_w4a8_moe_kernel(
     group_size: int,
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> mk.FusedMoEKernel:
+    """make_w4a8_moe_kernel implementation."""
     prepare_finalize = maybe_make_prepare_finalize(
         moe=moe_config,
         quant_config=moe_quant_config,

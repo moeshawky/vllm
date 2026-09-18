@@ -64,11 +64,13 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
         self.gemm1_clamp_limit = quant_config.gemm1_clamp_limit
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """process_weights_after_loading implementation."""
         layer.w13_weight_scale_2.data.mul_(layer.w13_input_scale)
         layer.w2_weight_scale_2.data.mul_(layer.w2_input_scale)
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -110,6 +112,7 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
         return True
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """finalize_weight_and_reduce_impl implementation."""
         return TopKWeightAndReduceNoOP()
 
     def workspace_shapes(
@@ -123,6 +126,7 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """workspace_shapes implementation."""
         workspace1 = (0,)
         workspace2 = (0,)
         # K is packed (K//2 for uint8), so output uses hidden_dim.
@@ -148,6 +152,7 @@ class FlashInferCuteDSLExperts(mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
+        """apply implementation."""
         assert self.quant_dtype == "nvfp4"
         assert a1q_scale is not None
         assert self.w1_scale is not None

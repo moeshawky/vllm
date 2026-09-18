@@ -48,6 +48,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
 
     @staticmethod
     def maybe_roundup_layer_hidden_size(hidden_size: int, dtype: torch.dtype) -> int:
+        """maybe_roundup_layer_hidden_size implementation."""
         hidden_size_bytes = hidden_size * dtype.itemsize
         xfer_atom_size = 512  # 32 * 16 (size(int4))
         if hidden_size_bytes % xfer_atom_size == 0:
@@ -85,6 +86,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         self._global_expert_ids_cache: torch.Tensor | None = None
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def _global_expert_ids(self, num_local: int, device: torch.device) -> torch.Tensor:
@@ -98,16 +100,20 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         return ids
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return None
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return torch.int64
 
     def _do_dispatch(
@@ -299,6 +305,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         )
 
     def supports_async(self) -> bool:
+        """supports_async implementation."""
         return True
 
     def prepare_async(
@@ -312,6 +319,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.ReceiverType:
+        """prepare_async implementation."""
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             assert topk == 1, (
@@ -361,6 +369,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         receiver = self.prepare_async(
             a1,
             topk_weights,
@@ -423,6 +432,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> Callable:
+        """finalize_async implementation."""
         self._finalize(
             output,
             fused_expert_output,
@@ -443,6 +453,7 @@ class DeepEPV2PrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         self._finalize(
             output,
             fused_expert_output,

@@ -58,6 +58,7 @@ def moe_sorting(
     model_dim: int,
     block_m: int,
 ):
+    """moe_sorting implementation."""
     topk_ids_i32 = topk_ids.to(torch.int32)
     topk_w_f32 = topk_weights.to(torch.float32)
     sorted_ids, sorted_w, sorted_expert_ids, num_valid_ids, _moe_buf = (
@@ -83,6 +84,7 @@ def build_routing_buffers(
     model_dim: int,
     tile_m: int,
 ):
+    """build_routing_buffers implementation."""
     res = moe_sorting(
         topk_ids,
         topk_weights,
@@ -113,6 +115,7 @@ def build_routing_buffers(
 
 @functools.lru_cache
 def try_get_optimal_config(num_experts, inter_dim):
+    """try_get_optimal_config implementation."""
     device_name = get_device_name_as_file_name()
     json_file_name = (
         f"E={num_experts},N={inter_dim},device_name={device_name},"
@@ -162,6 +165,7 @@ def fused_flydsl_moe_impl(
     tile_n2: int | None = None,
     tile_k2: int | None = None,
 ) -> torch.Tensor:
+    """fused_flydsl_moe_impl implementation."""
     device = hidden_states.device
     tokens = hidden_states.shape[0]
     model_dim = hidden_states.shape[1]
@@ -344,6 +348,7 @@ def fused_flydsl_moe_impl_fake(
     tile_n2: int | None = None,
     tile_k2: int | None = None,
 ) -> torch.Tensor:
+    """fused_flydsl_moe_impl_fake implementation."""
     return torch.empty_like(hidden_states)
 
 
@@ -372,6 +377,7 @@ def fused_flydsl_moe(
     scale_is_bf16: bool = True,
     config: dict | None = None,
 ) -> torch.Tensor:
+    """fused_flydsl_moe implementation."""
     tile_m = None
     tile_n = None
     tile_k = None

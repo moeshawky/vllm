@@ -53,6 +53,7 @@ class ZeroExpertRouter(BaseRouter):
 
     @property
     def routing_method_type(self) -> RoutingMethodType:
+        """routing_method_type implementation."""
         return get_routing_method_type(
             scoring_func=self.scoring_func,
             top_k=self.top_k,

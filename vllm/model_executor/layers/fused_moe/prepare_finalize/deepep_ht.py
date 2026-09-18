@@ -33,6 +33,7 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
 
     @staticmethod
     def maybe_roundup_layer_hidden_size(hidden_size: int, dtype: torch.dtype) -> int:
+        """maybe_roundup_layer_hidden_size implementation."""
         # Round up hidden size so it is compatible with DeepEP High Throughput
         # kernels.
         # DeepEP intranode kernels make copies in units of,
@@ -78,19 +79,24 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
             torch.cuda.current_stream().synchronize()
 
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         return self.num_dispatchers_
 
     def output_is_reduced(self) -> bool:
+        """output_is_reduced implementation."""
         return True
 
     @property
     def activation_format(self) -> mk.FusedMoEActivationFormat:
+        """activation_format implementation."""
         return mk.FusedMoEActivationFormat.Standard
 
     def max_num_tokens_per_rank(self) -> int | None:
+        """max_num_tokens_per_rank implementation."""
         return None
 
     def topk_indices_dtype(self) -> torch.dtype | None:
+        """topk_indices_dtype implementation."""
         return torch.int64
 
     def _get_dispatch_config(self) -> deep_ep.Config | None:
@@ -264,6 +270,7 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         )
 
     def supports_async(self) -> bool:
+        """supports_async implementation."""
         return True
 
     def prepare_async(
@@ -277,6 +284,7 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.ReceiverType:
+        """prepare_async implementation."""
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             # TODO: this only works for topK=1, will need to update for topK>1
@@ -332,6 +340,7 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         quant_config: FusedMoEQuantConfig,
         defer_input_quant: bool = False,
     ) -> mk.PrepareResultType:
+        """prepare implementation."""
         receiver = self.prepare_async(
             a1,
             topk_weights,
@@ -418,6 +427,7 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> Callable:
+        """finalize_async implementation."""
         receiver = self._finalize(
             output,
             fused_expert_output,
@@ -439,6 +449,7 @@ class DeepEPHTPrepareAndFinalize(mk.FusedMoEPrepareAndFinalizeModular):
         apply_router_weight_on_input: bool,
         weight_and_reduce_impl: mk.TopKWeightAndReduce,
     ) -> None:
+        """finalize implementation."""
         self._finalize(
             output,
             fused_expert_output,

@@ -52,6 +52,7 @@ _config: dict[str, Any] | None = None
 
 @contextmanager
 def override_config(config):
+    """MoE layer implementation."""
     global _config
     old_config = _config
     _config = config
@@ -60,6 +61,7 @@ def override_config(config):
 
 
 def get_config() -> dict[str, Any] | None:
+    """get_config implementation."""
     return _config
 
 

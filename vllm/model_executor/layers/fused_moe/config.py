@@ -137,6 +137,7 @@ def get_routing_method_type(
     has_e_score_bias: bool,
     routed_scaling_factor: float | None = 1.0,
 ) -> RoutingMethodType:
+    """get_routing_method_type implementation."""
     if scoring_func == "sqrtsoftplus":
         # DeepSeek V4 uses sqrtsoftplus routing with optional routing bias
         # and top-k renormalization.
@@ -272,34 +273,42 @@ class FusedMoEQuantConfig:
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         return self._a1.dtype
 
     @property
     def weight_quant_dtype(self) -> torch.dtype | str | None:
+        """weight_quant_dtype implementation."""
         return self._w1.dtype
 
     @property
     def is_quantized(self) -> bool:
+        """is_quantized implementation."""
         return self.quant_dtype is not None
 
     @property
     def is_per_act_token(self) -> bool:
+        """is_per_act_token implementation."""
         return self._a1.shape == GroupShape.PER_TOKEN
 
     @property
     def per_act_token_quant(self) -> bool:
+        """per_act_token_quant implementation."""
         return self._a1.shape == GroupShape.PER_TOKEN
 
     @property
     def per_out_ch_quant(self) -> bool:
+        """per_out_ch_quant implementation."""
         return self._w1.shape == GroupShape.PER_TOKEN
 
     @property
     def is_per_tensor(self) -> bool:
+        """is_per_tensor implementation."""
         return self._a1.shape == GroupShape.PER_TENSOR
 
     @property
     def block_shape(self) -> list[int] | None:
+        """block_shape implementation."""
         if (
             self._a1.shape is not None
             and self._a1.shape != GroupShape.PER_TENSOR
@@ -311,96 +320,118 @@ class FusedMoEQuantConfig:
 
     @property
     def is_block_quantized(self) -> bool:
+        """is_block_quantized implementation."""
         return self.block_shape is not None
 
     @property
     def a1_scale(self) -> torch.Tensor | None:
+        """a1_scale implementation."""
         assert self._a1.scale is None or isinstance(self._a1.scale, torch.Tensor)
         return self._a1.scale
 
     @property
     def a1_gscale(self) -> torch.Tensor | None:
+        """a1_gscale implementation."""
         return self._a1.alpha_or_gscale
 
     @property
     def a2_scale(self) -> torch.Tensor | None:
+        """a2_scale implementation."""
         assert self._a2.scale is None or isinstance(self._a2.scale, torch.Tensor)
         return self._a2.scale
 
     @property
     def a2_gscale(self) -> torch.Tensor | None:
+        """a2_gscale implementation."""
         return self._a2.alpha_or_gscale
 
     @property
     def w1_scale(self) -> torch.Tensor | None:
+        """w1_scale implementation."""
         assert self._w1.scale is None or isinstance(self._w1.scale, torch.Tensor)
         return self._w1.scale
 
     @property
     def w1_zp(self) -> torch.Tensor | None:
+        """w1_zp implementation."""
         return self._w1.zp
 
     @property
     def w1_bias(self) -> torch.Tensor | None:
+        """w1_bias implementation."""
         return self._w1.bias
 
     @property
     def w1_precision(self) -> "PrecisionConfig | None":
+        """w1_precision implementation."""
         assert self._w1.scale is None or isinstance(self._w1.scale, PrecisionConfig)
         return self._w1.scale
 
     @property
     def g1_alphas(self) -> torch.Tensor | None:
+        """g1_alphas implementation."""
         return self._w1.alpha_or_gscale
 
     @property
     def w2_scale(self) -> torch.Tensor | None:
+        """w2_scale implementation."""
         assert self._w2.scale is None or isinstance(self._w2.scale, torch.Tensor)
         return self._w2.scale
 
     @property
     def w2_zp(self) -> torch.Tensor | None:
+        """w2_zp implementation."""
         return self._w2.zp
 
     @property
     def w2_bias(self) -> torch.Tensor | None:
+        """w2_bias implementation."""
         return self._w2.bias
 
     @property
     def w2_precision(self) -> "PrecisionConfig | None":
+        """w2_precision implementation."""
         assert self._w2.scale is None or isinstance(self._w2.scale, PrecisionConfig)
         return self._w2.scale
 
     @property
     def g2_alphas(self) -> torch.Tensor | None:
+        """g2_alphas implementation."""
         return self._w2.alpha_or_gscale
 
     @property
     def use_fp8_w8a8(self) -> bool:
+        """use_fp8_w8a8 implementation."""
         return self.quant_dtype == current_platform.fp8_dtype()
 
     @property
     def use_int8_w8a8(self) -> bool:
+        """use_int8_w8a8 implementation."""
         return self.quant_dtype == torch.int8
 
     @property
     def use_int8_w8a16(self) -> bool:
+        """use_int8_w8a16 implementation."""
         return self._a1.dtype is None and self._w1.dtype == torch.int8
 
     @property
     def use_fp8_w8a16(self) -> bool:
+        """use_fp8_w8a16 implementation."""
         return self._a1.dtype is None and self._w1.dtype == current_platform.fp8_dtype()
 
     @property
     def use_int4_w4a16(self) -> bool:
+        """use_int4_w4a16 implementation."""
         return self._a1.dtype is None and self._w1.dtype == "int4"
 
     @property
     def use_nvfp4_w4a16(self) -> bool:
+        """use_nvfp4_w4a16 implementation."""
         return self._a1.dtype is None and self._w1.dtype == "nvfp4"
 
     @property
     def ocp_mx_scheme(self) -> str | None:
+        """ocp_mx_scheme implementation."""
         if not hasattr(self, "_ocp_mx_scheme"):
             if (self._a1.dtype is not None and not isinstance(self._a1.dtype, str)) or (
                 self._w1.dtype is not None and not isinstance(self._w1.dtype, str)
@@ -420,18 +451,22 @@ class FusedMoEQuantConfig:
 
     @property
     def use_mxfp4_w4a16(self) -> bool:
+        """use_mxfp4_w4a16 implementation."""
         return self._a1.dtype is None and self._w1.dtype == "mxfp4"
 
     @property
     def use_mxfp4_w4a4(self) -> bool:
+        """use_mxfp4_w4a4 implementation."""
         return self._a1.dtype == "mxfp4" and self._w1.dtype == "mxfp4"
 
     @property
     def use_nvfp4_w4a4(self) -> bool:
+        """use_nvfp4_w4a4 implementation."""
         return self.quant_dtype == "nvfp4"
 
     @property
     def use_mxfp4_w4a8(self) -> bool:
+        """use_mxfp4_w4a8 implementation."""
         return self._a1.dtype == "fp8" and self._w1.dtype == "mxfp4"
 
     def config_name(self, dtype: torch.dtype) -> str | None:
@@ -1058,6 +1093,7 @@ class FusedMoEParallelConfig:
 
     @property
     def use_all2all_kernels(self):
+        """use_all2all_kernels implementation."""
         return self.use_ep and (
             self.dp_size > 1 or self.pcp_size > 1 or self.is_sequence_parallel
         )
@@ -1089,6 +1125,7 @@ class FusedMoEParallelConfig:
 
     @property
     def use_batched_activation_format(self):
+        """use_batched_activation_format implementation."""
         return self.use_deepep_ll_kernels or self.use_nixl_ep_kernels
 
     @property
@@ -1121,6 +1158,7 @@ class FusedMoEParallelConfig:
     def flatten_tp_across_dp_and_pcp(
         tp_size: int, dp_size: int, dp_rank: int, pcp_size: int, pcp_rank: int
     ) -> tuple[int, int]:
+        """flatten_tp_across_dp_and_pcp implementation."""
         tp_rank = 0 if tp_size == 1 else get_tensor_model_parallel_rank()
         # There are actually dp_size * pcp_size * tp_size devices.
         # Update tp_size and tp_rank so we shard across all devices.
@@ -1390,6 +1428,7 @@ class FusedMoEConfig:
 
     @property
     def is_act_and_mul(self) -> bool:
+        """is_act_and_mul implementation."""
         return self.activation.is_gated
 
     @property
@@ -1399,46 +1438,57 @@ class FusedMoEConfig:
 
     @property
     def tp_size(self):
+        """tp_size implementation."""
         return self.moe_parallel_config.tp_size
 
     @property
     def dp_size(self):
+        """dp_size implementation."""
         return self.moe_parallel_config.dp_size
 
     @property
     def pcp_size(self):
+        """pcp_size implementation."""
         return self.moe_parallel_config.pcp_size
 
     @property
     def ep_size(self):
+        """ep_size implementation."""
         return self.moe_parallel_config.ep_size
 
     @property
     def sp_size(self):
+        """sp_size implementation."""
         return self.moe_parallel_config.sp_size
 
     @property
     def is_sequence_parallel(self):
+        """is_sequence_parallel implementation."""
         return self.moe_parallel_config.is_sequence_parallel
 
     @property
     def tp_rank(self):
+        """tp_rank implementation."""
         return self.moe_parallel_config.tp_rank
 
     @property
     def dp_rank(self):
+        """dp_rank implementation."""
         return self.moe_parallel_config.dp_rank
 
     @property
     def pcp_rank(self):
+        """pcp_rank implementation."""
         return self.moe_parallel_config.pcp_rank
 
     @property
     def ep_rank(self):
+        """ep_rank implementation."""
         return self.moe_parallel_config.ep_rank
 
     @property
     def use_ep(self):
+        """use_ep implementation."""
         return self.moe_parallel_config.use_ep
 
     @property
@@ -1471,36 +1521,45 @@ class FusedMoEConfig:
 
     @property
     def use_deepep_ht_kernels(self):
+        """use_deepep_ht_kernels implementation."""
         return self.moe_parallel_config.use_deepep_ht_kernels
 
     @property
     def use_deepep_ll_kernels(self):
+        """use_deepep_ll_kernels implementation."""
         return self.moe_parallel_config.use_deepep_ll_kernels
 
     @property
     def use_mori_kernels(self):
+        """use_mori_kernels implementation."""
         return self.moe_parallel_config.use_mori_kernels
 
     @property
     def use_fi_nvl_two_sided_kernels(self):
+        """use_fi_nvl_two_sided_kernels implementation."""
         return self.moe_parallel_config.use_fi_nvl_two_sided_kernels
 
     @property
     def use_fi_nvl_one_sided_kernels(self):
+        """use_fi_nvl_one_sided_kernels implementation."""
         return self.moe_parallel_config.use_fi_nvl_one_sided_kernels
 
     @property
     def use_ag_rs_all2all_kernels(self):
+        """use_ag_rs_all2all_kernels implementation."""
         return self.moe_parallel_config.use_ag_rs_all2all_kernels
 
     @property
     def use_nixl_ep_kernels(self):
+        """use_nixl_ep_kernels implementation."""
         return self.moe_parallel_config.use_nixl_ep_kernels
 
     @property
     def use_deepep_v2_kernels(self):
+        """use_deepep_v2_kernels implementation."""
         return self.moe_parallel_config.use_deepep_v2_kernels
 
     @property
     def needs_round_robin_routing_tables(self):
+        """needs_round_robin_routing_tables implementation."""
         return self.moe_parallel_config.needs_round_robin_routing_tables

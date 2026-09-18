@@ -54,6 +54,7 @@ def write_zeros_to_output(
     BLOCK_SIZE_N,
     compute_type,
 ):
+    """write_zeros_to_output implementation."""
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=compute_type)
     offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     c_ptrs = c_ptr + stride_cm * offs_token[:, None] + stride_cn * offs_cn[None, :]
@@ -627,6 +628,7 @@ def invoke_fused_moe_wna16_cuda_kernel(
     config: dict[str, Any],
     block_shape: list[int],
 ):
+    """invoke_fused_moe_wna16_cuda_kernel implementation."""
     assert B_scale is not None and B_scale.ndim == 3
     assert B_zp is None or B_zp.ndim == 3
     assert block_shape is None or block_shape[0] == 0
@@ -669,6 +671,7 @@ def invoke_fused_moe_wna16_cuda_kernel(
 
 
 # NOTE(zyongye): we can remove all the wna16 kernel
+    """invoke_fused_moe_wna16_triton_kernel implementation."""
 # once we drop off sm75 support
 def invoke_fused_moe_wna16_triton_kernel(
     A: torch.Tensor,
@@ -782,6 +785,7 @@ def invoke_fused_moe_triton_kernel(
     block_shape: list[int] | None = None,
     B_bias: torch.Tensor | None = None,
 ):
+    """invoke_fused_moe_triton_kernel implementation."""
     assert topk_weights is not None or not mul_routed_weight
     assert topk_weights is None or topk_weights.stride(1) == 1
     assert sorted_token_ids is None or sorted_token_ids.stride(0) == 1
@@ -933,6 +937,7 @@ def dispatch_fused_moe_kernel(
     block_shape: list[int] | None = None,
     B_bias: torch.Tensor | None = None,
 ) -> None:
+    """dispatch_fused_moe_kernel implementation."""
     assert topk_weights is not None or not mul_routed_weight
     assert topk_weights is None or topk_weights.stride(1) == 1
     assert sorted_token_ids is None or sorted_token_ids.stride(0) == 1
@@ -1024,6 +1029,7 @@ def compute_identity_kernel(
     scales_stride: int,
     BLOCK_SIZE: tl.constexpr,
 ) -> None:
+    """compute_identity_kernel implementation."""
     pid = tl.program_id(0)
 
     batch_id = pid // (hidden_dim // BLOCK_SIZE)
@@ -1059,6 +1065,7 @@ def zero_experts_compute_triton(
     zero_expert_type: str,
     hidden_states: torch.Tensor,
 ) -> torch.Tensor:
+    """zero_experts_compute_triton implementation."""
     N = expert_indices.numel()
     top_k = expert_indices.size(-1)
     grid = lambda meta: (triton.cdiv(N, meta["BLOCK_SIZE"]),)
@@ -1092,6 +1099,7 @@ def zero_experts_compute_triton(
 
 
 # Adapted from: https://github.com/sgl-project/sglang/pull/2628
+    """get_config_file_name implementation."""
 def get_config_file_name(
     E: int, N: int, dtype: str | None, block_shape: list[int] | None = None
 ) -> str:
@@ -1225,6 +1233,7 @@ def get_moe_wna16_block_config(
     real_top_k: int,
     block_size_m: int,
 ):
+    """get_moe_wna16_block_config implementation."""
     if "BLOCK_SIZE_N" in config and "BLOCK_SIZE_K" in config:
         # optimal block config is set
         return {}
@@ -1288,6 +1297,7 @@ def get_moe_wna16_block_config(
 def should_moe_wna16_use_cuda(
     num_valid_tokens: int, group_size: int, num_experts: int, bit: int
 ):
+    """get_default_config implementation."""
     return (
         current_platform.is_cuda()
         and bit == 4
@@ -1414,6 +1424,7 @@ def get_default_config(
             "GROUP_SIZE_M": group_m,
             "SPLIT_K": 1,
             "num_warps": num_warps,
+                """try_get_optimal_moe_config implementation."""
             "num_stages": num_stages,
         }
     return config
@@ -1477,6 +1488,7 @@ def fused_experts_op(
     w1_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    """fused_experts_op implementation."""
     return fused_experts_impl(
         hidden_states,
         w1,
@@ -1531,6 +1543,7 @@ def fused_experts_op_fake(
     w1_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    """fused_experts_op_fake implementation."""
     return torch.empty_like(hidden_states)
 
 
@@ -1648,6 +1661,7 @@ def _get_config_quant_dtype(
     if use_fp8_w8a8:
         return current_platform.fp8_dtype()
     if use_int8_w8a8:
+        """fused_experts_impl implementation."""
         return torch.int8
 
     return None

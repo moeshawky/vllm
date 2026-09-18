@@ -72,6 +72,7 @@ class TrtLlmFp8ExpertsBase:
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """Check if the config is supported by TRTLLM FP8 experts."""
         supported, reason = mk.FusedMoEExperts.is_supported_config(
             cls,
             moe_config,
@@ -91,6 +92,7 @@ class TrtLlmFp8ExpertsBase:
         moe_config: FusedMoEConfig,
         quant_config: FusedMoEQuantConfig,
     ):
+        """Initialize the FP8 TRTLLM monolithic experts."""
         self.routing_method_type = moe_config.routing_method
         self.topk = moe_config.experts_per_token
         self.intermediate_size_per_partition = (
@@ -134,6 +136,7 @@ class TrtLlmFp8ExpertsBase:
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
+        """Return the activation format used by TRTLLM FP8 experts."""
         return mk.FusedMoEActivationFormat.Standard
 
     @staticmethod
@@ -227,6 +230,7 @@ class TrtLlmFp8ExpertsModular(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         activation: MoEActivation,
     ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Return workspace shapes; workspaces managed by FlashInfer."""
         # The workspaces for this implementation are managed by flashinfer.
         workspace1 = (0,)
         workspace2 = (0,)
@@ -235,6 +239,7 @@ class TrtLlmFp8ExpertsModular(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsModular):
         return (workspace1, workspace2, output)
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
+        """Return the weight finalizer and reducer for FP8 TRTLLM."""
         return TopKWeightAndReduceNoOP()
 
     def apply(
@@ -255,6 +260,7 @@ class TrtLlmFp8ExpertsModular(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsModular):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
+        """Apply FP8 TRTLLM MoE computation, dispatching to block or per-tensor."""
         import flashinfer
         from flashinfer.fused_moe import Fp8QuantizationType, WeightLayout
 
@@ -314,6 +320,7 @@ class TrtLlmFp8ExpertsMonolithic(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsMonolit
     """
 
     def supports_routing_replay_capture(self) -> bool:
+        """Return True; FP8 TRTLLM supports routing replay capture."""
         return True
 
     def __init__(
@@ -360,6 +367,7 @@ class TrtLlmFp8ExpertsMonolithic(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsMonolit
         router_logits_dtype: torch.dtype | None,
         routing_method: RoutingMethodType,
     ) -> bool:
+        """Check if the router logits dtype is supported by FP8 TRTLLM."""
         return router_logits_dtype in [torch.bfloat16, torch.float32]
 
     @staticmethod
@@ -418,6 +426,7 @@ class TrtLlmFp8ExpertsMonolithic(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsMonolit
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """Apply FP8 block-scale routed MoE via FlashInfer."""
         import flashinfer
         from flashinfer.fused_moe import Fp8QuantizationType, WeightLayout
 
@@ -511,6 +520,7 @@ class TrtLlmFp8ExpertsMonolithic(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsMonolit
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """Apply FP8 per-tensor-scale routed MoE via FlashInfer."""
         # Delay import for non-CUDA.
         import flashinfer
 
@@ -575,6 +585,7 @@ class TrtLlmFp8ExpertsMonolithic(TrtLlmFp8ExpertsBase, mk.FusedMoEExpertsMonolit
         routed_scaling_factor: float | None = None,
         topk_group: int | None = None,
     ) -> torch.Tensor:
+        """apply implementation."""
         if self.quant_config.block_shape is not None:
             return self._apply_block_scale(
                 hidden_states,

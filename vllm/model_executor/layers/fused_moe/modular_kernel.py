@@ -108,6 +108,7 @@ class ExpertTokensMetadata:
     def make_from_list(
         expert_num_tokens_list: list[int], device: str
     ) -> "ExpertTokensMetadata":
+        """make_from_list implementation."""
         expert_num_tokens_cpu = torch.tensor(
             expert_num_tokens_list, device="cpu", dtype=torch.int32
         )
@@ -231,6 +232,7 @@ class FusedMoEPrepareAndFinalize(ABC):
 
     @abstractmethod
     def num_dispatchers(self) -> int:
+        """num_dispatchers implementation."""
         raise NotImplementedError
 
     @abstractmethod
@@ -428,6 +430,7 @@ class FusedMoEPrepareAndFinalizeMonolithic(FusedMoEPrepareAndFinalize):
     """
 
     def supports_deferred_moe_finalize(self) -> bool:
+        """supports_deferred_moe_finalize implementation."""
         return False
 
     @abstractmethod
@@ -516,10 +519,12 @@ class FusedMoEExperts(ABC):
         self.num_dispatchers = num_dispatchers
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:  # noqa: B027
+        """process_weights_after_loading implementation."""
         pass
 
     @staticmethod
     def is_monolithic() -> bool:
+        """is_monolithic implementation."""
         raise NotImplementedError("Implemented by subclasses.")
 
     @property
@@ -555,6 +560,7 @@ class FusedMoEExperts(ABC):
         activation_key: QuantKey | None,
         activation_format: FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         def _make_reason(reason: str) -> str:
             return f"kernel does not support {reason}"
 
@@ -691,54 +697,67 @@ class FusedMoEExperts(ABC):
 
     @property
     def quant_dtype(self) -> torch.dtype | str | None:
+        """quant_dtype implementation."""
         return self.quant_config.quant_dtype
 
     @property
     def weight_quant_dtype(self) -> torch.dtype | str | None:
+        """block_shape implementation."""
         return self.quant_config.weight_quant_dtype
 
     @property
     def block_shape(self) -> list[int] | None:
+        """per_act_token_quant implementation."""
         return self.quant_config.block_shape
 
     @property
     def per_act_token_quant(self) -> bool:
+        """a1_scale implementation."""
         return self.quant_config.per_act_token_quant
 
     @property
     def per_out_ch_quant(self) -> bool:
+        """a2_scale implementation."""
         return self.quant_config.per_out_ch_quant
 
     @property
     def a1_scale(self) -> torch.Tensor | None:
+        """a1_gscale implementation."""
         return self.quant_config.a1_scale
 
     @property
     def a2_scale(self) -> torch.Tensor | None:
+        """a2_gscale implementation."""
         return self.quant_config.a2_scale
 
     @property
     def a1_gscale(self) -> torch.Tensor | None:
+        """w2_scale implementation."""
         return self.quant_config.a1_gscale
 
     @property
     def a2_gscale(self) -> torch.Tensor | None:
+        """w1_zp implementation."""
         return self.quant_config.a2_gscale
 
     @property
     def w1_scale(self) -> torch.Tensor | None:
+        """w2_zp implementation."""
         return self.quant_config.w1_scale
 
     @property
     def w2_scale(self) -> torch.Tensor | None:
+        """w1_bias implementation."""
         return self.quant_config.w2_scale
 
     @property
     def w1_zp(self) -> torch.Tensor | None:
+        """g1_alphas implementation."""
         return self.quant_config.w1_zp
 
     @property
     def w2_zp(self) -> torch.Tensor | None:
+        """g2_alphas implementation."""
         return self.quant_config.w2_zp
 
     @property
@@ -904,6 +923,7 @@ class FusedMoEExpertsModular(FusedMoEExperts):
         expert_map: torch.Tensor | None = None,
         valid_rows: torch.Tensor | None = None,
     ) -> None:
+        """finalize_weight_and_reduce_impl implementation."""
         apply_moe_activation(
             activation,
             output,
@@ -1009,6 +1029,7 @@ class FusedMoEExpertsMonolithic(FusedMoEExperts):
 
     @staticmethod
     def is_monolithic() -> bool:
+        """set_capture_fn implementation."""
         return True
 
     routing_replay_capture_fn: Callable[[torch.Tensor], None] | None = None
@@ -1618,6 +1639,7 @@ class FusedMoEKernel:
         elif isinstance(
             prepare_finalize, FusedMoEPrepareAndFinalizeMonolithic
         ) and isinstance(fused_experts, FusedMoEExpertsMonolithic):
+            """can_overlap_shared_experts implementation."""
             self.impl = FusedMoEKernelMonolithicImpl(
                 prepare_finalize,
                 fused_experts,
@@ -1634,9 +1656,11 @@ class FusedMoEKernel:
 
     @property
     def can_overlap_shared_experts(self) -> bool:
+        """fused_experts implementation."""
         if isinstance(self.impl, FusedMoEKernelModularImpl):
             return self.impl.prepare_finalize.supports_async()
         else:
+            """supports_lora implementation."""
             return False
 
     @property
@@ -1645,6 +1669,7 @@ class FusedMoEKernel:
 
     @property
     def prepare_finalize(self) -> FusedMoEPrepareAndFinalize:
+        """prepare_finalize implementation."""
         return self.impl.prepare_finalize
 
     @property
@@ -1728,6 +1753,7 @@ class FusedMoEKernel:
         shared_experts: SharedExperts | None = None,
         shared_experts_input: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """apply implementation."""
         assert isinstance(self.impl, FusedMoEKernelModularImpl)
         return self.impl.apply(
             hidden_states=hidden_states,
