@@ -105,6 +105,12 @@ class ColModernVBertConnector(nn.Module):
 
 
 class ColModernVBertProcessingInfo(BaseProcessingInfo):
+    """Processing info for ColModernVBert models.
+
+    Returns a fixed image token count from the config
+    regardless of image dimensions.
+    """
+
     def get_hf_config(self) -> ColModernVBertConfig:
         return self.ctx.get_hf_config(ColModernVBertConfig)
 
@@ -128,6 +134,12 @@ class ColModernVBertProcessingInfo(BaseProcessingInfo):
 class ColModernVBertDummyInputsBuilder(
     BaseDummyInputsBuilder[ColModernVBertProcessingInfo],
 ):
+    """Dummy inputs builder for ColModernVBert models.
+
+    Returns empty text and generates dummy images
+    from the configured image dimensions.
+    """
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         return ""
 
@@ -154,6 +166,12 @@ class ColModernVBertDummyInputsBuilder(
 class ColModernVBertMultiModalProcessor(
     BaseMultiModalProcessor[ColModernVBertProcessingInfo],
 ):
+    """Multimodal processor for ColModernVBert models.
+
+    Delegates to Idefics3ImageProcessor for image processing
+    and inserts a fixed-length image token run at the prompt start.
+    """
+
     def _apply_hf_processor_main(
         self,
         mm_items: MultiModalDataItems,
@@ -211,6 +229,16 @@ class ColModernVBertMultiModalProcessor(
         hf_processor_mm_kwargs: Mapping[str, object],
         out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
+        """Generate prompt updates replacing the start with image tokens.
+
+        Args:
+            mm_items: Multimodal data items.
+            hf_processor_mm_kwargs: HF processor keyword arguments.
+            out_mm_kwargs: Output multimodal kwargs.
+
+        Returns:
+            List of prompt replacements with image tokens at the start.
+        """
         config = self.info.get_hf_config()
         image_token_id = config.image_token_id
         num_tokens = config.image_seq_len
@@ -370,6 +398,17 @@ class ColModernVBertForRetrieval(
         self,
         weights: Iterable[tuple[str, torch.Tensor]],
     ) -> set[str]:
+        """Load model weights with pooler parameter reconciliation.
+
+        After loading via the HF-to-vLLM mapper, marks the pooler's
+        projector parameters as loaded under the pooler path.
+
+        Args:
+            weights: Iterable of (parameter name, tensor) pairs.
+
+        Returns:
+            Set of loaded parameter names.
+        """
         loader = AutoWeightsLoader(self)
         loaded_params = loader.load_weights(
             weights,

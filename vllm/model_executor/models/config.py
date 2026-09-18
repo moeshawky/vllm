@@ -2,6 +2,13 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from typing import TYPE_CHECKING
 
+"""Per-model config verification and update hooks.
+
+Provides the VerifyAndUpdateConfig base class and concrete implementations for
+various structures. Each subclass overrides verify_and_update_config or
+verify_and_update_model_config to apply model-specific configuration patches.
+"""
+
 from vllm.logger import init_logger
 from vllm.utils.math_utils import round_up
 
@@ -16,6 +23,13 @@ logger = init_logger(__name__)
 
 
 class VerifyAndUpdateConfig:
+    """Base class for model config verification and update hooks.
+
+    Subclasses override verify_and_update_config or
+    verify_and_update_model_config to apply model-specific
+    configuration patches.
+    """
+
     @staticmethod
     def verify_and_update_config(vllm_config: "VllmConfig") -> None:
         return
@@ -26,6 +40,12 @@ class VerifyAndUpdateConfig:
 
 
 class DeepseekV32ForCausalLM(VerifyAndUpdateConfig):
+    """Downgrades bfloat16 cache to auto for DeepSeekV3.2.
+
+    The bfloat16 kv-cache is not supported for this model;
+    automatically downgrades to auto precision.
+    """
+
     @classmethod
     def verify_and_update_config(cls, vllm_config: "VllmConfig") -> None:
         hf_config = vllm_config.model_config.hf_config
@@ -59,6 +79,12 @@ class Ernie4_5_VLMoeForConditionalGenerationConfig(VerifyAndUpdateConfig):
 
 
 class Gemma3TextModelConfig(VerifyAndUpdateConfig):
+    """Sets is_causal from use_bidirectional_attention for Gemma3 text models.
+
+    Derives the causal flag from the bidirectional attention
+    configuration, which is not self-evident.
+    """
+
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         hf_config = model_config.hf_config
@@ -207,6 +233,13 @@ class UnlimitedOCRForCausalLMConfig(VerifyAndUpdateConfig):
 
 
 class Gemma4Config(VerifyAndUpdateConfig):
+    """Handles heterogeneous head dimensions with FA4/TRITON_ATTN fallback.
+
+    Gemma4 uses different head dimensions for sliding window vs
+    full attention layers. Forces FA4 when available for uniform
+    kernel selection.
+    """
+
     @staticmethod
     def verify_and_update_config(vllm_config: "VllmConfig") -> None:
         """Configure attention for heterogeneous head dimensions.
@@ -325,6 +358,12 @@ class DiffusionGemmaModelForBlockDiffusionConfig(VerifyAndUpdateConfig):
 
 
 class DeepseekV4ForCausalLMConfig(VerifyAndUpdateConfig):
+    """Rewrites quant_method to deepseek_v4_fp8 for FP8 configs.
+
+    Converts the quant_method configuration to the
+    deepseek_v4_fp8 format for proper FP8 quantization.
+    """
+
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         quant_config = getattr(model_config.hf_config, "quantization_config", None)
@@ -383,6 +422,12 @@ class KimiK3ForConditionalGenerationConfig(VerifyAndUpdateConfig):
 
 
 class GptOssForCausalLMConfig(VerifyAndUpdateConfig):
+    """Rewrites quant_method to gpt_oss_mxfp4 and sets cudagraph capture size.
+
+    Converts the quant_method to the gpt_oss_mxfp4 format
+    and increases the CUDA graph capture size for efficiency.
+    """
+
     @staticmethod
     def verify_and_update_model_config(model_config: "ModelConfig") -> None:
         quant_config = getattr(model_config.hf_config, "quantization_config", None)
@@ -597,6 +642,12 @@ class LlamaNemotronVLConfig(VerifyAndUpdateConfig):
 
 
 class MambaModelConfig(VerifyAndUpdateConfig):
+    """Handles mamba cache mode alignment with prefix caching.
+
+    Configures the Mamba cache mode and prefix caching
+    behavior for Mamba-based models.
+    """
+
     @classmethod
     def verify_and_update_config(cls, vllm_config: "VllmConfig") -> None:
         """
@@ -895,6 +946,12 @@ class VoyageQwen3BidirectionalEmbedModelConfig(VerifyAndUpdateConfig):
 
 
 class LongcatFlashNgramForCausalLMConfig(VerifyAndUpdateConfig):
+    """Sets CompilationMode.NONE and CUDAGraphMode.FULL for LongcatFlashNgram.
+
+    Disables compilation and turns on full CUDA graph mode
+    for the LongcatFlashNgram model.
+    """
+
     @staticmethod
     def verify_and_update_config(vllm_config: "VllmConfig") -> None:
         # LongCat-Flash-Lite's zero-expert MoE trips a data-dependent assert

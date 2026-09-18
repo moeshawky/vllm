@@ -1,6 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""ROCm/AMD implementation of Kimi-K3 KDA (Kimi Delta Attention) layer.
+
+Extends GatedDeltaNetAttention with AMD-specific kernels for prefill
+(chunked KDA), speculative decoding (fused recurrent KDA), and plain
+decode (packed decode or single fused conv+KDA+norm kernel).
+Requires full-rank gate; low-rank gate path belongs to the shared
+Kimi-Linear layer.
+"""
+
 import torch
 from einops import rearrange
 from torch import nn
@@ -56,14 +65,30 @@ from vllm.transformers_utils.configs.kimi_linear import KimiLinearConfig
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 
+# Module logger for Kimi-K3 AMD KDA layer.
 logger = init_logger(__name__)
 
 
 class KimiK3DeltaAttention(GatedDeltaNetAttention):
+    """Kimi-K3 KDA attention layer for ROCm.
+
+    Dispatches among kernel paths based on batch composition:
+    fused single-kernel decode (conv+KDA+norm) for pure decode batches,
+    fused recurrent KDA for speculative-decode sequences, chunked KDA
+    with fused gate for prefill, and packed decode for plain decode.
+    Full-rank gate only; low-rank gate is handled by the shared
+    Kimi-Linear layer.
+    """
+
     def get_attn_backend(self) -> type[AttentionBackend]:
+        """Returns the ROCm-specific KDA attention backend."""
         return KimiK3ROCmKDABackend
 
     def get_state_dtype(self) -> tuple[torch.dtype, torch.dtype]:
+        """Returns KDA state dtypes as (conv_state_dtype, recurrent_state_dtype).
+
+        Raises ValueError if model_config or cache_config is not set.
+        """
         if self.model_config is None or self.cache_config is None:
             raise ValueError("model_config and cache_config must be set")
         return MambaStateDtypeCalculator.kda_state_dtype(
@@ -71,6 +96,11 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
         )
 
     def get_state_shape(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Returns KDA state shapes as (conv_state_shape, recurrent_state_shape).
+
+        Shapes account for tensor-parallel head count, speculative token
+        count, and conv kernel size.
+        """
         return MambaStateShapeCalculator.kda_state_shape(
             self.tp_size,
             self.num_heads,
@@ -85,6 +115,13 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
         vllm_config: VllmConfig,
         prefix: str = "",
     ) -> None:
+        """Initialize the AMD KDA layer.
+
+        Sets up projection matrices (qkvgfab merged input, f_b projection,
+        conv1d, output projection), recurrent parameters (A_log, dt_bias),
+        and optional fused decode weights. Requires use_full_rank_gate in
+        kda_config. Validates that the prefill backend is triton.
+        """
         super().__init__(config, vllm_config, prefix)
 
         kda_config = config.linear_attn_config  # type: ignore[attr-defined]
@@ -249,6 +286,15 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
     def rearrange_mixed_qkv(
         self, mixed_qkv: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Rearranges packed QKV tensor from token-major to QKV-major layout.
+
+        Input shape: (seq_len, 3 * local_projection_size).
+        Output: tuple of (q, k, v) each with shape
+        (1, seq_len, local_num_heads, head_dim).
+
+        Performs one token-major to QKV-major permutation, then
+        unbinds into three contiguous tensors.
+        """
         seq_len = mixed_qkv.shape[0]
         qkv = mixed_qkv.view(seq_len, 3, self.local_num_heads, self.head_dim)
         # Materialize all three row-strided inputs with one token-major to
@@ -262,6 +308,13 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
         positions: torch.Tensor,
         output: torch.Tensor,
     ) -> None:
+        """Forward pass for the AMD KDA layer.
+
+        Projects hidden states into qkv, gate, and beta components,
+        then dispatches to the appropriate kernel path (fused decode,
+        speculative, chunked prefill, or plain decode) via _forward().
+        Applies output projection.
+        """
         num_tokens = hidden_states.size(0)
         projected_qkvgfab = self.in_proj_qkvgfab(hidden_states)[0]
 
@@ -306,6 +359,17 @@ class KimiK3DeltaAttention(GatedDeltaNetAttention):
         beta: torch.Tensor,
         core_attn_out: torch.Tensor,
     ) -> None:
+        """Internal forward pass implementing kernel path selection.
+
+        Routes to one of four paths based on batch composition:
+        1. Fused decode (conv+KDA+norm) for pure decode with fused
+           weights
+        2. Speculative-decode multi-query path using fused_recurrent_kda
+        3. Prefill path using chunk_kda_with_fused_gate
+        4. Plain decode path using fused_recurrent_kda_packed_decode
+
+        Merges spec and non-spec outputs when both are present.
+        """
         forward_context = get_forward_context()
         attn_metadata_raw = forward_context.attn_metadata
 

@@ -129,6 +129,8 @@ class Ernie4_5_VisionAttention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         # Per attention head and per partition values.
         self.tp_size = parallel_state.get_tensor_model_parallel_world_size()
@@ -169,6 +171,8 @@ class Ernie4_5_VisionAttention(nn.Module):
         )
 
     def split_qkv(self, qkv: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        """Split QKV."""
+
         # [s, b, 3 * head * head_dim]
         seq_len, bs, _ = qkv.shape
         if self.tp_size > 1:
@@ -203,6 +207,8 @@ class Ernie4_5_VisionAttention(nn.Module):
         rotary_pos_emb: torch.Tensor,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
     ) -> torch.Tensor:
+        """Forward pass."""
+
         # [s, b, c] --> [s, b, head * 3 * head_dim]
         x, _ = self.qkv(x)
 
@@ -233,6 +239,8 @@ class Ernie4_5_VisionAttention(nn.Module):
 
 
 class Ernie4_5_VisionMLP(nn.Module):
+    """MLP block for the Ernie4_5_Vision model."""
+
     def __init__(
         self,
         in_features: int,
@@ -241,6 +249,8 @@ class Ernie4_5_VisionMLP(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize."""
+
         super().__init__()
         self.fc1 = ColumnParallelLinear(
             in_features,
@@ -257,6 +267,8 @@ class Ernie4_5_VisionMLP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
+
         x_parallel, _ = self.fc1(x)
         x_parallel = self.act(x_parallel)
         x, _ = self.fc2(x_parallel)
@@ -264,6 +276,8 @@ class Ernie4_5_VisionMLP(nn.Module):
 
 
 class Ernie4_5_VisionBlock(nn.Module):
+    """Transformer block."""
+
     def __init__(
         self,
         dim: int,
@@ -274,6 +288,8 @@ class Ernie4_5_VisionBlock(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
 
         if norm_layer is None:
@@ -305,6 +321,8 @@ class Ernie4_5_VisionBlock(nn.Module):
         rotary_pos_emb: torch.Tensor,
         max_seqlen: torch.Tensor | None = None,  # Only used for Flash Attention
     ) -> torch.Tensor:
+        """Forward pass."""
+
         hidden_states = hidden_states + self.attn(
             self.norm1(hidden_states),
             cu_seqlens=cu_seqlens,
@@ -316,6 +334,8 @@ class Ernie4_5_VisionBlock(nn.Module):
 
 
 class Ernie4_5_VisionPatchEmbed(nn.Module):
+    """Patch embedding module."""
+
     def __init__(
         self,
         patch_size: int = 14,
@@ -323,6 +343,8 @@ class Ernie4_5_VisionPatchEmbed(nn.Module):
         embed_dim: int = 1280,
         prefix="",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.patch_size = patch_size
         self.in_channels = in_channels
@@ -333,6 +355,8 @@ class Ernie4_5_VisionPatchEmbed(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
+
         target_dtype = self.proj.weight.dtype
         hidden_states = hidden_states.to(target_dtype)
         hidden_states = self.proj(hidden_states)
@@ -341,13 +365,19 @@ class Ernie4_5_VisionPatchEmbed(nn.Module):
 
 
 class Ernie4_5_VisionRotaryEmbedding(nn.Module):
+    """Rotary embedding module."""
+
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
+        """Initialize."""
+
         super().__init__()
         self.inv_freq = 1.0 / theta ** (
             torch.arange(start=0, end=dim, step=2, dtype=torch.float32) / dim
         )
 
     def forward(self, seqlen: int) -> torch.Tensor:
+        """Forward pass."""
+
         seq = torch.arange(
             seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
@@ -356,6 +386,8 @@ class Ernie4_5_VisionRotaryEmbedding(nn.Module):
 
 
 class Ernie4_5_VisionTransformer(nn.Module):
+    """Transformer module."""
+
     def __init__(
         self,
         vision_config,
@@ -363,6 +395,8 @@ class Ernie4_5_VisionTransformer(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         patch_size = vision_config.patch_size
         spatial_merge_size = vision_config.spatial_merge_size
@@ -414,13 +448,19 @@ class Ernie4_5_VisionTransformer(nn.Module):
 
     @property
     def dtype(self) -> torch.dtype:
+        """dtype."""
+
         return self.patch_embed.proj.weight.dtype
 
     @property
     def device(self) -> torch.device:
+        """device."""
+
         return self.patch_embed.proj.weight.device
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
+        """Compute rotary positional embeddings."""
+
         pos_ids = []
         for t, h, w in grid_thw:
             hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -456,6 +496,8 @@ class Ernie4_5_VisionTransformer(nn.Module):
         return rotary_pos_emb
 
     def compute_attn_mask_seqlen(self, cu_seqlens: torch.Tensor) -> torch.Tensor | None:
+        """Compute the attention mask sequence length."""
+
         max_seqlen = None
         if self.attn_backend in {
             AttentionBackendEnum.FLASH_ATTN,
@@ -552,6 +594,8 @@ class Ernie4_5_VisionTransformer(nn.Module):
         *,
         encoder_metadata: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         hidden_states = self.patch_embed(hidden_states)
 
         if encoder_metadata is None:
@@ -583,6 +627,8 @@ class Ernie4_5_VisionTransformer(nn.Module):
         return final_output
 
     def load_weights(self, weights) -> set[str]:
+        """Load model weights."""
+
         params_dict = dict(self.named_parameters(remove_duplicate=False))
         loaded_params: set[str] = set()
 
@@ -688,6 +734,8 @@ def smart_resize(
 
 
 class VariableResolutionResamplerModel(nn.Module):
+    """VariableResolutionResampler model."""
+
     def __init__(
         self,
         in_dim,
@@ -697,6 +745,8 @@ class VariableResolutionResamplerModel(nn.Module):
         config,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
@@ -774,11 +824,15 @@ class VariableResolutionResamplerModel(nn.Module):
         )
 
     def spatial_conv_reshape(self, x, spatial_conv_size):
+        """Reshape spatial convolution."""
+
         S, C = x.shape
         x = x.reshape([-1, C * (spatial_conv_size**2)])
         return x
 
     def forward(self, x, grid_thw):
+        """Forward pass."""
+
         def fwd_spatial(x):
             x = self.spatial_conv_reshape(x, self.spatial_conv_size)
 
@@ -861,6 +915,8 @@ class VariableResolutionResamplerModel(nn.Module):
         return x
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights."""
+
         params_dict = dict(self.named_parameters(remove_duplicate=False))
         loaded_params: set[str] = set()
 
@@ -875,22 +931,34 @@ class VariableResolutionResamplerModel(nn.Module):
 
 
 class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
+    """Processing info for the Ernie4_5_VLProcessing model."""
+
     def get_hf_config(self):
+        """Get the HF config."""
+
         return self.ctx.model_config.hf_config
 
     def get_hf_processor(self, **kwargs: object):
+        """Get the HF processor."""
+
         return self.ctx.get_hf_processor(use_fast=True, **kwargs)
 
     def get_image_processor(self, **kwargs: object):
+        """Get the image processor."""
+
         return self.get_hf_processor(**kwargs).image_processor
 
     def get_data_parser(self):
+        """Get the data parser."""
+
         return MultiModalDataParser(
             video_needs_metadata=True,
             expected_hidden_size=self._get_expected_hidden_size(),
         )
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Get supported multimodal limits."""
+
         return {"image": None, "video": None}
 
     def get_mm_max_tokens_per_item(
@@ -898,6 +966,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
+        """Get the maximum number of MM tokens per item."""
+
         max_image_tokens = self.get_max_image_tokens()
         max_video_tokens = self.get_max_video_tokens(seq_len, mm_counts)
         return {"image": max_image_tokens, "video": max_video_tokens}
@@ -912,6 +982,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         image_processor: BaseImageProcessor,
         mm_kwargs: Mapping[str, object],
     ) -> tuple[ImageSize, int]:
+        """Get vision info."""
+
         hf_config = self.get_hf_config()
         vision_config = hf_config.vision_config
 
@@ -966,6 +1038,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         image_processor: BaseImageProcessor,
         mm_kwargs: Mapping[str, object],
     ) -> int:
+        """Get the number of image tokens."""
+
         _, num_image_tokens = self._get_vision_info(
             image_width=image_width,
             image_height=image_height,
@@ -983,6 +1057,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         image_processor: BaseImageProcessor,
         mm_kwargs: Mapping[str, object],
     ) -> int:
+        """get_num_video_tokens."""
+
         _, num_video_tokens = self._get_vision_info(
             image_width=image_width,
             image_height=image_height,
@@ -993,6 +1069,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         return num_video_tokens
 
     def get_image_size_with_most_features(self) -> ImageSize:
+        """Get the image size with the most features."""
+
         image_processor = self.get_image_processor()
 
         max_image_size, _ = self._get_vision_info(
@@ -1004,6 +1082,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         return max_image_size
 
     def get_max_image_tokens(self) -> int:
+        """Get the maximum number of image tokens."""
+
         image_processor = self.get_image_processor()
         target_width, target_height = self.get_image_size_with_most_features()
 
@@ -1016,6 +1096,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         return num_image_tokens
 
     def _get_max_video_frames(self, max_tokens: int) -> int:
+        """_get_max_video_frames."""
+
         image_processor = self.get_image_processor()
         target_width, target_height = self.get_image_size_with_most_features()
 
@@ -1047,6 +1129,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> int:
+        """Get the number of frames with the most features."""
+
         max_images = mm_counts.get("image", 0)
         max_videos = mm_counts.get("video", 0)
 
@@ -1061,6 +1145,8 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> int:
+        """Get the maximum number of video tokens."""
+
         image_processor = self.get_image_processor()
         target_width, target_height = self.get_image_size_with_most_features()
 
@@ -1074,11 +1160,15 @@ class Ernie4_5_VLProcessingInfo(BaseProcessingInfo):
 
 
 class Ernie4_5VLMultiModalProcessor(BaseMultiModalProcessor[Ernie4_5_VLProcessingInfo]):
+    """Processor for the Ernie4_5VLMultiModal model."""
+
     def _pixel_values_norm(
         self,
         pixel_values: torch.Tensor,
         mm_kwargs: Mapping[str, object],
     ) -> torch.Tensor:
+        """Normalize pixel values."""
+
         hf_config = self.info.get_hf_config()
         vision_config = hf_config.vision_config
         image_processor = self.info.get_image_processor(**mm_kwargs)
@@ -1116,6 +1206,8 @@ class Ernie4_5VLMultiModalProcessor(BaseMultiModalProcessor[Ernie4_5_VLProcessin
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> BatchFeature:
+        """Apply the HF processor."""
+
         valid_mm_items = mm_items.select(
             {k for k, c in mm_items.get_all_counts().items() if c > 0}
         )
@@ -1197,6 +1289,8 @@ class Ernie4_5VLMultiModalProcessor(BaseMultiModalProcessor[Ernie4_5_VLProcessin
         hf_processor_mm_kwargs: Mapping[str, Any],
         out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
+        """Get prompt updates."""
+
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         tokenizer = self.info.get_tokenizer()
 
@@ -1246,6 +1340,8 @@ class Ernie4_5VLMultiModalProcessor(BaseMultiModalProcessor[Ernie4_5_VLProcessin
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
+        """Get the MM fields config."""
+
         image_grid_thw = hf_inputs.get("image_grid_thw", torch.empty((0, 3)))
         image_grid_sizes = image_grid_thw.prod(-1)
 
@@ -1265,7 +1361,11 @@ class Ernie4_5VLMultiModalProcessor(BaseMultiModalProcessor[Ernie4_5_VLProcessin
 
 
 class Ernie4_5_VLDummyInputsBuilder(BaseDummyInputsBuilder[Ernie4_5_VLProcessingInfo]):
+    """Dummy inputs builder."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get the dummy text."""
+
         num_images = mm_counts.get("image", 0)
         num_videos = mm_counts.get("video", 0)
         prompt = ""
@@ -1284,6 +1384,8 @@ class Ernie4_5_VLDummyInputsBuilder(BaseDummyInputsBuilder[Ernie4_5_VLProcessing
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Get the dummy multimodal data."""
+
         num_images = mm_counts.get("image", 0)
         num_videos = mm_counts.get("video", 0)
 
@@ -1321,6 +1423,8 @@ class Ernie4_5_VLDummyInputsBuilder(BaseDummyInputsBuilder[Ernie4_5_VLProcessing
         num_videos: int,
         overrides: VideoDummyOptions | None = None,
     ):
+        """Get dummy videos."""
+
         # ernie4.5-vl requires at least 2 frames
         num_frames = max(num_frames, 2)
         if overrides and overrides.num_frames:
@@ -1364,6 +1468,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     SupportsMRoPE,
     SupportsEncoderCudaGraph,
 ):
+    """Ernie4_5_VLMoeForConditionalGeneration module."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -1398,6 +1504,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get the placeholder string."""
+
         if modality.startswith("image"):
             return "<|IMAGE_START|><|image@placeholder|><|IMAGE_END|>"
         if modality.startswith("video"):
@@ -1406,6 +1514,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         raise ValueError("Only image or video modality is supported")
 
     def __init__(self, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initialize."""
+
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -1462,6 +1572,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+
         return self.language_model.compute_logits(hidden_states)
 
     def _vision_forward(
@@ -1469,6 +1581,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         pixel_values: torch.Tensor,
         grid_thw: torch.Tensor,
     ) -> torch.Tensor:
+        """Vision forward pass."""
+
         if grid_thw is not None:
             grid_thw = grid_thw[grid_thw > 0]
             if grid_thw.numel() % 3 != 0:
@@ -1506,6 +1620,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         input_tokens: list[int],
         mm_features: list[MultiModalFeatureSpec],
     ) -> tuple[torch.Tensor, int]:
+        """Get mrope input positions."""
+
         llm_pos_ids_list: list = []
         st = 0
 
@@ -1541,6 +1657,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def iter_mm_grid_thw(
         self, mm_features: list[MultiModalFeatureSpec]
     ) -> Iterator[tuple[int, int, int, int]]:
+        """Iterate over MM grid THW."""
+
         spatial_conv_size = self.config.spatial_conv_size
         temporal_conv_size = self.config.temporal_conv_size
 
@@ -1570,6 +1688,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> Ernie4_5_VLImageInputs | None:
+        """Parse and validate image inputs."""
+
         pixel_values = kwargs.pop("pixel_values", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
 
@@ -1585,6 +1705,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def _parse_and_validate_video_input(
         self, **kwargs: object
     ) -> Ernie4_5_VLVideoInputs | None:
+        """Parse and validate video inputs."""
+
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_grid_thw = kwargs.pop("video_grid_thw", None)
 
@@ -1608,6 +1730,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     # eager multimodal path for now.
 
     def get_encoder_cudagraph_config(self):
+        """Get encoder CUDA graph config."""
+
         from vllm.v1.worker.encoder_cudagraph_defs import EncoderCudaGraphConfig
 
         return EncoderCudaGraphConfig(
@@ -1625,6 +1749,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         )
 
     def get_encoder_cudagraph_budget_range(self, vllm_config) -> tuple[int, int]:
+        """Get encoder CUDA graph budget range."""
+
         # Min: a 224x224 image -> 16x16 patches (patch_size=14),
         # spatial_merge_size=2 -> 8x8 = 64 output tokens.
         min_budget = 64
@@ -1635,6 +1761,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         return (min_budget, max_budget)
 
     def get_encoder_cudagraph_item_specs(self, mm_kwargs: dict[str, Any]):
+        """Get encoder CUDA graph item specs."""
+
         from vllm.v1.worker.encoder_cudagraph_defs import EncoderItemSpec
 
         m = self.vision_model.spatial_merge_size
@@ -1650,6 +1778,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def select_encoder_cudagraph_items(
         self, mm_kwargs: dict[str, Any], indices: list[int]
     ) -> dict[str, Any]:
+        """Select encoder CUDA graph items."""
+
         grid_thw = mm_kwargs["image_grid_thw"]
         pixel_values = mm_kwargs["pixel_values"]
 
@@ -1675,6 +1805,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         dtype,
         path: str = "default",
     ):
+        """Prepare encoder CUDA graph capture inputs."""
+
         from vllm.v1.worker.encoder_cudagraph_defs import (
             EncoderCudaGraphCaptureInputs,
         )
@@ -1710,6 +1842,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def prepare_encoder_cudagraph_replay_buffers(
         self, mm_kwargs, max_batch_size, max_frames_per_batch, path: str = "default"
     ):
+        """Prepare encoder CUDA graph replay buffers."""
+
         from vllm.v1.worker.encoder_cudagraph_defs import (
             EncoderCudaGraphReplayBuffers,
         )
@@ -1728,6 +1862,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def encoder_cudagraph_forward(
         self, values: dict[str, torch.Tensor], path: str = "default"
     ) -> torch.Tensor:
+        """Encoder CUDA graph forward."""
+
         # Graph captures the ViT only, and the resampler runs in
         # postprocess_encoder_output.
         pixel_values = values.pop("pixel_values")
@@ -1736,6 +1872,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def encoder_eager_forward(
         self, mm_kwargs: dict[str, Any], path: str = "default"
     ) -> torch.Tensor:
+        """Encoder eager forward."""
+
         # Eager fallback: run the full pipeline (ViT + resampler). The result
         # is scattered directly, so it must be the post-merge embeddings.
         pixel_values = mm_kwargs["pixel_values"].type(self.vision_model.dtype)
@@ -1754,6 +1892,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         clone: bool = False,
         batch_mm_kwargs: dict[str, Any] | None = None,
     ) -> None:
+        """Postprocess encoder output."""
+
         # The graph output is the raw ViT features (pre-merge), padded to the
         # token budget. Run the resampler eagerly on the valid portion using
         # the actual batch grid_thw, then scatter the post-merge embeddings.
@@ -1773,6 +1913,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def _process_image_input(
         self, image_input: Ernie4_5_VLImageInputs
     ) -> tuple[torch.Tensor, ...]:
+        """Process image input to get embeddings."""
+
         grid_thw = image_input["image_grid_thw"]
         assert grid_thw.ndim == 2
 
@@ -1790,6 +1932,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
     def _process_video_input(
         self, video_input: Ernie4_5_VLVideoInputs
     ) -> tuple[torch.Tensor, ...]:
+        """_process_video_input."""
+
         grid_thw = video_input["video_grid_thw"]
         assert grid_thw.ndim == 2
 
@@ -1811,6 +1955,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         return video_embeds.split(sizes.tolist())
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
+        """Parse and validate multimodal inputs."""
+
         modalities: dict[
             str, Ernie4_5_VLImageInputs | Ernie4_5_VLVideoInputs | None
         ] = {}
@@ -1832,6 +1978,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         return modalities
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings | None:
+        """Embed multimodal inputs."""
+
         modalities = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not modalities:
             return None
@@ -1861,6 +2009,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         *,
         is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Embed input IDs."""
+
         if multimodal_embeddings is not None and len(multimodal_embeddings) > 0:
             self._set_visual_token_mask(input_ids)
 
@@ -1882,6 +2032,8 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
+        """Forward pass."""
+
         forward_kwargs = {
             "input_ids": input_ids,
             "positions": positions,
@@ -1911,5 +2063,7 @@ class Ernie4_5_VLMoeForConditionalGeneration(
         return hidden_states
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights."""
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

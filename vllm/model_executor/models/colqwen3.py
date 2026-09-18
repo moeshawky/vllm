@@ -98,6 +98,14 @@ class ColQwen3ProcessingInfo(Qwen3VLProcessingInfo):
         return result
 
     def get_data_parser(self):
+        """Return a Qwen2VLMultiModalDataParser for ColQwen3 models.
+
+        Reuses the Qwen2VL data parser with the spatial_merge_size
+        from the vision config and video support flag.
+
+        Returns:
+            Qwen2VLMultiModalDataParser instance.
+        """
         hf_config = self.get_hf_config()
         spatial_merge_size = hf_config.vision_config.spatial_merge_size
         return Qwen2VLMultiModalDataParser(
@@ -161,6 +169,16 @@ class ColQwen3Model(Qwen3VLForConditionalGeneration, SupportsLateInteraction):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "model"):
+        """Initialize ColQwen3Model with lazy projection head creation.
+
+        The projection layer is created only when embed_dim is
+        known from the config; otherwise it is deferred to
+        load_weights when the dim is inferred from weights.
+
+        Args:
+            vllm_config: vLLM model configuration.
+            prefix: Parameter name prefix.
+        """
         super().__init__(vllm_config=vllm_config, prefix=prefix)
 
         config = vllm_config.model_config.hf_config

@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""EAGLE speculative decoding draft model for Cohere structures.
+
+Implements a draft model that generates speculative tokens using the Cohere attention
+pattern, with the EAGLE-specific FC fusion and final LayerNorm before logits processing.
+"""
+
 from collections.abc import Iterable
 
 import torch
@@ -51,6 +57,14 @@ class CohereEagleDecoderLayer(CohereDecoderLayer):
 
 @support_torch_compile
 class CohereEagleModel(nn.Module):
+    """EAGLE draft model for Cohere structures.
+
+    Cohere2-targeted EAGLE drafts inherit the target's sliding-window
+    attention pattern by prepending the target's layer_types to the draft's.
+    Uses a bias=True ReplicatedLinear FC fusion and an explicit final
+    LayerNorm before logits processing.
+    """
+
     def __init__(
         self,
         *,
@@ -137,6 +151,13 @@ class CohereEagleModel(nn.Module):
 
 
 class EagleCohereForCausalLM(CohereForCausalLM):
+    """EAGLE speculative decoder for Cohere models.
+
+    Uses tied embeddings (has_own_embed_tokens=False, has_own_lm_head=False)
+    and applies a start_layer_id offset to skip target layers when
+    constructing the draft model.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         nn.Module.__init__(self)
         assert vllm_config.speculative_config is not None

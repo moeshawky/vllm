@@ -79,6 +79,8 @@ class DiffusionGemmaSelfConditioning(nn.Module):
     def __init__(
         self, hidden_size: int, self_conditioning_size: int, eps: float = 1e-6
     ):
+        """Initialize."""
+
         super().__init__()
         self.pre_norm = RMSNorm(hidden_size, eps=eps)
         self.post_norm = RMSNorm(hidden_size, eps=eps, has_weight=False)
@@ -91,6 +93,8 @@ class DiffusionGemmaSelfConditioning(nn.Module):
         inputs_embeds: torch.Tensor,
         soft_embeds: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         x = self.pre_norm(soft_embeds)
         sc_signal = self.down_proj(
             F.gelu(self.gate_proj(x), approximate="tanh") * self.up_proj(x)
@@ -112,17 +116,23 @@ class DiffusionGemmaProcessingInfo(Gemma4ProcessingInfo):
     """
 
     def get_hf_config(self):
+        """Get the HF config."""
+
         # DiffusionGemmaConfig doesn't inherit from Gemma4Config, so we
         # accept any PretrainedConfig here.
         return self.ctx.get_hf_config()
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Get supported multimodal limits."""
+
         # DiffusionGemma supports image and video inputs.
         return {"image": None, "video": None}
 
     def get_mm_max_tokens_per_item(
         self, seq_len: int, mm_counts: Mapping[str, int]
     ) -> Mapping[str, int] | None:
+        """Get the maximum number of MM tokens per item."""
+
         return super().get_mm_max_tokens_per_item(seq_len, mm_counts)
 
 
@@ -177,9 +187,13 @@ class DiffusionGemmaForConditionalGeneration(
 
     @staticmethod
     def get_model_state_cls():
+        """Get the model state class."""
+
         return DiffusionGemmaModelState
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize."""
+
         super().__init__()
         config = vllm_config.model_config.hf_config
         text_config = vllm_config.model_config.hf_text_config
@@ -273,6 +287,8 @@ class DiffusionGemmaForConditionalGeneration(
         inputs_embeds: torch.Tensor,
         probs: torch.Tensor,
     ) -> torch.Tensor:
+        """compute_self_conditioning."""
+
         embed_weight = self.model.embed_tokens.weight
         soft_embeds = torch.matmul(
             probs.to(embed_weight.dtype), embed_weight
@@ -320,6 +336,8 @@ class DiffusionGemmaForConditionalGeneration(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         if intermediate_tensors is not None:
             inputs_embeds = None
         return self.model(
@@ -331,6 +349,8 @@ class DiffusionGemmaForConditionalGeneration(
         )
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+
         logits = self.logits_processor(self.lm_head, hidden_states)
         if logits is not None and self.final_logit_softcapping is not None:
             logits = _softcap_logits(logits, self.final_logit_softcapping)
@@ -447,6 +467,8 @@ class DiffusionGemmaForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get the placeholder string."""
+
         if modality == "image":
             return "<image_soft_token>"
         if modality == "video":
@@ -673,6 +695,8 @@ class DiffusionGemmaRequestStates:
         hidden_size: int,
         stability_threshold: int,
     ):
+        """Initialize."""
+
         self.max_num_reqs = max_num_reqs
         self.canvas_length = canvas_length
         self.vocab_size = vocab_size
@@ -747,6 +771,8 @@ class DiffusionGemmaRequestStates:
         )
 
     def add_request(self, slot_idx: int) -> None:
+        """Add a request."""
+
         self.is_encoder_phase[slot_idx].fill_(True)
         self.init_canvas(async_tensor_h2d([slot_idx], device=self.device))
         self.step[slot_idx].fill_(0)
@@ -754,6 +780,8 @@ class DiffusionGemmaRequestStates:
         self.self_conditioning_embeds[slot_idx] = 0
 
     def remove_request(self, slot_idx: int) -> None:
+        """Remove a request."""
+
         self.is_encoder_phase[slot_idx].fill_(False)
         self.accepted_canvas_history_len[slot_idx].fill_(0)
         self.self_conditioning_embeds[slot_idx] = 0
@@ -774,6 +802,8 @@ class DiffusionGemmaModelState(ModelState):
         encoder_cache: Any,
         device: torch.device,
     ) -> None:
+        """Initialize."""
+
         super().__init__(vllm_config, model, encoder_cache, device)
 
         # Per-step MM data produced by prepare_inputs_embeds and consumed by
@@ -823,9 +853,13 @@ class DiffusionGemmaModelState(ModelState):
         )
 
     def get_supported_generation_tasks(self):
+        """Get supported generation tasks."""
+
         return ("generate",)
 
     def custom_sampler(self, sampler: Any) -> tuple[Any, Any] | None:
+        """Get the custom sampler."""
+
         diffusion_config = self.vllm_config.diffusion_config
         gen = self.gen_config
         sampler_cfg = gen.get("sampler_config") or {}
@@ -860,9 +894,13 @@ class DiffusionGemmaModelState(ModelState):
         ), None
 
     def apply_staged_writes(self) -> None:
+        """Apply staged writes."""
+
         pass
 
     def add_request(self, req_index: int, new_req_data: Any) -> None:
+        """Add a request."""
+
         self._req_id_to_index[new_req_data.req_id] = req_index
         self.diffusion_states.add_request(req_index)
         if not new_req_data.req_id.startswith("_warmup_"):
@@ -870,6 +908,8 @@ class DiffusionGemmaModelState(ModelState):
             self.diffusion_states.prompt_len[req_index].fill_(prompt_len)
 
     def remove_request(self, req_id: str) -> None:
+        """Remove a request."""
+
         idx = self._req_id_to_index.pop(req_id, None)
         if idx is not None:
             self.diffusion_states.remove_request(idx)
@@ -880,6 +920,8 @@ class DiffusionGemmaModelState(ModelState):
         input_batch: InputBatch,
         req_states: RequestState,
     ) -> torch.Tensor | None:
+        """Prepare inputs embeddings."""
+
         if not self.supports_mm_inputs:
             return None
 
@@ -912,6 +954,8 @@ class DiffusionGemmaModelState(ModelState):
         inputs_embeds: torch.Tensor,
         sc_embeds: torch.Tensor,
     ) -> None:
+        """Apply self-conditioning."""
+
         # One self-conditioning MLP call per decode request, over that request's
         # query span [start, end) = its canvas. The span is the full canvas (CL)
         # or, for the final canvas truncated near max_model_len, fewer than CL
@@ -928,6 +972,8 @@ class DiffusionGemmaModelState(ModelState):
             )
 
     def prepare_inputs(self, input_batch, req_states) -> dict[str, Any]:
+        """Prepare inputs."""
+
         states = self.diffusion_states
         num_tokens = input_batch.num_tokens
         num_reqs = input_batch.num_reqs
@@ -969,6 +1015,8 @@ class DiffusionGemmaModelState(ModelState):
         return {"inputs_embeds": inputs_embeds}
 
     def prepare_dummy_inputs(self, num_reqs: int, num_tokens: int) -> dict[str, Any]:
+        """Prepare dummy inputs."""
+
         # CUDA graph capture path — return a slice of the SAME persistent
         # inputs_embeds buffer that `prepare_inputs` writes to at runtime,
         # so the captured graph and runtime point to identical addresses.
@@ -977,6 +1025,8 @@ class DiffusionGemmaModelState(ModelState):
     def postprocess_state(
         self, idx_mapping, num_sampled, num_computed_tokens=None
     ) -> None:
+        """Postprocess state."""
+
         return None
 
     def prepare_attn(
@@ -989,6 +1039,8 @@ class DiffusionGemmaModelState(ModelState):
         kv_cache_config,
         for_capture=False,
     ) -> dict[str, Any]:
+        """Prepare attention."""
+
         if cudagraph_mode == CUDAGraphMode.FULL:
             num_reqs = input_batch.num_reqs_after_padding
             num_tokens = input_batch.num_tokens_after_padding
@@ -1064,6 +1116,8 @@ class DiffusionSampler:
         tp_size: int = 1,
         tp_group_name: str = "",
     ):
+        """Initialize."""
+
         self.sampling_states = sampler.sampling_states
         self.req_states = sampler.req_states
         self.logits_mode = sampler.logprobs_mode in ("raw_logits", "processed_logits")
@@ -1112,6 +1166,8 @@ class DiffusionSampler:
         self._pending_logprobs: dict[int, LogprobsTensors] = {}
 
     def add_request(self, req_idx: int, prompt_len: int, sampling_params: Any) -> None:
+        """Add a request."""
+
         if use_penalty(sampling_params):
             logger.warning_once(
                 "DiffusionGemma does not support repetition/frequency/presence "
@@ -1123,10 +1179,14 @@ class DiffusionSampler:
         self.sampling_states.add_request(req_idx, sampling_params)
 
     def apply_staged_writes(self) -> None:
+        """Apply staged writes."""
+
         self.sampling_states.apply_staged_writes()
 
     @property
     def penalties_state(self):
+        """penalties_state."""
+
         # Diffusion applies no penalties. The runner reads
         # penalties_state.output_bin_counts, so expose a stub holding None;
         # post_update treats None bin counts as "no penalty bookkeeping".
@@ -1171,6 +1231,8 @@ class DiffusionSampler:
         input_batch: Any,
         device: torch.device,
     ) -> SamplerOutput:
+        """Handle prefill."""
+
         num_reqs = input_batch.num_reqs
         self._finish_prefills(input_batch, np.arange(num_reqs))
         sampled = self._sampled[:num_reqs, :1]
@@ -1232,6 +1294,8 @@ class DiffusionSampler:
         input_batch: Any,
         draft_logits: torch.Tensor | None = None,
     ) -> SamplerOutput:
+        """Main entry point for the sampler."""
+
         num_reqs = input_batch.num_reqs
         device = logits.device
 

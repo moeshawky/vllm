@@ -74,6 +74,8 @@ logger = init_logger(__name__)
 
 
 class Ernie4_5_MoeMLP(nn.Module):
+    """MLP block for the Ernie4_5_Moe model."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -84,6 +86,8 @@ class Ernie4_5_MoeMLP(nn.Module):
         reduce_results: bool = True,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
@@ -107,6 +111,8 @@ class Ernie4_5_MoeMLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Forward pass."""
+
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -114,6 +120,8 @@ class Ernie4_5_MoeMLP(nn.Module):
 
 
 class Ernie4_5_MoeMoE(nn.Module):
+    """Mixture of Experts block for the Ernie4_5_Moe model."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -121,6 +129,8 @@ class Ernie4_5_MoeMoE(nn.Module):
         prefix: str = "",
         enable_eplb: bool = False,
     ):
+        """Initialize."""
+
         super().__init__()
 
         layer_idx = extract_layer_index(prefix)
@@ -196,6 +206,8 @@ class Ernie4_5_MoeMoE(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         orig_shape = hidden_states.shape
+        """Forward pass."""
+
         hidden_dim = hidden_states.shape[-1]
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -209,6 +221,8 @@ class Ernie4_5_MoeMoE(nn.Module):
 
 
 class Ernie4_5_MoeAttention(nn.Module):
+    """Attention module for the Ernie4_5_Moe model."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -223,6 +237,8 @@ class Ernie4_5_MoeAttention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         layer_idx = extract_layer_index(prefix) if len(prefix) > 0 else 0
         self.layer_idx = layer_idx
@@ -288,6 +304,8 @@ class Ernie4_5_MoeAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         qkv, _ = self.qkv_proj(hidden_states)
 
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
@@ -301,6 +319,8 @@ class Ernie4_5_MoeAttention(nn.Module):
 
 
 class Ernie4_5_MoeDecoderLayer(nn.Module):
+    """Single decoder layer for the Ernie4_5_Moe model."""
+
     def __init__(
         self,
         config: PretrainedConfig,
@@ -309,6 +329,8 @@ class Ernie4_5_MoeDecoderLayer(nn.Module):
         prefix: str = "",
         enable_eplb: bool = False,
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.hidden_size = config.hidden_size
         set_default_rope_theta(config, default_theta=500000)
@@ -372,6 +394,8 @@ class Ernie4_5_MoeDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         # Self Attention
         if residual is None:
             residual = hidden_states
@@ -394,6 +418,8 @@ class Ernie4_5_MoeDecoderLayer(nn.Module):
 
 @support_torch_compile
 class Ernie4_5_MoeModel(nn.Module):
+    """Ernie4_5_Moe model."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -409,6 +435,8 @@ class Ernie4_5_MoeModel(nn.Module):
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize."""
+
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -456,6 +484,8 @@ class Ernie4_5_MoeModel(nn.Module):
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
+        """Embed input IDs."""
+
 
     def forward(
         self,
@@ -464,6 +494,8 @@ class Ernie4_5_MoeModel(nn.Module):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -490,6 +522,8 @@ class Ernie4_5_MoeModel(nn.Module):
     def _preprocess(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> Iterable[tuple[str, torch.Tensor]]:
+        """Preprocess weights."""
+
         for name, loaded_weight in weights:
             # moe_statics.e_score_correction_bias is stored with a leading
             # singleton dim and under a different module name.
@@ -500,12 +534,16 @@ class Ernie4_5_MoeModel(nn.Module):
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
+        """Load model weights."""
+
         return loader.load_weights(
             self._preprocess(weights), mapper=self.hf_to_vllm_mapper
         )
 
 
 class Ernie4_5_MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, MixtureOfExperts):
+    """Ernie4_5_Moe model for vLLM."""
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -521,6 +559,8 @@ class Ernie4_5_MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, MixtureOfExpe
     fall_back_to_pt_during_load = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize."""
+
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -592,6 +632,8 @@ class Ernie4_5_MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, MixtureOfExpe
         num_physical_experts: int,
         num_local_physical_experts: int,
     ) -> None:
+        """Update physical experts metadata."""
+
         assert self.num_local_physical_experts == num_local_physical_experts
         self.num_physical_experts = num_physical_experts
         self.num_local_physical_experts = num_local_physical_experts
@@ -606,6 +648,8 @@ class Ernie4_5_MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, MixtureOfExpe
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.embed_input_ids(input_ids)
+        """Embed input IDs."""
+
 
     def forward(
         self,
@@ -614,6 +658,8 @@ class Ernie4_5_MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, MixtureOfExpe
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -623,9 +669,13 @@ class Ernie4_5_MoeForCausalLM(nn.Module, SupportsPP, SupportsLoRA, MixtureOfExpe
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
+        """Load model weights."""
+
         return loader.load_weights(weights)

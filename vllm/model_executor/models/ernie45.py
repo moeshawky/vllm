@@ -40,7 +40,11 @@ from .utils import PPMissingLayer
     }
 )
 class Ernie4_5ForCausalLM(LlamaForCausalLM):
+    """Ernie4_5 model for vLLM."""
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize."""
+
         super().__init__(vllm_config=vllm_config, prefix=prefix)
         # Hack Llama model to fit HF format Ernie4.5 dense implementation
         # Attention difference between Ernie and Llama:

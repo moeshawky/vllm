@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""CohereASR speech-to-text model with Conformer encoder-decoder structure.
+
+Implements the full ASR pipeline: audio feature extraction via ConvSubsampling,
+Conformer encoder layers with relative positional encoding, and a decoder with
+cross-attention to encoder outputs.
+"""
+
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, ClassVar
@@ -94,6 +101,13 @@ ISO639_1_SUPPORTED_LANGS = {
 
 
 class CohereASRAttention(nn.Module):
+    """Multi-head attention with TP-partitioned QKV and conditional cross-attention.
+
+    Supports both self-attention (DECODER) and cross-attention
+    (ENCODER_DECODER) modes. Tensor-parallel head partitioning
+    is applied when total_num_heads exceeds the TP size.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -190,6 +204,15 @@ class CohereASRAttention(nn.Module):
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Compute attention with optional cross-attention to encoder outputs.
+
+        Args:
+            hidden_states: Input hidden states of shape (B, T, D).
+            encoder_hidden_states: Optional encoder outputs for cross-attention.
+
+        Returns:
+            Attention output tensor.
+        """
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
 
@@ -201,6 +224,13 @@ class CohereASRAttention(nn.Module):
 
 
 class CohereASRCrossAttention(CohereASRAttention):
+    """Cross-attention variant with separate Q and KV projections.
+
+    Unlike the parent class which uses a single QKV projection,
+    this uses separate q_proj and kv_proj for cross-attention
+    where encoder_hidden_states provide the KV inputs.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -268,6 +298,12 @@ class CohereASRCrossAttention(CohereASRAttention):
 
 # ----- Decoder START -----
 class CohereASRMLP(nn.Module):
+    """Feed-forward network with SwiGLU activation.
+
+    Uses MergedColumnParallelLinear for gate and up projections,
+    followed by RowParallelLinear for the down projection.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -335,6 +371,12 @@ class FixedPositionalEncoding(nn.Module):
 
 
 class CohereASRDecoderLayer(nn.Module):
+    """Single Conformer decoder layer with self-attention, cross-attention, and FFN.
+
+    Applies residual connections around three sub-layers:
+    self-attention, cross-attention, and feed-forward network.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config.transf_decoder["config_dict"]
@@ -403,6 +445,12 @@ class CohereASRDecoderLayer(nn.Module):
 
 
 class TransformerEmbedding(nn.Module):
+    """Combines token, positional, and layer-normalization embeddings.
+
+    Applies token embedding, adds fixed positional encoding,
+    then normalizes with LayerNorm.
+    """
+
     def __init__(
         self,
         vocab_size: int,
@@ -428,6 +476,12 @@ class TransformerEmbedding(nn.Module):
 
 @support_torch_compile(dynamic_arg_dims={"input_ids": 0, "positions": -1})
 class CohereASRDecoder(nn.Module):
+    """Conformer-based decoder with TransformerEmbedding and stacked decoder layers.
+
+    Uses make_layers to construct the decoder layers and applies
+    a final LayerNorm. Supports torch.compile for performance.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         config = vllm_config.model_config.hf_config
@@ -481,6 +535,13 @@ class CohereASRDecoder(nn.Module):
 
 # ----- Encoder START -----
 class MaskedConvSequential(nn.Sequential):
+    """Sequential wrapper that propagates masks through convolutional layers.
+
+    Applies a time-domain mask before each layer, updates lengths
+    after stride operations, and applies the final mask before
+    returning the output and updated lengths.
+    """
+
     def forward(
         self, x: torch.Tensor, lengths: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -548,6 +609,13 @@ class MaskedConvSequential(nn.Sequential):
 
 
 class ConvSubsampling(nn.Module):
+    """Depthwise convolutional subsampling for audio feature reduction.
+
+    Applies a series of depthwise and pointwise convolutions with
+    stride-2 downsampling to reduce the feature dimension by a
+    power-of-2 factor, then reshapes and projects to the output size.
+    """
+
     def __init__(
         self,
         subsampling: str,
@@ -1722,10 +1790,22 @@ class ConformerEncoder(nn.Module):
 # This subclass is specific to vLLM in order for
 # `_mark_composite_model` to target this module
 class CohereASRProjector(nn.Linear):
+    """Simple Linear subclass for encoder-decoder projection in CohereASR.
+
+    Projects from encoder hidden size to decoder hidden size
+    when they differ.
+    """
+
     pass
 
 
 class CohereASRModel(nn.Module):
+    """Encoder-decoder ASR model with Conformer encoder and decoder.
+
+    Combines a ConformerEncoder, CohereASRDecoder, and an optional
+    encoder-decoder projection layer when hidden sizes differ.
+    """
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.encoder = ConformerEncoder(vllm_config=vllm_config)

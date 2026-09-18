@@ -95,6 +95,14 @@ class ColQwen3_5ProcessingInfo(Qwen3_5ProcessingInfo):
         return result
 
     def get_data_parser(self):
+        """Return a Qwen2VLMultiModalDataParser for ColQwen3.5 models.
+
+        Reuses the Qwen2VL data parser with the spatial_merge_size
+        from the vision config and video support flag.
+
+        Returns:
+            Qwen2VLMultiModalDataParser instance.
+        """
         hf_config = self.get_hf_config()
         spatial_merge_size = hf_config.vision_config.spatial_merge_size
         return Qwen2VLMultiModalDataParser(
@@ -145,6 +153,16 @@ class ColQwen3_5Model(
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize ColQwen3_5Model with embed_dim fallback chain.
+
+        Constructs a bias=True custom_text_proj with zero-initialized
+        bias so that a bias-less checkpoint behaves identically to
+        bias=False, while a trained bias is correctly loaded.
+
+        Args:
+            vllm_config: vLLM model configuration.
+            prefix: Parameter name prefix.
+        """
         super().__init__(vllm_config=vllm_config, prefix=prefix)
 
         config = vllm_config.model_config.hf_config

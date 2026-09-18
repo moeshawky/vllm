@@ -97,7 +97,11 @@ DotsOCRImageInputs: TypeAlias = DotsOCRImagePixelInputs | DotsOCRImageEmbeddingI
 
 
 class DotsOCRDummyInputsBuilder(Qwen2VLDummyInputsBuilder):
+    """Dummy inputs builder."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get the dummy text."""
+
         num_images = mm_counts.get("image", 0)
         return IMAGE_TOKEN * num_images
 
@@ -107,6 +111,8 @@ class DotsOCRDummyInputsBuilder(Qwen2VLDummyInputsBuilder):
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Get the dummy multimodal data."""
+
         num_images = mm_counts.get("image", 0)
 
         target_width, target_height = self.info.get_image_size_with_most_features()
@@ -124,7 +130,11 @@ class DotsOCRDummyInputsBuilder(Qwen2VLDummyInputsBuilder):
 
 
 class DotsOCRProcessingInfo(Qwen2VLProcessingInfo):
+    """Processing info for the DotsOCRProcessing model."""
+
     def get_hf_config(self) -> DotsOCRConfig:
+        """Get the HF config."""
+
         config = self.ctx.get_hf_config()
         if not config.__class__.__name__ == "DotsOCRConfig":
             raise TypeError(f"Expected DotsOCRConfig, got {type(config)}")
@@ -135,6 +145,8 @@ class DotsOCRProcessingInfo(Qwen2VLProcessingInfo):
         return config
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Get supported multimodal limits."""
+
         return {"image": None}
 
     def get_mm_max_tokens_per_item(
@@ -142,6 +154,8 @@ class DotsOCRProcessingInfo(Qwen2VLProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
+        """Get the maximum number of MM tokens per item."""
+
         max_image_tokens = self.get_max_image_tokens()
         return {"image": max_image_tokens}
 
@@ -149,6 +163,8 @@ class DotsOCRProcessingInfo(Qwen2VLProcessingInfo):
         self,
         **kwargs: object,
     ) -> Qwen2VLProcessor:
+        """Get the HF processor."""
+
         setattr(self.get_tokenizer(), "image_token", IMAGE_TOKEN)  # noqa: B010
         processor = self.ctx.get_hf_processor(
             Qwen2VLProcessor,
@@ -160,12 +176,18 @@ class DotsOCRProcessingInfo(Qwen2VLProcessingInfo):
 
 
 class VisionRotaryEmbedding(nn.Module):
+    """Rotary embedding module."""
+
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
+        """Initialize."""
+
         super().__init__()
         inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float) / dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
+        """Forward pass."""
+
         seq = torch.arange(
             seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
         )
@@ -174,6 +196,8 @@ class VisionRotaryEmbedding(nn.Module):
 
 
 class PatchMerger(nn.Module):
+    """PatchMerger module."""
+
     def __init__(
         self,
         dim: int,
@@ -182,6 +206,8 @@ class PatchMerger(nn.Module):
         pre_norm="layernorm",
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         use_data_parallel = is_vit_use_data_parallel()
         self.hidden_size = context_dim * (spatial_merge_size**2)
@@ -212,6 +238,8 @@ class PatchMerger(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
+
         if self.pre_norm:
             x = self.mlp(self.ln_q(x).view(-1, self.hidden_size))
         else:
@@ -220,6 +248,8 @@ class PatchMerger(nn.Module):
 
 
 class DotsVisionAttention(nn.Module):
+    """Attention module for the DotsVision model."""
+
     def __init__(
         self,
         config,
@@ -230,6 +260,8 @@ class DotsVisionAttention(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         use_data_parallel = is_vit_use_data_parallel()
 
@@ -281,6 +313,8 @@ class DotsVisionAttention(nn.Module):
         *,
         max_seqlen: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         # [S, C] -> [S, B=1, C]
         x = hidden_states.unsqueeze(1)
         x, _ = self.qkv(x)
@@ -316,6 +350,8 @@ class DotsVisionAttention(nn.Module):
 
 
 class DotsSwiGLUFFN(nn.Module):
+    """DotsSwiGLUFFN module."""
+
     def __init__(
         self,
         config,
@@ -323,6 +359,8 @@ class DotsSwiGLUFFN(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize."""
+
         super().__init__()
         hidden_features = config.intermediate_size
         in_features = config.embed_dim
@@ -349,6 +387,8 @@ class DotsSwiGLUFFN(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
+
         x, _ = self.fc13(x)
         x = self.act_fn(x)
         x, _ = self.fc2(x)
@@ -356,7 +396,11 @@ class DotsSwiGLUFFN(nn.Module):
 
 
 class DotsPatchEmbed(nn.Module):
+    """Patch embedding module."""
+
     def __init__(self, config):
+        """Initialize."""
+
         super().__init__()
         self.num_channels = config.num_channels
         self.patch_size = config.patch_size
@@ -372,6 +416,8 @@ class DotsPatchEmbed(nn.Module):
         self.norm = RMSNorm(config.embed_dim, eps=config.rms_norm_eps)
 
     def forward(self, x: torch.Tensor, grid_thw=None) -> torch.Tensor:
+        """Forward pass."""
+
         x = x.view(
             -1,
             self.num_channels,
@@ -385,7 +431,11 @@ class DotsPatchEmbed(nn.Module):
 
 
 class DotsViTPreprocessor(nn.Module):
+    """Preprocessor module."""
+
     def __init__(self, config):
+        """Initialize."""
+
         super().__init__()
         self.patch_h = config.patch_size
         self.patch_w = config.patch_size
@@ -394,11 +444,15 @@ class DotsViTPreprocessor(nn.Module):
         self.patchifier = DotsPatchEmbed(config)
 
     def forward(self, x: torch.Tensor, grid_thw=None) -> torch.Tensor:
+        """Forward pass."""
+
         tokens = self.patchifier(x, grid_thw)
         return tokens
 
 
 class DotsVisionBlock(nn.Module):
+    """Transformer block."""
+
     def __init__(
         self,
         config,
@@ -406,6 +460,8 @@ class DotsVisionBlock(nn.Module):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize."""
+
         super().__init__()
 
         self.attn = DotsVisionAttention(
@@ -432,6 +488,8 @@ class DotsVisionBlock(nn.Module):
         rotary_pos_emb: torch.Tensor,
         max_seqlen: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         hidden_states = hidden_states + self.attn(
             self.norm1(hidden_states),
             cu_seqlens=cu_seqlens,
@@ -443,6 +501,8 @@ class DotsVisionBlock(nn.Module):
 
 
 class DotsVisionTransformer(nn.Module):
+    """Transformer module."""
+
     def __init__(
         self,
         config: DotsVisionConfig,
@@ -452,6 +512,8 @@ class DotsVisionTransformer(nn.Module):
         require_post_norm: bool | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.config = config
         self.spatial_merge_size = config.spatial_merge_size
@@ -497,13 +559,19 @@ class DotsVisionTransformer(nn.Module):
 
     @property
     def dtype(self) -> torch.dtype:
+        """dtype."""
+
         return self.patch_embed.patchifier.proj.weight.dtype
 
     @property
     def device(self) -> torch.device:
+        """device."""
+
         return self.patch_embed.patchifier.proj.weight.device
 
     def get_pos_ids_by_grid(self, grid_thw: list[list[int]]) -> list[torch.Tensor]:
+        """Get position IDs by grid."""
+
         pos_ids = []
         for t, h, w in grid_thw:
             hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -530,6 +598,8 @@ class DotsVisionTransformer(nn.Module):
         return pos_ids
 
     def rot_pos_emb(self, grid_thw: list[list[int]]) -> torch.Tensor:
+        """Compute rotary positional embeddings."""
+
         pos_ids = self.get_pos_ids_by_grid(grid_thw)
         pos_ids = torch.cat(pos_ids, dim=0)
         max_grid_size = max(max(h, w) for _, h, w in grid_thw)
@@ -538,6 +608,8 @@ class DotsVisionTransformer(nn.Module):
         return rotary_pos_emb
 
     def compute_attn_mask_seqlen(self, cu_seqlens: torch.Tensor) -> torch.Tensor | None:
+        """Compute the attention mask sequence length."""
+
         max_seqlen = None
         if self.attn_backend in {
             AttentionBackendEnum.FLASH_ATTN,
@@ -550,6 +622,8 @@ class DotsVisionTransformer(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, grid_thw: list[list[int]]
     ) -> torch.Tensor:
+        """Forward pass."""
+
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
 
         # Convert grid_thw to tensor (always expecting list format now)
@@ -589,6 +663,8 @@ class DotsVisionTransformer(nn.Module):
     dummy_inputs=DotsOCRDummyInputsBuilder,
 )
 class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA):
+    """DotsOCR model for vLLM."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_substr={
             ".attn.qkv_proj.": ".attn.qkv.",
@@ -622,11 +698,15 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get the placeholder string."""
+
         if modality.startswith("image"):
             return "<|img|><|imgpad|><|endofimg|>"
         return None
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize."""
+
         super().__init__()
 
         self.config: DotsOCRConfig = vllm_config.model_config.hf_config
@@ -662,6 +742,8 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> DotsOCRImageInputs | None:
+        """Parse and validate image inputs."""
+
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -688,6 +770,8 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
     def _process_image_input(
         self, image_input: DotsOCRImageInputs
     ) -> tuple[torch.Tensor, ...]:
+        """Process image input to get embeddings."""
+
         grid_thw = image_input["image_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -719,14 +803,20 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
         return image_embeds.split(sizes)
 
     def get_num_mm_encoder_tokens(self, num_image_tokens: int) -> int:
+        """Get the number of MM encoder tokens."""
+
         merge_size = self.vision_tower.spatial_merge_size
         return num_image_tokens * (merge_size**2)
 
     def get_num_mm_connector_tokens(self, num_vision_tokens: int) -> int:
+        """Get the number of MM connector tokens."""
+
         merge_size = self.vision_tower.spatial_merge_size
         return num_vision_tokens // (merge_size**2)
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embed multimodal inputs."""
+
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -741,6 +831,8 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -757,9 +849,13 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights."""
+
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 

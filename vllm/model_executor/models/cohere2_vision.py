@@ -368,6 +368,14 @@ class Cohere2VisionForConditionalGeneration(
         return next(self.parameters()).dtype
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights using AutoWeightsLoader with HF-to-vLLM mapping.
+
+        Args:
+            weights: Iterable of (parameter name, tensor) pairs.
+
+        Returns:
+            Set of loaded weight names.
+        """
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
@@ -419,6 +427,12 @@ class Cohere2VisionForConditionalGeneration(
     def _patch_quant_config(
         self, config: PretrainedConfig, quant_config: QuantizationConfig | None
     ):
+        """Patch quantization config for AutoAWQ models missing modules_to_not_convert.
+
+        When using AutoAWQ quantization, the OpenGVLab models may lack
+        ``modules_to_not_convert`` in their quant config. This adds
+        ``vision_tower`` back to prevent incorrect quantization.
+        """
         # the awq models from OpenGVLab missing `modules_to_not_convert`
         # patch the quant_config to add `modules_to_not_convert` back
         if isinstance(quant_config, AutoAWQConfig):

@@ -72,6 +72,8 @@ class Eagle2_5_VLProcessingInfo(BaseInternVLProcessingInfo):
     """Processing info for Eagle2.5-VL model."""
 
     def get_image_processor(self, **kwargs):
+        """Get the image processor."""
+
         config = self.get_hf_config()
         vision_config = config.vision_config
 
@@ -87,6 +89,8 @@ class Eagle2_5_VLProcessingInfo(BaseInternVLProcessingInfo):
         return InternVLImageProcessor(**kwargs)
 
     def get_hf_processor(self, **kwargs) -> InternVLProcessor:
+        """Get the HF processor."""
+
         config = self.get_hf_config()
         vision_config = config.vision_config
 
@@ -140,11 +144,15 @@ class Eagle2_5_VLForConditionalGeneration(
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get the placeholder string."""
+
         if modality.startswith("image"):
             return "<image>"
         raise ValueError("Only image modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        """Initialize."""
+
         super().__init__()
 
         config = vllm_config.model_config.hf_config

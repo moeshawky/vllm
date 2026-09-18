@@ -96,7 +96,11 @@ DeepseekVL2ImageInputs: TypeAlias = (
 
 
 class MlpProjector(nn.Module):
+    """MlpProjector module."""
+
     def __init__(self, cfg: MlpProjectorConfig):
+        """Initialize."""
+
         super().__init__()
 
         self.cfg = cfg
@@ -130,6 +134,8 @@ class MlpProjector(nn.Module):
         self.layers = modules
 
     def forward(self, x):
+        """Forward pass."""
+
         bs, hw, input_dim = x.shape
         if self.projector_type == "downsample_mlp_gelu":
             h = w = int((hw) ** 0.5)
@@ -155,18 +161,28 @@ class MlpProjector(nn.Module):
 
 
 class DeepseekVL2ProcessingInfo(BaseProcessingInfo):
+    """Processing info for the DeepseekVL2Processing model."""
+
     def get_hf_config(self):
+        """Get the HF config."""
+
         return self.ctx.get_hf_config(DeepseekVLV2Config)
 
     def get_hf_processor(self, **kwargs: object):
+        """Get the HF processor."""
+
         return self.ctx.get_hf_processor(**kwargs)
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
+        """Get supported multimodal limits."""
+
         return {"image": None}
 
     def get_num_image_tokens(
         self, *, image_width: int, image_height: int, cropping: bool = True
     ) -> int:
+        """Get the number of image tokens."""
+
         hf_processor = self.get_hf_processor()
         image_size = hf_processor.image_size
         patch_size = hf_processor.patch_size
@@ -190,6 +206,8 @@ class DeepseekVL2ProcessingInfo(BaseProcessingInfo):
         return global_views_tokens + local_views_tokens + 1
 
     def get_image_size_with_most_features(self) -> ImageSize:
+        """Get the image size with the most features."""
+
         hf_config = self.get_hf_config()
         candidate_resolutions = hf_config.candidate_resolutions
         height, width = max(
@@ -202,7 +220,11 @@ class DeepseekVL2ProcessingInfo(BaseProcessingInfo):
 
 
 class DeepseekVL2DummyInputsBuilder(BaseDummyInputsBuilder[DeepseekVL2ProcessingInfo]):
+    """Dummy inputs builder."""
+
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get the dummy text."""
+
         num_images = mm_counts.get("image", 0)
 
         processor = self.info.get_hf_processor()
@@ -216,6 +238,8 @@ class DeepseekVL2DummyInputsBuilder(BaseDummyInputsBuilder[DeepseekVL2Processing
         mm_counts: Mapping[str, int],
         mm_options: Mapping[str, BaseDummyOptions],
     ) -> MultiModalDataDict:
+        """Get the dummy multimodal data."""
+
         num_images = mm_counts.get("image", 0)
 
         max_image_size = self.info.get_image_size_with_most_features()
@@ -235,7 +259,11 @@ class DeepseekVL2DummyInputsBuilder(BaseDummyInputsBuilder[DeepseekVL2Processing
 class DeepseekVL2MultiModalProcessor(
     BaseMultiModalProcessor[DeepseekVL2ProcessingInfo]
 ):
+    """Processor for the DeepseekVL2MultiModal model."""
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str:
+        """Get the HF processor text."""
+
         return self.dummy_inputs.get_dummy_text(mm_counts)
 
     def _postprocess_hf_mm_data(
@@ -244,6 +272,8 @@ class DeepseekVL2MultiModalProcessor(
         hf_processor_mm_kwargs: Mapping[str, object],
         processed_data: BatchFeature,
     ) -> BatchFeature:
+        """Postprocess HF MM data."""
+
         if not mm_data:
             return processed_data
 
@@ -258,6 +288,8 @@ class DeepseekVL2MultiModalProcessor(
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
+        """Get the MM fields config."""
+
         num_patches = hf_inputs.get("num_patches", torch.empty(0))
 
         return dict(
@@ -274,6 +306,8 @@ class DeepseekVL2MultiModalProcessor(
         hf_processor_mm_kwargs: Mapping[str, object],
         out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
+        """Get prompt updates."""
+
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
 
         image_token_id = hf_processor.image_token_id
@@ -310,6 +344,8 @@ class DeepseekVL2MultiModalProcessor(
         inputs: ProcessorInputs,
         timing_ctx: TimingContext,
     ) -> MultiModalProcessingInfo:
+        """Apply the HF processor with caching."""
+
         # The processor logic is different for len(images) <= 2 vs > 2
         # Since the processing cache assumes that the processor output is
         # invariant of how many images are passed per prompt, we only
@@ -326,6 +362,8 @@ class DeepseekVL2MultiModalProcessor(
     dummy_inputs=DeepseekVL2DummyInputsBuilder,
 )
 class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
+    """DeepseekVLV2 model for vLLM."""
+
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "language.": "language_model.",
@@ -334,12 +372,16 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
+        """Get the placeholder string."""
+
         if modality.startswith("image"):
             return "<image>"
 
         raise ValueError("Only image modality is supported")
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize."""
+
         super().__init__()
         config: DeepseekVLV2Config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -406,6 +448,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
     def patch_vit_for_tp(
         self, vit: torch.nn.Module, quant_config: QuantizationConfig | None
     ):
+        """patch_vit_for_tp."""
+
         try:
             import timm
         except ImportError as e:
@@ -433,6 +477,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         quant_config: QuantizationConfig | None,
         prefix: str = "",
     ) -> nn.Module:
+        """_init_vision_module."""
+
         # TODO: refactor vision model through timm wrapper from transformers
         try:
             import timm
@@ -457,6 +503,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
     def _parse_and_validate_image_input(
         self, **kwargs: object
     ) -> DeepseekVL2ImageInputs | None:
+        """Parse and validate image inputs."""
+
         pixel_values = kwargs.pop("pixel_values", None)
         images_spatial_crop = kwargs.pop("images_spatial_crop", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -489,6 +537,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         pixel_values: torch.Tensor,
         images_spatial_crop: torch.Tensor,
     ) -> list[torch.Tensor]:
+        """_pixel_values_to_embedding."""
+
         # [batch_all_tiles, vit_seq_len, c]
         images_feature = self.vision.forward_features(pixel_values)
 
@@ -579,6 +629,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
     def _process_image_input(
         self, image_input: DeepseekVL2ImageInputs
     ) -> torch.Tensor | list[torch.Tensor]:
+        """Process image input to get embeddings."""
+
         if image_input["type"] == "image_embeds":
             return image_input["data"]
 
@@ -590,6 +642,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         )
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
+        """Embed multimodal inputs."""
+
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return []
@@ -604,6 +658,8 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ):
+        """Forward pass."""
+
         if intermediate_tensors is not None:
             inputs_embeds = None
 
@@ -617,9 +673,13 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load model weights."""
+
         loader = AutoWeightsLoader(self)
         autoloaded_weights = loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
         return autoloaded_weights

@@ -157,6 +157,8 @@ class DeepseekAttention(nn.Module):
         prefix: str = "",
         **kwargs,
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.hidden_size = hidden_size
         tp_size = get_tensor_model_parallel_world_size()
@@ -229,6 +231,8 @@ class DeepseekAttention(nn.Module):
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
@@ -238,6 +242,8 @@ class DeepseekAttention(nn.Module):
 
 
 class DeepseekV2MLP(nn.Module):
+    """MLP block for the DeepseekV2 model."""
+
     def __init__(
         self,
         hidden_size: int,
@@ -248,6 +254,8 @@ class DeepseekV2MLP(nn.Module):
         is_sequence_parallel=False,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
 
         # If is_sequence_parallel, the input and output tensors are sharded
@@ -278,6 +286,8 @@ class DeepseekV2MLP(nn.Module):
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
+        """Forward pass."""
+
         gate_up, _ = self.gate_up_proj(x)
         x = self.act_fn(gate_up)
         x, _ = self.down_proj(x)
@@ -285,6 +295,8 @@ class DeepseekV2MLP(nn.Module):
 
 
 class DeepseekV2MoE(nn.Module):
+    """Mixture of Experts block for the DeepseekV2 model."""
+
     def __init__(
         self,
         config: DeepseekV2Config | DeepseekV3Config,
@@ -294,6 +306,8 @@ class DeepseekV2MoE(nn.Module):
         prefix: str = "",
         apply_routed_scale_to_output: bool = False,
     ):
+        """Initialize."""
+
         super().__init__()
         self.tp_size = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tensor_model_parallel_rank()
@@ -408,6 +422,8 @@ class DeepseekV2MoE(nn.Module):
         hidden_states: torch.Tensor,
         already_sequence_parallel: bool = False,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         num_tokens, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
@@ -448,6 +464,8 @@ def _get_llama_4_scaling(
 
 
 class DeepseekV2Attention(nn.Module):
+    """Attention module for the DeepseekV2 model."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -466,6 +484,8 @@ class DeepseekV2Attention(nn.Module):
         reduce_results: bool = True,
         prefix: str = "",
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.hidden_size = hidden_size
         self.qk_nope_head_dim = qk_nope_head_dim
@@ -589,6 +609,8 @@ class DeepseekV2Attention(nn.Module):
         hidden_states: torch.Tensor,
         llama_4_scaling: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         if self.q_lora_rank is not None:
             q = self.q_a_proj(hidden_states)[0]
             q = self.q_a_layernorm(q)
@@ -631,9 +653,13 @@ class DeepseekV2Attention(nn.Module):
 
 
 class DeepseekV32IndexerCache(torch.nn.Module, AttentionLayerBase):
+    """Cache module."""
+
     def __init__(
         self, head_dim: int, dtype: torch.dtype, prefix: str, cache_config: CacheConfig
     ):
+        """Initialize."""
+
         super().__init__()
         self.kv_cache = torch.tensor([])
         self.head_dim = head_dim
@@ -661,10 +687,14 @@ class DeepseekV32IndexerCache(torch.nn.Module, AttentionLayerBase):
     def forward(self): ...
 
     def get_attn_backend(self) -> type[AttentionBackend]:
+        """Get the attention backend."""
+
         return DeepseekV32IndexerBackend
 
 
 class Indexer(nn.Module):
+    """Indexer module."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -677,6 +707,8 @@ class Indexer(nn.Module):
         prefix: str = "",
         is_inplace_rope: bool = False,
     ):
+        """Initialize."""
+
         super().__init__()
         self.vllm_config = vllm_config
         self.config = config
@@ -751,6 +783,8 @@ class Indexer(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, qr: torch.Tensor, positions, rotary_emb
     ) -> torch.Tensor:
+        """Forward pass."""
+
         q, _ = self.wq_b(qr)
         q = q.view(-1, self.n_head, self.head_dim)
 
@@ -933,6 +967,8 @@ direct_register_custom_op(
 
 
 class DeepSeekV2FusedQkvAProjLinear(MergedColumnParallelLinear):
+    """DeepSeekV2FusedQkvAProjLinear module."""
+
     def __init__(
         self,
         input_size: int,
@@ -940,6 +976,8 @@ class DeepSeekV2FusedQkvAProjLinear(MergedColumnParallelLinear):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize."""
+
         super().__init__(
             input_size,
             output_size,
@@ -967,6 +1005,8 @@ class DeepSeekV2FusedQkvAProjLinear(MergedColumnParallelLinear):
         self,
         input_,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.nn.Parameter | None]:
+        """Forward pass."""
+
         if self._use_min_latency_gemm:
             output = torch.ops.vllm.min_latency_fused_qkv_a_proj(input_, self.weight)
             if not self.return_bias:
@@ -1008,6 +1048,8 @@ class DeepseekV2MLAAttention(nn.Module):
         reduce_results: bool = True,
         non_causal_multi_token_decode: bool = False,
     ) -> None:
+        """Initialize."""
+
         super().__init__()
         self.hidden_size = hidden_size
         self.qk_nope_head_dim = qk_nope_head_dim
@@ -1224,10 +1266,14 @@ class DeepseekV2MLAAttention(nn.Module):
         hidden_states: torch.Tensor,
         llama_4_scaling: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         return self.mla_attn(positions, hidden_states, llama_4_scaling)
 
 
 class DeepseekV2DecoderLayer(nn.Module):
+    """Single decoder layer for the DeepseekV2 model."""
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -1235,6 +1281,8 @@ class DeepseekV2DecoderLayer(nn.Module):
         config: DeepseekV2Config | None = None,
         topk_indices_buffer: torch.Tensor | None = None,
     ) -> None:
+        """Initialize."""
+
         super().__init__()
 
         if config is None:
@@ -1330,6 +1378,8 @@ class DeepseekV2DecoderLayer(nn.Module):
         residual: torch.Tensor | None,
         llama_4_scaling: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass."""
+
         full_num_tokens = positions.shape[0]
         input_is_sequence_parallel = (
             self.use_sequence_parallel_moe
@@ -1399,6 +1449,8 @@ class DeepseekV2DecoderLayer(nn.Module):
 
 @support_torch_compile
 class DeepseekV2Model(nn.Module):
+    """DeepseekV2 model."""
+
     fall_back_to_pt_during_load = False
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
@@ -1477,6 +1529,8 @@ class DeepseekV2Model(nn.Module):
         intermediate_tensors: IntermediateTensors | None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -1794,6 +1848,8 @@ class DeepseekV2Model(nn.Module):
 
 
 class DeepseekV2MixtureOfExperts(MixtureOfExperts):
+    """DeepseekV2MixtureOfExperts module."""
+
     moe_mlp_layers: list[DeepseekV2MoE]
     """
     List of MoE MLP layers in the model.
@@ -1823,6 +1879,8 @@ class DeepseekV2MixtureOfExperts(MixtureOfExperts):
         num_physical_experts: int,
         num_local_physical_experts: int,
     ) -> None:
+        """Update physical experts metadata."""
+
         assert self.num_local_physical_experts == num_local_physical_experts
         self.num_physical_experts = num_physical_experts
         self.num_local_physical_experts = num_local_physical_experts
@@ -1842,6 +1900,8 @@ class DeepseekV2ForCausalLM(
     SupportsEagle,
     SupportsEagle3,
 ):
+    """DeepseekV2 model for vLLM."""
+
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
     }
@@ -1899,6 +1959,8 @@ class DeepseekV2ForCausalLM(
         self.set_moe_parameters()
 
     def set_moe_parameters(self):
+        """Set MoE parameters."""
+
         self.num_expert_groups = getattr(self.config, "n_group", 1)
 
         self.moe_layers = []
@@ -1921,6 +1983,8 @@ class DeepseekV2ForCausalLM(
         self.model.aux_hidden_state_layers = layers
 
     def get_eagle3_aux_hidden_state_layers(self) -> tuple[int, ...]:
+        """Get Eagle3 auxiliary hidden state layers."""
+
         num_layers = len(self.model.layers)
         return (2, num_layers // 2, num_layers - 3)
 
@@ -1934,6 +1998,8 @@ class DeepseekV2ForCausalLM(
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
+        """Forward pass."""
+
         hidden_states = self.model(
             input_ids, positions, intermediate_tensors, inputs_embeds
         )
@@ -1943,10 +2009,14 @@ class DeepseekV2ForCausalLM(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor | None:
+        """Compute logits from hidden states."""
+
         logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        """Get expert mapping."""
+
         # Params for weights, fp8 weight scales, fp8 activation scales
         # (param_name, weight_name, expert_id, shard_id)
         return fused_moe_make_expert_params_mapping(
@@ -1964,12 +2034,18 @@ class DeepseekV2ForCausalLM(
 
 
 class DeepseekForCausalLM(DeepseekV2ForCausalLM):
+    """Deepseek model for vLLM."""
+
     pass
 
 
 class DeepseekV3ForCausalLM(DeepseekV2ForCausalLM):
+    """DeepseekV3 model for vLLM."""
+
     pass
 
 
 class GlmMoeDsaForCausalLM(DeepseekV2ForCausalLM):
+    """GlmMoeDsa model for vLLM."""
+
     pass
