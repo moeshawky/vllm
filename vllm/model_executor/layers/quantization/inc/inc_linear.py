@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 
 class INCLinearMethod(LinearMethodBase):
+    """Configure INCLinearMethod quantization behavior."""
     def __init__(self, scheme: "INCLinearScheme") -> None:
         self.scheme = scheme
 
@@ -25,6 +26,7 @@ class INCLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         return self.scheme.create_weights(
             layer=layer,
             input_size_per_partition=input_size_per_partition,
@@ -36,6 +38,7 @@ class INCLinearMethod(LinearMethodBase):
         )
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Process weights after model loading completes."""
         return self.scheme.process_weights_after_loading(layer)
 
     def apply(
@@ -44,4 +47,5 @@ class INCLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply quantization to the input tensor."""
         return self.scheme.apply_weights(layer, x, bias)

@@ -6,6 +6,8 @@
 
 # ruff: noqa: E501
 
+"""Combined SSD chunk scan kernel for Mamba-2."""
+
 import torch
 from einops import rearrange
 from packaging import version
@@ -21,6 +23,7 @@ TRITON_22 = version.parse(triton.__version__) >= version.parse("2.2.0")
 
 
 def is_int_pow_2(n):
+    """Check if n is a positive power of 2."""
     return isinstance(n, int) and n > 0 and (n & (n - 1)) == 0
 
 
@@ -45,6 +48,7 @@ def _mamba_chunk_scan_combined_fwd(
     dt_limit=(0.0, float("inf")),
     state_dtype=None,
 ):
+    """Combined chunk scan forward for Mamba-2."""
     assert is_int_pow_2(chunk_size), "chunk_size must be integer power of 2"
     seqlen, nheads, headdim = x.shape
     _, ngroups, dstate = B.shape

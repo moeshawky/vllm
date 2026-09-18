@@ -6,6 +6,8 @@
 
 # ruff: noqa: E501
 
+"""Triton state passing kernel for SSD chunked scan."""
+
 import torch
 
 from vllm.model_executor.layers.mamba.ops.triton_helpers import fast_exp
@@ -51,6 +53,7 @@ def _state_passing_fwd_kernel(
     HAS_INITSTATES: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
+    """Triton JIT kernel for state passing in chunked scan."""
     pid_m = tl.program_id(axis=0)
     pid_b = tl.program_id(axis=1)
     pid_h = tl.program_id(axis=2)
@@ -106,6 +109,7 @@ def _state_passing_fwd(
     initial_states=None,
     out_dtype=None,
 ):
+    """Run the state passing recurrence across chunks."""
     nchunks, nheads, dim = states.shape
     chunk_size = dA_cumsum.shape[-1]
     batch = last_chunk_indices.shape[0]

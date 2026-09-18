@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Mamba-1 mixer providing state space parameters via selective state spaces."""
+
 from typing import NamedTuple
 
 import torch
@@ -489,6 +491,7 @@ class MambaMixer(MambaBase, PluggableLayer):
 
 
 class PrefillDecodeSplit(NamedTuple):
+    """NamedTuple holding prefill and decode split tensors."""
     hidden_states_BC_p: torch.Tensor
     hidden_states_BC_d: torch.Tensor
     gate_p: torch.Tensor
@@ -501,6 +504,7 @@ def split_batch_to_prefill_and_decode(
     num_prefill_tokens: int,
     num_decode_tokens: int,
 ) -> PrefillDecodeSplit:
+    """Split hidden states and gate tensors into prefill and decode portions."""
     num_actual_tokens = num_prefill_tokens + num_decode_tokens
 
     # In v1, decode tokens come first, then prefill tokens.
@@ -526,6 +530,7 @@ def mamba_mixer(
     output: torch.Tensor,
     layer_name: LayerNameType,
 ) -> None:
+    """Custom op entry point for Mamba-1 mixer."""
     layer_name = _resolve_layer_name(layer_name)
     forward_context: ForwardContext = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
@@ -537,6 +542,7 @@ def mamba_mixer_fake(
     output: torch.Tensor,
     layer_name: LayerNameType,
 ) -> None:
+    """Fake implementation for torch.compile."""
     return
 
 

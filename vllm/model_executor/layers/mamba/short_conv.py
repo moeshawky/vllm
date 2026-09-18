@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Short convolution attention layer for Mamba with CPU and CUDA forward paths."""
 
 import torch
 
@@ -34,6 +35,11 @@ from vllm.v1.attention.backends.short_conv_attn import ShortConvAttentionMetadat
 # --8<-- [start:short_conv]
 @PluggableLayer.register("short_conv")
 class ShortConv(MambaBase, PluggableLayer):
+    """Short convolution attention layer inheriting from MambaBase.
+
+    Applies a 1D convolution to the input with short-range context,
+    followed by in-projection, activation, and out-projection.
+    """
     # --8<-- [end:short_conv]
 
     def __init__(
@@ -46,6 +52,17 @@ class ShortConv(MambaBase, PluggableLayer):
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
+        """Initialize the ShortConv layer.
+
+        Args:
+            config: Model configuration containing convolution parameters.
+            dim: Hidden dimension size.
+            layer_idx: Index of this layer in the model.
+            model_config: Optional model configuration object.
+            cache_config: Optional cache configuration object.
+            quant_config: Optional quantization configuration object.
+            prefix: Namespace prefix for this layer's parameters.
+        """
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -97,6 +114,12 @@ class ShortConv(MambaBase, PluggableLayer):
         hidden_states: torch.Tensor,
         output: torch.Tensor,
     ):
+        """Reference torch causal conv1d running on all CPU platforms.
+
+        Args:
+            hidden_states: Input tensor of shape (batch, seqlen, dim).
+            output: Preallocated output tensor.
+        """
         # Reference torch causal conv1d; runs on all CPU platforms. AMX kernels
         # for causal conv can be plugged in here later.
         from vllm.model_executor.layers.mamba.ops.cpu.causal_conv1d import (
@@ -206,6 +229,12 @@ class ShortConv(MambaBase, PluggableLayer):
         hidden_states: torch.Tensor,
         output: torch.Tensor,
     ):
+        """Forward pass through the short convolution layer.
+
+        Args:
+            hidden_states: Input tensor of shape (batch, seqlen, dim).
+            output: Output tensor to write results into.
+        """
         torch.ops.vllm.short_conv(
             hidden_states,
             output,
@@ -217,6 +246,12 @@ class ShortConv(MambaBase, PluggableLayer):
         hidden_states: torch.Tensor,
         output: torch.Tensor,
     ):
+        """CUDA forward path using triton causal_conv1d kernels.
+
+        Args:
+            hidden_states: Input tensor of shape (batch, seqlen, dim).
+            output: Preallocated output tensor.
+        """
         forward_context = get_forward_context()
         # ShortConvAttentionMetadata contains metadata necessary for the
         # short_conv triton kernels to operate in continuous batching and in
@@ -340,6 +375,11 @@ class ShortConv(MambaBase, PluggableLayer):
         output[:num_actual_tokens], _ = self.out_proj(hidden_states)
 
     def get_state_dtype(self) -> tuple[torch.dtype, ...]:
+        """Return the state dtype tuple for this layer.
+
+        Returns:
+            Tuple of dtypes for the Mamba state components.
+        """
         assert self.model_config is not None
         assert self.cache_config is not None
         return MambaStateDtypeCalculator.short_conv_state_dtype(
@@ -348,6 +388,11 @@ class ShortConv(MambaBase, PluggableLayer):
         )
 
     def get_state_shape(self) -> tuple[tuple[int, ...]]:
+        """Return the state shape tuple for this layer.
+
+        Returns:
+            Nested tuple describing the shape of each state tensor.
+        """
         return MambaStateShapeCalculator.short_conv_state_shape(
             tp_world_size=get_tensor_model_parallel_world_size(),
             intermediate_size=self.conv_dim,
@@ -357,6 +402,7 @@ class ShortConv(MambaBase, PluggableLayer):
 
     @property
     def mamba_type(self) -> MambaAttentionBackendEnum:
+        """Return the Mamba attention backend enum for short conv."""
         return MambaAttentionBackendEnum.SHORT_CONV
 
 
@@ -365,6 +411,13 @@ def short_conv(
     output: torch.Tensor,
     layer_name: str,
 ) -> None:
+    """Custom op entry point for short convolution.
+
+    Args:
+        hidden_states: Input tensor to the short conv layer.
+        output: Output tensor to write results into.
+        layer_name: Name of the layer to dispatch to.
+    """
     forward_context: ForwardContext = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
     if not current_platform.is_cpu():
@@ -378,6 +431,13 @@ def short_conv_fake(
     output: torch.Tensor,
     layer_name: str,
 ) -> None:
+    """Fake implementation for torch.compile.
+
+    Args:
+        hidden_states: Input tensor (unused).
+        output: Output tensor (unused).
+        layer_name: Layer name (unused).
+    """
     return
 
 

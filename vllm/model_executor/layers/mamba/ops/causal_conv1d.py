@@ -4,6 +4,8 @@
 # Copyright (c) 2024, Tri Dao.
 # Adapted from https://github.com/Dao-AILab/causal-conv1d/blob/main/causal_conv1d/causal_conv1d_interface.py
 
+"""Triton causal convolution 1D kernels adapted from causal-conv1d project."""
+
 
 import numpy as np
 import torch

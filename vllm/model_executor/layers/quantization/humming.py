@@ -61,6 +61,7 @@ if TYPE_CHECKING:
 
 
 def prepare_param(tensor, name, extra_attrs):
+    """Prepare a quantization parameter from tensor data."""
     extra_attrs = extra_attrs.copy()
     scale_type = extra_attrs.pop("scale_type", None)
     param_cls_name_map = {
@@ -109,6 +110,7 @@ def prepare_param(tensor, name, extra_attrs):
 
 
 def prepare_moe_param(tensor: torch.Tensor, name: str, extra_attrs: dict[str, Any]):
+    """Prepare a MoE quantization parameter."""
     param = torch.nn.Parameter(tensor, requires_grad=False)
     if "scale_type" in extra_attrs:
         extra_attrs["quant_method"] = extra_attrs["scale_type"]
@@ -124,6 +126,7 @@ def prepare_moe_param(tensor: torch.Tensor, name: str, extra_attrs: dict[str, An
 
 
 def compressed_tensors_get_config(config: dict[str, Any], key: str):
+    """Get compressed-tensors configuration for a key."""
     assert key in ["weights", "input_activations"]
     target_group_config = None
     for group_config in config["config_groups"].values():
@@ -146,6 +149,7 @@ def compressed_tensors_get_config(config: dict[str, Any], key: str):
 
 
 class HummingConfig(QuantizationConfig):
+    """Configure HummingConfig quantization behavior."""
     packed_modules_mapping: dict[str, list[str]] = {}
 
     def __init__(self, full_config: dict[str, Any] | None = None):
@@ -153,28 +157,34 @@ class HummingConfig(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """Return the name value."""
         return "humming"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """Return the supported_act_dtypes value."""
         return [torch.bfloat16, torch.half]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the min_capability value."""
         return 75
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """Return the config_filenames value."""
         return []
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "HummingConfig":
+        """Create instance from configuration dictionary."""
         return cls(full_config=config)
 
     @classmethod
     def override_quantization_method(
         cls, hf_quant_cfg, user_quant, hf_config=None
     ) -> QuantizationMethods | None:
+        """Override the quantization method selection."""
         if user_quant == "humming" and hf_config is not None:
             model_type = hf_config.model_type
             quant_method = hf_quant_cfg.get("quant_method", None)
@@ -187,9 +197,11 @@ class HummingConfig(QuantizationConfig):
         return "humming" if user_quant == "humming" else None
 
     def apply_vllm_mapper(self, hf_to_vllm_mapper: "WeightsMapper"):
+        """Apply the vLLM weight mapper to configuration."""
         self.hf_to_vllm_mapper = hf_to_vllm_mapper
 
     def is_layer_skipped(self, config: dict[str, Any], prefix: str):
+        """Check if a layer should be skipped during quantization."""
         keys = ["ignored_layers", "ignore", "modules_to_not_convert"]
         ignored_layers = self.get_from_keys_or(config, keys, []) or []
         if hasattr(self, "hf_to_vllm_mapper"):
@@ -218,6 +230,7 @@ class HummingConfig(QuantizationConfig):
         return False
 
     def get_layer_weight_schema(self, config: dict[str, Any], prefix: str):
+        """Return the layer_weight_schema value."""
         if self.is_layer_skipped(config, prefix):
             return None
 
@@ -244,6 +257,7 @@ class HummingConfig(QuantizationConfig):
         return None
 
     def get_layer_input_schema(self, config: dict[str, Any], prefix: str):
+        """Return the layer_input_schema value."""
         if self.is_layer_skipped(config, prefix):
             return None
         if config["quant_method"] in ["compressed-tensors", "modelopt"]:
@@ -259,6 +273,7 @@ class HummingConfig(QuantizationConfig):
     def get_quant_config_for_layer(
         self, prefix: str, layer_type: str
     ) -> "HummingLayerQuantizationConfig | None":
+        """Return the quant_config_for_layer value."""
         weight_schema: BaseWeightSchema | None = None
         force_weight_schema: HummingWeightSchema | None = None
 
@@ -305,6 +320,7 @@ class HummingConfig(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """Return the quant_method value."""
         layer_type = "other"
         if isinstance(layer, RoutedExperts):
             layer_type = "moe"
@@ -325,6 +341,7 @@ class HummingConfig(QuantizationConfig):
 
 
 class HummingLayerQuantizationConfig(HummingConfig):
+    """Configure HummingLayerQuantizationConfig quantization behavior."""
     def __init__(
         self,
         weight_schema: "BaseWeightSchema",
@@ -343,16 +360,19 @@ class HummingLayerQuantizationConfig(HummingConfig):
 
     @classmethod
     def from_config(cls, config):
+        """Create instance from configuration dictionary."""
         weight_schema = _hm.BaseWeightSchema.from_config(config)
         return cls(weight_schema)
 
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> QuantizeMethodBase | None:
+        """Return the quant_method value."""
         raise NotImplementedError
 
 
 class HummingLinearMethod(LinearMethodBase):
+    """Configure HummingLinearMethod quantization behavior."""
     def __init__(self, quant_config: HummingLayerQuantizationConfig):
         self.quant_config = quant_config
         self.weight_schema = quant_config.weight_schema
@@ -362,11 +382,13 @@ class HummingLinearMethod(LinearMethodBase):
         self.is_online_quant = self.quant_config.is_online_quant
 
     def prepare_weight_loader(self, layer: torch.nn.Module, weight_loader: Callable):
+        """Prepare the weight loader function for the layer."""
         def new_weight_loader(
             param: torch.nn.Parameter,
             loaded_weight: torch.Tensor,
             shard_id: str | int | None = None,
         ):
+            """Execute the new_weight_loader operation."""
             name = param.param_name
             float_dtypes = [torch.float16, torch.bfloat16, torch.float32]
             is_unquantized = name == "weight" and loaded_weight.dtype in float_dtypes
@@ -450,6 +472,7 @@ class HummingLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         layer.is_fallback = False
         layer.param_dtype = params_dtype
         layer.input_size = input_size
@@ -498,6 +521,7 @@ class HummingLinearMethod(LinearMethodBase):
             layer.weight = param
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Process weights after model loading completes."""
         if layer.is_fallback:
             return None
 
@@ -576,6 +600,7 @@ class HummingLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply quantization to the input tensor."""
         flatten_inputs = x.reshape(-1, x.size(-1))
         output = _hm.humming_forward(
             self.layer_config,
@@ -593,6 +618,7 @@ class HummingLinearMethod(LinearMethodBase):
 
 
 class HummingMoEMethod(FusedMoEMethodBase):
+    """Configure HummingMoEMethod quantization behavior."""
     def __init__(
         self, quant_config: HummingLayerQuantizationConfig, moe: "FusedMoEConfig"
     ) -> None:
@@ -620,6 +646,7 @@ class HummingMoEMethod(FusedMoEMethodBase):
         )
 
     def prepare_weight_loader(self, layer, weight_loader):
+        """Prepare the weight loader function for the layer."""
         def new_weight_loader(
             param: torch.nn.Parameter,
             loaded_weight: torch.Tensor,
@@ -628,6 +655,7 @@ class HummingMoEMethod(FusedMoEMethodBase):
             expert_id: int | None = None,
             return_success: bool = False,
         ):
+            """Execute the new_weight_loader operation."""
             name = param.param_name
             float_dtypes = [torch.float16, torch.bfloat16, torch.float32]
             is_unquantized = name == "weight" and loaded_weight.dtype in float_dtypes
@@ -692,6 +720,7 @@ class HummingMoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         layer.num_experts = num_experts
         layer.param_dtype = params_dtype
         layer.intermediate_size = intermediate_size_per_partition
@@ -741,6 +770,7 @@ class HummingMoEMethod(FusedMoEMethodBase):
             self.input_schema = self.force_input_schema
 
     def get_fused_moe_quant_config(self, layer: RoutedExperts) -> FusedMoEQuantConfig:
+        """Return the fused_moe_quant_config value."""
         return get_humming_moe_quant_config(
             layer,
             self.humming_configs,
@@ -750,6 +780,7 @@ class HummingMoEMethod(FusedMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: RoutedExperts) -> None:
+        """Process weights after model loading completes."""
         if getattr(self, "processed", False):
             return
         self.processed = True

@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Abstract base classes for pooling layers in vLLM.
+
+Defines the Pooler interface that all pooling implementations
+must conform to, along with the abstract methods for task
+support, parameter updates, and forward computation.
+"""
+
 from abc import ABC, abstractmethod
 from collections.abc import Set
 
@@ -33,6 +40,20 @@ class Pooler(nn.Module, ABC):
         hidden_states: torch.Tensor,
         pooling_metadata: PoolingMetadata,
     ) -> PoolerOutput:
+        """Compute the pooled output from hidden states.
+
+        Args:
+            hidden_states: Hidden states tensor of shape
+                [batch_size, seq_len, hidden_size].
+            pooling_metadata: Metadata containing pooling
+                parameters and cursor information.
+
+        Returns:
+            Pooled output tensor.
+
+        Raises:
+            NotImplementedError: Must be overridden by subclasses.
+        """
         raise NotImplementedError
 
 

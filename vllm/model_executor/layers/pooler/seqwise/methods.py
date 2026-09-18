@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Sequence pooling methods for aggregating token-level representations.
+
+Implements CLS, LAST, and MEAN pooling strategies for combining
+token representations into a single sequence-level vector. Also
+provides a factory function for constructing pooling methods
+from configuration.
+"""
+
 from abc import ABC, abstractmethod
 from collections.abc import Set
 from typing import TypeAlias
@@ -19,6 +27,13 @@ _MEAN_POOL_ACCUMULATION_CHUNK_BYTES = 16 * 1024 * 1024  # 16MB
 
 
 class SequencePoolingMethod(nn.Module, ABC):
+    """Abstract base class for sequence pooling methods.
+
+    Defines the interface for aggregating token-level hidden
+    states into a single sequence-level representation.
+    Subclasses must implement forward.
+    """
+
     def get_supported_tasks(self) -> Set[PoolingTask]:
         return {"token_embed", "token_classify", "embed", "classify"}
 
@@ -35,11 +50,31 @@ class SequencePoolingMethod(nn.Module, ABC):
 
 
 class CLSPool(SequencePoolingMethod):
+    """Pools the first token (CLS token) from each sequence.
+
+    Selects the representation at the first token position
+    as the pooled output. Does not support partial prefill.
+    """
+
     def forward(
         self,
         hidden_states: torch.Tensor,
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolingMethodOutput:
+        """Select the CLS token from each sequence.
+
+        Args:
+            hidden_states: Hidden states tensor of shape
+                [batch_size, seq_len, hidden_size].
+            pooling_metadata: Metadata containing pooling cursor
+                information.
+
+        Returns:
+            Tensor of CLS token representations.
+
+        Raises:
+            RuntimeError: If partial prefill is detected.
+        """
         pooling_cursor = pooling_metadata.get_pooling_cursor()
         if pooling_cursor.is_partial_prefill():
             raise RuntimeError("partial prefill is not supported with CLS pooling")
@@ -48,21 +83,56 @@ class CLSPool(SequencePoolingMethod):
 
 
 class LastPool(SequencePoolingMethod):
+    """Pools the last token from each sequence.
+
+    Selects the representation at the final token position
+    as the pooled output.
+    """
+
     def forward(
         self,
         hidden_states: torch.Tensor,
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolingMethodOutput:
+        """Select the last token from each sequence.
+
+        Args:
+            hidden_states: Hidden states tensor of shape
+                [batch_size, seq_len, hidden_size].
+            pooling_metadata: Metadata containing pooling cursor
+                information.
+
+        Returns:
+            Tensor of last token representations.
+        """
         pooling_cursor = pooling_metadata.get_pooling_cursor()
         return hidden_states[pooling_cursor.last_token_indices_gpu]
 
 
 class MeanPool(SequencePoolingMethod):
+    """Pools by averaging all token representations in each sequence.
+
+    Computes the mean of all token hidden states, optionally
+    skipping partial prefill sequences. Uses chunked accumulation
+    for memory-efficient processing of long sequences.
+    """
+
     def forward(
         self,
         hidden_states: torch.Tensor,
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolingMethodOutput:
+        """Compute the mean-pooled representation for each sequence.
+
+        Args:
+            hidden_states: Hidden states tensor of shape
+                [batch_size, seq_len, hidden_size].
+            pooling_metadata: Metadata containing pooling cursor
+                and prompt length information.
+
+        Returns:
+            Tensor of mean-pooled representations.
+        """
         pooling_cursor = pooling_metadata.get_pooling_cursor()
         if pooling_cursor.is_partial_prefill():
             raise RuntimeError("partial prefill is not supported with MEAN pooling")
@@ -109,6 +179,17 @@ class MeanPool(SequencePoolingMethod):
 def get_seq_pooling_method(
     pooling_type: SequencePoolingType | str,
 ) -> SequencePoolingMethod:
+    """Construct a sequence pooling method from a pooling type name.
+
+    Args:
+        pooling_type: One of "CLS", "LAST", or "MEAN".
+
+    Returns:
+        An instance of the corresponding pooling method.
+
+    Raises:
+        NotImplementedError: If pooling_type is not recognized.
+    """
     if pooling_type == "CLS":
         return CLSPool()
     if pooling_type == "LAST":

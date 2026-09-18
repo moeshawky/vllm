@@ -133,26 +133,32 @@ class Fp8Config(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """Return the name value."""
         return "fp8"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """Return the supported_act_dtypes value."""
         return [torch.bfloat16, torch.half]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the min_capability value."""
         return 75
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """Return the config_filenames value."""
         return []
 
     def apply_vllm_mapper(self, hf_to_vllm_mapper: "WeightsMapper"):
+        """Apply the vLLM weight mapper to configuration."""
         if self.ignored_layers is not None:
             self.ignored_layers = hf_to_vllm_mapper.apply_list(self.ignored_layers)
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "Fp8Config":
+        """Create instance from configuration dictionary."""
         quant_method = cls.get_from_keys(config, ["quant_method"])
         is_checkpoint_fp8_serialized = "fp8" in quant_method
         activation_scheme = cls.get_from_keys(config, ["activation_scheme"])
@@ -174,6 +180,7 @@ class Fp8Config(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """Return the quant_method value."""
         if isinstance(layer, LinearBase):
             if is_layer_skipped(
                 prefix=prefix,
@@ -299,6 +306,7 @@ class Fp8LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         output_size_per_partition = sum(output_partition_sizes)
         weight_loader = extra_weight_attrs.get("weight_loader")
         layer.logical_widths = output_partition_sizes
@@ -366,6 +374,7 @@ class Fp8LinearMethod(LinearMethodBase):
         self.use_marlin = isinstance(self.fp8_linear, MarlinFP8ScaledMMLinearKernel)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Process weights after model loading completes."""
         if self.use_marlin:
             if not self.block_quant:
                 # Canonicalize to (K, N) for the kernel.
@@ -421,6 +430,7 @@ class Fp8LinearMethod(LinearMethodBase):
     ) -> torch.Tensor:
         # if batch invariant mode is enabled, prefer direct FP8 path
         # we will use BF16 dequant when direct FP8 is not supported.
+        """Apply quantization to the input tensor."""
         if envs.VLLM_BATCH_INVARIANT:
             if self.block_quant:
                 assert self.weight_block_size is not None
@@ -510,6 +520,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         layer.num_experts = num_experts
         layer.orig_dtype = params_dtype
         layer.weight_block_size = None
@@ -686,6 +697,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
 
     def process_weights_after_loading(self, layer: RoutedExperts) -> None:
         # Allow for accessing weights and scales in standard way.
+        """Process weights after model loading completes."""
         w13 = layer.w13_weight
         w2 = layer.w2_weight
         w13_scale = getattr(layer, f"w13_{self.weight_scale_name}")
@@ -736,6 +748,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         )
 
     def get_fused_moe_quant_config(self, layer: RoutedExperts) -> FusedMoEQuantConfig:
+        """Return the fused_moe_quant_config value."""
         w1_scale = getattr(layer, f"w13_{self.weight_scale_name}")
         w2_scale = getattr(layer, f"w2_{self.weight_scale_name}")
         a1_scale = layer.w13_input_scale
@@ -768,6 +781,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
 
     @property
     def supports_eplb(self) -> bool:
+        """Execute the supports_eplb operation."""
         return True
 
     def apply_monolithic(
@@ -777,6 +791,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Execute the apply_monolithic operation."""
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -803,6 +818,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Apply quantization to the input tensor."""
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(

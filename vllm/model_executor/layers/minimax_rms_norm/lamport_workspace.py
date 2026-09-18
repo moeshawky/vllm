@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Lamport workspace utilities for the fused allreduce+RMSNorm kernel."""
 
 import array
 import contextlib
@@ -66,6 +67,14 @@ class IpcBuffer:
     """
 
     def __init__(self, rank: int, world_size: int, size: int, process_group=None):
+        """Initialize an IPC buffer for cross-GPU memory sharing.
+
+        Args:
+            rank: Local rank (0-based).
+            world_size: Total number of ranks in the TP group.
+            size: Size of the buffer in bytes.
+            process_group: Optional torch.distributed process group.
+        """
         self.rank = rank
         self.world_size = world_size
         self.peer_ptrs: list[int] = [0] * world_size
@@ -108,6 +117,7 @@ class IpcBuffer:
         return array.array("Q", raw).tolist()
 
     def cleanup(self):
+        """Release all CUDA IPC handles and free device memory."""
         if not self._alive:
             return
         self._alive = False
@@ -123,6 +133,7 @@ class IpcBuffer:
         self.local_ptr = 0
 
     def __del__(self):
+        """Release IPC buffer resources on garbage collection."""
         if not sys.is_finalizing():
             self.cleanup()
 
@@ -242,14 +253,17 @@ class LamportWorkspace:
         return ((slot_bytes + _ALIGN - 1) >> 21) << 21
 
     def cleanup(self):
+        """Release the Lamport workspace and all IPC resources."""
         if hasattr(self, "_lamport"):
             self._lamport.cleanup()
 
     def __del__(self):
+        """Release LamportWorkspace resources on garbage collection."""
         if not sys.is_finalizing():
             self.cleanup()
 
     def __repr__(self):
+        """Return a string representation of the LamportWorkspace."""
         return (
             f"LamportWorkspace(rank={self.rank}, world_size={self.world_size}, "
             f"comm_size={self.comm_size})"

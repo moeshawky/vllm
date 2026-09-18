@@ -3,6 +3,8 @@
 # Copyright (c) 2024, Tri Dao.
 # Adapted from https://github.com/state-spaces/mamba/blob/60dadf2e0ee730ac337035d5533de10bc26e4847/mamba_ssm/ops/triton/layernorm_gated.py
 
+"""Triton fused layer norm with gated activation adapted from mamba-ssm."""
+
 import torch
 
 from vllm.triton_utils import tl, triton
@@ -31,6 +33,7 @@ def _layer_norm_fwd_1pass_kernel(
     NORM_BEFORE_GATE: tl.constexpr,
     IS_RMS_NORM: tl.constexpr,
 ):
+    """Triton JIT kernel computing fused layer norm with gated activation."""
     # Map the program id to the row of X and Y it should compute.
     row = tl.program_id(0)
     group = tl.program_id(1)

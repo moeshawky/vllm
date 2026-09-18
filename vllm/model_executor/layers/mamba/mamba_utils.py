@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Utility module for Mamba state shape and dtype calculations."""
+
 import functools
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -49,6 +51,7 @@ def is_conv_state_dim_first() -> bool:
 
 
 class MambaStateDtypeCalculator:
+    """Factory methods for computing state dtypes across Mamba variants."""
     @classmethod
     def linear_attention_state_dtype(
         cls,
@@ -147,6 +150,7 @@ class MambaStateDtypeCalculator:
 
 
 class MambaStateShapeCalculator:
+    """Factory methods for computing state shapes with tensor parallelism."""
     @classmethod
     def linear_attention_state_shape(
         cls,
@@ -397,6 +401,7 @@ def get_temporal_copy_spec(
 
 
 class MambaStateCopyFuncCalculator:
+    """Class providing copy functions for each Mamba state type."""
     @classmethod
     def linear_attention_state_copy_func(cls):
         return (get_temporal_copy_spec,)

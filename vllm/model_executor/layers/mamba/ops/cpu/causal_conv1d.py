@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""CPU implementation of causal convolution 1D for Mamba."""
+
 from __future__ import annotations
 
 import torch

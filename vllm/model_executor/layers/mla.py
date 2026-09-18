@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Multi-head latent attention (MLA) layer implementations.
+
+This module defines the MLAModules dataclass for organizing the
+sub-modules used in MLA attention, and the MultiHeadLatentAttentionWrapper
+pluggable layer which supports out-of-tree backend implementations
+of the outer MLA layer including rope and o_proj.
+"""
+
 from dataclasses import dataclass
 
 import torch
@@ -70,6 +78,29 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
         non_causal_multi_token_decode: bool = False,
         allow_short_prefill_indexer_scoring_skip: bool = False,
     ) -> None:
+        """Initialize the MultiHeadLatentAttentionWrapper layer.
+
+        Args:
+            hidden_size: Size of the hidden dimension.
+            num_heads: Number of attention heads.
+            scale: Attention scale factor.
+            qk_nope_head_dim: Dimension of the non-rope query-key head.
+            qk_rope_head_dim: Dimension of the rotary position
+                embedding head.
+            v_head_dim: Dimension of the value head.
+            q_lora_rank: Low-rank dimension for query projection,
+                or None if not using q-loRA.
+            kv_lora_rank: Low-rank dimension for key-value projection.
+            mla_modules: Container for all MLA sub-modules.
+            cache_config: KV cache configuration, or None.
+            quant_config: Quantization configuration, or None.
+            prefix: Prefix string for parameter naming.
+            skip_topk: Whether to skip top-k token selection.
+            non_causal_multi_token_decode: Whether to use
+                non-causal multi-token decode.
+            allow_short_prefill_indexer_scoring_skip: Whether to
+                allow skipping short prefill indexer scoring.
+        """
         super().__init__()
         self.hidden_size = hidden_size
         self.qk_nope_head_dim = qk_nope_head_dim
@@ -153,6 +184,22 @@ class MultiHeadLatentAttentionWrapper(PluggableLayer):
         hidden_states: torch.Tensor,
         llama_4_scaling: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass of the MLA layer.
+
+        Processes the input hidden states through the MLA
+        attention mechanism, applying rope embeddings, sparse
+        indexer queries if enabled, and scaling if provided.
+
+        Args:
+            positions: Positional indices for rotary embeddings.
+            hidden_states: Input tensor of shape
+                [batch_size, seq_len, hidden_size].
+            llama_4_scaling: Optional scaling factor for Llama 4
+                attention.
+
+        Returns:
+            Output tensor of shape [batch_size, seq_len, hidden_size].
+        """
         q_c = None
         kv_lora = None
 

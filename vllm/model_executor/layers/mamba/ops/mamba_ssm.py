@@ -4,6 +4,8 @@
 # Copyright (c) 2024, Tri Dao, Albert Gu.
 # Adapted from https://github.com/state-spaces/mamba/blob/v2.2.4/mamba_ssm/ops/triton/selective_state_update.py
 
+"""Triton selective state update kernels adapted from mamba-ssm."""
+
 import functools
 import json
 import os
@@ -54,6 +56,7 @@ def get_ssm_config_file_name(
 
 
 def get_ssm_device_name() -> str:
+    """Return the device name formatted as a file-safe string."""
     return get_device_name_as_file_name()
 
 
@@ -196,18 +199,22 @@ if TRITON3:
 
     @triton.jit
     def softplus(dt):
+        """Apply softplus activation, using exp2 for Triton 3.0+."""
         dt = tl.where(dt <= 20.0, tl.math.log(tl.math.exp(dt) + 1), dt)
         return dt
+
 else:
 
     @triton.jit
     def softplus(dt):
+        """Apply softplus activation using log1p for older Triton."""
         dt = tl.where(dt <= 20.0, tl.math.log1p(tl.exp(dt)), dt)
         return dt
 
 
 @triton.jit
 def convert_rs_fp16x2(x: tl.tensor, rand: tl.tensor) -> tl.tensor:
+    """Convert fp32 state to fp16 using round-to-nearest stochastic rounding."""
     y = tl.inline_asm_elementwise(
         asm="""{
 cvt.rs.f16x2.f32 $0, $2, $1, $3;

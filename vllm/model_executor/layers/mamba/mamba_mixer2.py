@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Mamba-2 mixer implementation with gated RMSNorm and SSD kernel support."""
 
 import torch
 from torch import nn
@@ -68,6 +69,7 @@ logger = init_logger(__name__)
 # --8<-- [start:mixer2_gated_rms_norm]
 @CustomOp.register("mixer2_gated_rms_norm")
 class Mixer2RMSNormGated(CustomOp):
+    """Custom RMSNormGated for Mamba-2 with three tensor-parallel cases."""
     # --8<-- [end:mixer2_gated_rms_norm]
 
     def __init__(
@@ -103,6 +105,7 @@ class Mixer2RMSNormGated(CustomOp):
         x: torch.Tensor,
         gate: torch.Tensor,
     ):
+        """Native RMSNormGated forward handling three tensor-parallel cases."""
         # Three tensor-parallel cases:
         #   1. n_groups is 1
         #      In this case we parallelize along the reduction dim.
@@ -154,6 +157,7 @@ class Mixer2RMSNormGated(CustomOp):
         x: torch.Tensor,
         gate: torch.Tensor,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """CUDA-optimized RMSNormGated forward."""
         input_dtype = x.dtype
         if not self.use_rms_norm:
             # Keep gate in float32 for numerical stability during silu
@@ -1154,6 +1158,7 @@ def mamba_mixer2(
     output: torch.Tensor,
     layer_name: LayerNameType,
 ) -> None:
+    """Custom op entry point for Mamba-2 mixer."""
     layer_name = _resolve_layer_name(layer_name)
     forward_context: ForwardContext = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
@@ -1165,6 +1170,7 @@ def mamba_mixer2_fake(
     output: torch.Tensor,
     layer_name: LayerNameType,
 ) -> None:
+    """Fake implementation for torch.compile."""
     return
 
 

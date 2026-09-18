@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""CPU implementation of Mamba selective state update."""
+
 import torch
 
 import vllm._custom_ops as ops
@@ -29,6 +31,7 @@ def _mamba_chunk_scan_combined_fwd_cpu(
     state_dtype=None,
     **kwargs,
 ):
+    """CPU forward pass for chunked Mamba scan."""
     seqlen, nheads, headdim = x.shape
     _, ngroups, dstate = B.shape
 

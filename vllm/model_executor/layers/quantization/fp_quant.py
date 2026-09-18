@@ -53,22 +53,27 @@ class FPQuantConfig(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """Return the name value."""
         return "fp_quant"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """Return the supported_act_dtypes value."""
         return [torch.bfloat16]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the min_capability value."""
         return 100
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """Return the config_filenames value."""
         return []  # no extra configs.
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "FPQuantConfig":
+        """Create instance from configuration dictionary."""
         hadamard_group_size = cls.get_from_keys(config, ["hadamard_group_size"])
         forward_dtype = cls.get_from_keys(config, ["forward_dtype"])
         forward_method = cls.get_from_keys(config, ["forward_method"])
@@ -83,6 +88,7 @@ class FPQuantConfig(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> LinearMethodBase | None:
+        """Return the quant_method value."""
         if self.modules_to_not_convert is not None and any(
             prefix.endswith(module) for module in self.modules_to_not_convert
         ):
@@ -113,6 +119,7 @@ class FPQuantLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         del output_size  # Unused.
         del input_size  # Unused.
 
@@ -214,6 +221,7 @@ class FPQuantLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply quantization to the input tensor."""
         return quantized_forward(
             x,
             layer.qweight,
@@ -230,6 +238,7 @@ class FPQuantLinearMethod(LinearMethodBase):
 def fused_quantize_mx(
     x_flat: torch.Tensor, hadamard_matrix: torch.Tensor, forward_method: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fuse the quantize MX operation."""
     return fusedQuantizeMx(
         x_flat,
         hadamard_matrix,
@@ -238,6 +247,7 @@ def fused_quantize_mx(
 
 
 def fused_quantize_mx_fake(x_flat, hadamard_matrix, forward_method):
+    """Fake implementation of fused_quantize_mx."""
     rows, cols = x_flat.size(0), x_flat.size(1) // 32
     padded_rows = ((rows + 128 - 1) // 128) * 128
     padded_cols = ((cols + 4 - 1) // 4) * 4
@@ -268,6 +278,7 @@ def matmul_mxf4_bf16(
     ws: torch.Tensor,
     alpha: torch.Tensor,
 ) -> torch.Tensor:
+    """Perform matrix multiplication for MXF4 BF16."""
     return matmul_mxf4_bf16_tn(
         x,
         w,
@@ -278,6 +289,7 @@ def matmul_mxf4_bf16(
 
 
 def matmul_mxf4_bf16_fake(x, w, xs, ws, alpha):
+    """Fake implementation of matmul_mxf4_bf16."""
     return torch.empty(*x.shape[:-1], w.shape[0], dtype=torch.bfloat16, device=x.device)
 
 
@@ -293,10 +305,12 @@ direct_register_custom_op(
 def fused_quantize_nv(
     x_flat: torch.Tensor, hadamard_matrix: torch.Tensor, global_scale: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fuse the quantize NV operation."""
     return fusedQuantizeNv(x_flat, hadamard_matrix, global_scale)
 
 
 def fused_quantize_nv_fake(x_flat, hadamard_matrix, global_scale):
+    """Fake implementation of fused_quantize_nv."""
     rows, cols = x_flat.size(0), x_flat.size(1) // 16
     padded_rows = ((rows + 128 - 1) // 128) * 128
     padded_cols = ((cols + 4 - 1) // 4) * 4
@@ -327,6 +341,7 @@ def matmul_nvf4_bf16(
     ws: torch.Tensor,
     alpha: torch.Tensor,
 ) -> torch.Tensor:
+    """Perform matrix multiplication for NVF4 BF16."""
     return cutlass_scaled_fp4_mm(
         x,
         w,
@@ -342,6 +357,7 @@ def matmul_nvf4_bf16(
 
 
 def matmul_nvf4_bf16_fake(x, w, xs, ws, alpha):
+    """Fake implementation of matmul_nvf4_bf16."""
     return torch.empty(*x.shape[:-1], w.shape[0], dtype=torch.bfloat16, device=x.device)
 
 
@@ -365,6 +381,7 @@ def quantized_forward(
     forward_method: str,
     forward_dtype: str,
 ) -> torch.Tensor:
+    """Execute the quantized forward pass."""
     x_flat = x.contiguous().flatten(end_dim=-2)
 
     if forward_dtype == "mxfp4":

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Triton helper utilities for Mamba kernels."""
+
 from vllm.triton_utils import tl, triton
 
 

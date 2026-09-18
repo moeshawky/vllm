@@ -56,22 +56,27 @@ class FBGEMMFp8Config(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """Return the name value."""
         return "fbgemm_fp8"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """Return the supported_act_dtypes value."""
         return [torch.bfloat16, torch.float16]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the min_capability value."""
         return 80
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """Return the config_filenames value."""
         return []
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "FBGEMMFp8Config":
+        """Create instance from configuration dictionary."""
         ignore_list = cls.get_from_keys(config, ["modules_to_not_convert"])
         input_scale_ub = cls.get_from_keys(config, ["activation_scale_ub"])
         return cls(ignore_list=ignore_list, input_scale_ub=input_scale_ub)
@@ -79,6 +84,7 @@ class FBGEMMFp8Config(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """Return the quant_method value."""
         if isinstance(layer, LinearBase):
             if is_layer_skipped(
                 prefix=prefix,
@@ -91,6 +97,7 @@ class FBGEMMFp8Config(QuantizationConfig):
 
 
 class FBGEMMFp8LinearMethod(LinearMethodBase):
+    """Configure FBGEMMFp8LinearMethod quantization behavior."""
     def __init__(self, quant_config: FBGEMMFp8Config):
         self.quant_config = quant_config
         self.out_dtype = torch.get_default_dtype()
@@ -106,6 +113,7 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create quantization weights for the layer."""
         weight_loader = extra_weight_attrs.get("weight_loader")
         del input_size, output_size
         output_size_per_partition = sum(output_partition_sizes)
@@ -156,6 +164,7 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
 
     def process_weights_after_loading(self, layer: Module) -> None:
         # required by torch.compile
+        """Process weights after model loading completes."""
         layer.weight_scale = Parameter(layer.weight_scale.data, requires_grad=False)
         layer.weight = Parameter(layer.weight.data, requires_grad=False)
 
@@ -183,4 +192,5 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply quantization to the input tensor."""
         return self.fp8_linear.apply_weights(layer, x, bias)

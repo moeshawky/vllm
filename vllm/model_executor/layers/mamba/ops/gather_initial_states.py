@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Triton kernel for gathering initial states from KV cache."""
+
 import torch
 
 from vllm.platforms import current_platform
@@ -20,6 +22,7 @@ def _gather_initial_states_kernel(
     BLOCK_SIZE: tl.constexpr,
     launch_pdl: tl.constexpr,
 ):
+    """Triton JIT kernel to gather initial recurrent states from KV cache."""
     block_idx = tl.program_id(0)
     batch_idx = tl.program_id(1)
     offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)

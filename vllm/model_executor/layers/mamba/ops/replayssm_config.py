@@ -16,6 +16,7 @@ from vllm.triton_utils import triton
 
 @functools.cache
 def _is_blackwell() -> bool:
+    """Check if the device is Blackwell (SM100+)."""
     try:
         return current_platform.is_device_capability_family(100)
     except Exception:

@@ -6,6 +6,8 @@
 
 # ruff: noqa: E501,SIM102
 
+"""Triton chunked scan kernel for Mamba SSD."""
+
 from packaging import version
 
 from vllm.model_executor.layers.mamba.ops.triton_helpers import fast_exp
@@ -18,7 +20,8 @@ TRITON_22 = version.parse(triton.__version__) >= version.parse("2.2.0")
     configs=[
         # =================================================================
         # Higher warp count configs for better latency hiding
-        # More warps = more instructions in flight = better memory latency hiding
+        # More warps = more instructions in flight = better memory latency
+        # hiding
         # =================================================================
         triton.Config(
             {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 32},
@@ -209,6 +212,7 @@ def _chunk_scan_fwd_kernel(
     IS_TRITON_22: tl.constexpr,
     HAS_INITSTATES: tl.constexpr,
 ):
+    """Triton JIT kernel for chunked cumulative sum."""
     pid_c = tl.program_id(axis=1).to(tl.int64)
     pid_h = tl.program_id(axis=2)
     num_pid_n = tl.cdiv(hdim, BLOCK_SIZE_N)

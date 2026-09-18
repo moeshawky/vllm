@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Specialized pooling implementations including dispatching and filtering.
+
+Provides DispatchPooler for routing pooling calls to sub-poolers
+based on task type, IdentityPooler for passthrough pooling,
+BOSEOSFilter for removing BOS/EOS tokens, and BgeM3Pooler for
+combined token classification and embedding tasks.
+"""
+
 import dataclasses
 from collections.abc import Mapping, Set
 from itertools import groupby

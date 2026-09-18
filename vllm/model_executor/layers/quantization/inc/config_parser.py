@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class INCLayerConfig:
+    """Configure INCLayerConfig quantization behavior."""
     bits: int
     group_size: int
     sym: bool
@@ -26,30 +27,37 @@ class INCLayerConfig:
 
     @property
     def is_gptq(self) -> bool:
+        """Execute the is_gptq operation."""
         return "gptq" in self.packing_format or "gptq" in self.backend
 
     @property
     def is_awq(self) -> bool:
+        """Execute the is_awq operation."""
         return "awq" in self.packing_format or "awq" in self.backend
 
     @property
     def is_wna16_int(self) -> bool:
+        """Execute the is_wna16_int operation."""
         return self.data_type == "int" and self.quantized
 
     @property
     def is_mxfp4(self) -> bool:
+        """Execute the is_mxfp4 operation."""
         return "mx_fp" in self.data_type and self.bits == 4
 
     @property
     def is_mxfp8(self) -> bool:
+        """Execute the is_mxfp8 operation."""
         return "mx_fp" in self.data_type and self.bits == 8
 
 
 class INCConfigParser:
+    """Configure INCConfigParser quantization behavior."""
     def __init__(self, config: "INCConfig") -> None:
         self._config = config
 
     def resolve(self, layer: "torch.nn.Module", layer_name: str) -> INCLayerConfig:
+        """Resolve the layer configuration for a given layer."""
         bits, group_size, sym = self._resolve_raw(layer, layer_name)
         return INCLayerConfig(
             bits=bits,
@@ -64,6 +72,7 @@ class INCConfigParser:
     def get_layer_config(
         self, layer: "torch.nn.Module", layer_name: str
     ) -> tuple[int, int, bool]:
+        """Return the layer_config value."""
         layer_config = self.resolve(layer, layer_name)
         return layer_config.bits, layer_config.group_size, layer_config.sym
 
@@ -92,6 +101,7 @@ class INCConfigParser:
             return False
 
         def get_config(name: str, quantized: bool = True) -> tuple[int, int, bool]:
+            """Return the config value."""
             if not self._config.extra_config:
                 return (
                     self._config.weight_bits if quantized else 16,

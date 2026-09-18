@@ -1,6 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""TP-aware RMSNorm implementations for MiniMax models.
+
+This module implements RMS normalization with tensor model parallel
+support. It provides Triton kernel paths for fused QK-norm +
+all-reduce operations, along with eager torch fallbacks. The
+Lamport fused kernel path runs in a single kernel
+both the all-reduce and RMS normalization for improved
+throughput on ROCm platforms.
+
+Key constants:
+    MINIMAX_QK_NORM_MAX_TOKEN_NUM: Maximum tokens for the
+        fused Lamport kernel before falling back to the eager path.
+"""
+
 from functools import partial
 
 import torch
@@ -217,6 +231,29 @@ def _minimax_qk_norm_fusion(
     eps: float,
     workspace: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fused QK-norm and all-reduce using the Lamport kernel or ROCm AITER.
+
+    Attempts the Lamport fused all-reduce+RMSNorm kernel first.
+    Falls back to the ROCm AITER custom fused QK-norm+AllReduce
+    if shapes are aligned. Falls back to the eager torch path
+    otherwise.
+
+    Args:
+        qkv: Combined query-key-value tensor of shape
+            [num_tokens, q_size + kv_size + kv_size].
+        q_weight: Per-channel weight for the query projection.
+        k_weight: Per-channel weight for the key projection.
+        q_size: Query head dimension size.
+        kv_size: Key head dimension size.
+        tp_rank: Rank within the tensor parallel group.
+        tp_world: Total size of the tensor parallel group.
+        eps: Small constant for numerical stability.
+        workspace: Lamport workspace for fused kernel, or None.
+
+    Returns:
+        Tuple of (q_out, k_out) normalized tensors.
+    """
+    assert qkv.ndim == 2
     assert qkv.ndim == 2
     num_tokens = qkv.shape[0]
     if (
@@ -263,6 +300,27 @@ def _minimax_qk_norm_fusion_fake(
     eps: float,
     workspace: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fake implementation returning empty tensors for the fused kernel.
+
+    Used as the dummy implementation when the fused kernel is not
+    available. Returns empty tensors with the correct shapes so
+    the registration call does not fail.
+
+    Args:
+        qkv: Combined query-key-value tensor.
+        q_weight: Query weight tensor (unused).
+        k_weight: Key weight tensor (unused).
+        q_size: Query head dimension size (unused).
+        kv_size: Key head dimension size (unused).
+        tp_rank: Tensor parallel rank (unused).
+        tp_world: Tensor parallel world size (unused).
+        eps: Epsilon value (unused).
+        workspace: Workspace tensor (unused).
+
+    Returns:
+        Tuple of two empty tensors with shapes
+        [num_tokens, q_size] and [num_tokens, kv_size].
+    """
     assert qkv.ndim == 2
     num_tokens = qkv.shape[0]
     return (
@@ -281,6 +339,15 @@ direct_register_custom_op(
 
 @CustomOp.register("minimax_text01_rmsnorm_tp")
 class MiniMaxText01RMSNormTP(CustomOp):
+    """MiniMax RMSNorm layer with tensor model parallel support.
+
+    Applies RMS normalization to the input tensor, scaling by
+    the inverse square root of the mean-squared values. Supports
+    both fused kernel paths (Lamport and ROCm AITER) and eager
+    torch fallbacks. The variance is computed across the hidden
+    dimension and reduced across the tensor parallel group.
+    """
+
     def __init__(
         self,
         hidden_size: int,
@@ -289,6 +356,17 @@ class MiniMaxText01RMSNormTP(CustomOp):
         weight_shard_world_size: int | None = None,
         weight_shard_rank: int | None = None,
     ) -> None:
+        """Initialize the MiniMax RMSNorm layer.
+
+        Args:
+            hidden_size: Size of the hidden dimension.
+            eps: Small constant added to variance for numerical
+                stability.
+            weight_shard_world_size: Number of shards for weight
+                parallelism. Defaults to the TP world size.
+            weight_shard_rank: Rank of this weight shard within
+                the shard world. Defaults to the TP rank.
+        """
         super().__init__()
         self.tp_world = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tensor_model_parallel_rank()
@@ -340,6 +418,16 @@ class MiniMaxText01RMSNormTP(CustomOp):
         shard_world_size: int | None = None,
         shard_rank: int | None = None,
     ) -> None:
+        """Load a sharded weight parameter into the RMSNorm layer.
+
+        Args:
+            param: Parameter tensor to be loaded with the weight
+                shard.
+            loaded_weight: Full weight tensor from the checkpoint.
+            shard_world_size: Number of shards for weight
+                parallelism.
+            shard_rank: Rank of this shard within the shard world.
+        """
         if shard_world_size is None:
             shard_world_size = get_tensor_model_parallel_world_size()
         if shard_rank is None:
@@ -353,6 +441,19 @@ class MiniMaxText01RMSNormTP(CustomOp):
         self,
         x: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply RMS normalization to the input tensor.
+
+        Computes the variance across the hidden dimension,
+        applies all-reduce if tensor parallelism is active,
+        and normalizes by the inverse square root of variance
+        plus epsilon.
+
+        Args:
+            x: Input tensor of shape [batch_size, seq_len, hidden_size].
+
+        Returns:
+            Normalized tensor of the same shape as the input.
+        """
         orig_dtype = x.dtype
         x = x.to(torch.float32)
         variance = x.pow(2).mean(dim=-1, keepdim=True, dtype=torch.float32)
@@ -367,6 +468,17 @@ class MiniMaxText01RMSNormTP(CustomOp):
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass for the MiniMax RMSNorm layer.
+
+        Args:
+            x: Input tensor to normalize.
+            residual: Optional residual connection. RMSNorm does not
+                support residual connections and will raise if provided.
+
+        Returns:
+            Normalized tensor, or a tuple of tensors if residual is
+            provided (though this is not supported).
+        """
         assert residual is None, "RMSNorm does not support residual connection."
         return self._forward(x)
 
@@ -377,6 +489,19 @@ class MiniMaxText01RMSNormTP(CustomOp):
         q: torch.Tensor,
         k: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply RMS normalization independently to query and key tensors.
+
+        Each tensor is normalized using its own norm parameters.
+
+        Args:
+            q_norm: RMSNorm instance for the query tensor.
+            k_norm: RMSNorm instance for the key tensor.
+            q: Query tensor to normalize.
+            k: Key tensor to normalize.
+
+        Returns:
+            Tuple of (normalized_q, normalized_k) tensors.
+        """
         orig_dtype = q.dtype
         q = q.to(torch.float32)
         k = k.to(torch.float32)
@@ -397,6 +522,23 @@ class MiniMaxText01RMSNormTP(CustomOp):
         q_size: int,
         kv_size: int,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Apply RMS normalization to query and key segments of a QKV tensor.
+
+        Splits the QKV tensor into query, key, and value components,
+        then normalizes the query and key using fused kernel paths
+        when tensor parallelism is available.
+
+        Args:
+            q_norm: RMSNorm instance for the query tensor.
+            k_norm: RMSNorm instance for the key tensor.
+            qkv: Combined query-key-value tensor of shape
+                [num_tokens, q_size + kv_size + kv_size].
+            q_size: Size of the query head dimension.
+            kv_size: Size of the key head dimension.
+
+        Returns:
+            Tuple of (q, k, v) tensors after RMS normalization.
+        """
         assert qkv.ndim == 2
 
         assert q_norm.variance_epsilon == k_norm.variance_epsilon

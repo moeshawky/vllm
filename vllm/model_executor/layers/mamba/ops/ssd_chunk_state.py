@@ -6,6 +6,8 @@
 
 # ruff: noqa: E501
 
+"""Triton kernel for SSD chunk state initialization."""
+
 import torch
 
 from vllm.model_executor.layers.mamba.ops.triton_helpers import fast_exp

@@ -115,12 +115,14 @@ class INCConfig(QuantizationConfig):
 
     @property
     def is_mxfp(self) -> bool:
+        """Execute the is_mxfp operation."""
         # auto-round mxfp data_type is the "mx_fp" family (e.g. "mx_fp",
         # "mx_fp4e2m1"); match by substring like auto_round.compressors.is_mx_fp.
         return "mx_fp" in self.data_type
 
     @property
     def is_mxfp8(self) -> bool:
+        """Execute the is_mxfp8 operation."""
         # MXFP4 and MXFP8 share data_type "mx_fp" and differ only by bit width.
         return self.is_mxfp and self.weight_bits == self.MXFP8_BITS
 
@@ -168,22 +170,27 @@ class INCConfig(QuantizationConfig):
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
+        """Return the name value."""
         return "inc"
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """Return the supported_act_dtypes value."""
         return [torch.half, torch.bfloat16]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the min_capability value."""
         return 60
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """Return the config_filenames value."""
         return ["quantization_config.json"]
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "INCConfig":
+        """Create instance from configuration dictionary."""
         quant_config = cls(
             weight_bits=cls.get_from_keys(config, ["bits"]),
             group_size=cls.get_from_keys(config, ["group_size"]),
@@ -202,9 +209,11 @@ class INCConfig(QuantizationConfig):
         return quant_config
 
     def get_layer_config(self, layer, layer_name: str):
+        """Return the layer_config value."""
         return self.config_parser.get_layer_config(layer, layer_name)
 
     def apply_vllm_mapper(self, hf_to_vllm_mapper: "WeightsMapper"):
+        """Apply the vLLM weight mapper to configuration."""
         if self.block_name_to_quantize is not None:
             self.block_name_to_quantize = hf_to_vllm_mapper.apply_list(
                 self.block_name_to_quantize
@@ -213,6 +222,7 @@ class INCConfig(QuantizationConfig):
             self.extra_config = hf_to_vllm_mapper.apply_dict(self.extra_config)
 
     def get_quant_method(self, layer: torch.nn.Module, prefix: str):
+        """Return the quant_method value."""
         from .schemes.factory import resolve_scheme
 
         # Match original: check model.-prefixed names for unquantized layers

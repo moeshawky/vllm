@@ -88,6 +88,7 @@ class QuantFP8(CustomOp):
         scale_ub: torch.Tensor | None = None,
         use_triton: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass on CUDA device."""
         from vllm.model_executor.layers.quantization.utils import fp8_utils
 
         if (
@@ -141,6 +142,7 @@ class QuantFP8(CustomOp):
         scale_ub: torch.Tensor | None = None,
         use_triton: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass on HIP device."""
         use_aiter_quant = self.use_aiter and scale_ub is None and x.is_contiguous()
         use_aiter_per_tensor_quant = (
             use_aiter_quant and self.group_shape.is_per_tensor()
@@ -166,6 +168,7 @@ class QuantFP8(CustomOp):
         scale_ub: torch.Tensor | None = None,
         use_triton: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass on XPU device."""
         if self.is_group_quant and not self.static:
             from vllm.model_executor.layers.quantization.utils import fp8_utils
 
@@ -185,6 +188,7 @@ class QuantFP8(CustomOp):
         scale_ub: torch.Tensor | None = None,
         use_triton: bool = False,
     ):
+        """Forward pass using the native implementation."""
         if self.is_group_quant and not self.static:
             assert scale is None, "Dynamic group quantization does not use scale"
             return self._quantize_group_native(x)

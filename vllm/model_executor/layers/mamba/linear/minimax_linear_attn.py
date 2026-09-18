@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""MiniMaxText01 linear attention implementation."""
+
 import math
 from collections.abc import Callable
 
@@ -58,6 +60,7 @@ def linear_attention_decode(
     slot_end: int | None = None,
     block_size: int = 32,
 ) -> torch.Tensor:
+    """Decode forward for linear attention using triton kernel."""
     q = q[q_start:q_end].unsqueeze(2).contiguous()
     k = k[q_start:q_end].unsqueeze(2).contiguous()
     v = v[q_start:q_end].unsqueeze(2).contiguous()
@@ -80,6 +83,7 @@ def linear_attention_prefill_and_mix(
     prefix_fn: Callable[..., torch.Tensor],
     layer_idx: int | None = None,
 ) -> torch.Tensor:
+    """Process prefill and decode tokens for MiniMax linear attention."""
     hidden = []
     for _prefill_idx in range(getattr(attn_metadata, "num_prefills", 0)):
         if _prefill_idx >= len(attn_metadata.query_start_loc):
@@ -119,6 +123,7 @@ def linear_attention_prefill_and_mix(
 
 
 class MiniMaxText01LinearKernel:
+    """MiniMaxText01 linear attention kernel using lightning_attention."""
     @staticmethod
     def jit_linear_forward_prefix(
         q: torch.Tensor,
@@ -149,6 +154,7 @@ class MiniMaxText01LinearKernel:
 
 @PluggableLayer.register("minimax_text_01_attention")
 class MiniMaxText01LinearAttention(LinearAttention):
+    """MiniMaxText01 linear attention layer with qkv and RMSNorm."""
     def __init__(
         self,
         config,
@@ -234,6 +240,7 @@ class MiniMaxText01LinearAttention(LinearAttention):
     def _prefill_and_mix_infer(
         self, q, k, v, kv_cache, state_indices_tensor, attn_metadata
     ):
+        """Handle prefill and mix with decode if applicable."""
         return linear_attention_prefill_and_mix(
             q=q,
             k=k,
@@ -249,6 +256,7 @@ class MiniMaxText01LinearAttention(LinearAttention):
         )
 
     def _decode_infer(self, q, k, v, kv_cache, state_indices_tensor, attn_metadata):
+        """Handle decode inference."""
         hidden = linear_attention_decode(
             q,
             k,
@@ -331,6 +339,7 @@ def linear_attention(
     positions: torch.Tensor,
     layer_name: str,
 ) -> None:
+    """Custom op entry point for linear attention."""
     forward_context: ForwardContext = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
     self._forward(hidden_states=hidden_states, output=output, positions=positions)
@@ -342,6 +351,7 @@ def linear_attention_fake(
     positions: torch.Tensor,
     layer_name: str,
 ) -> None:
+    """Fake implementation for torch.compile."""
     return
 
 

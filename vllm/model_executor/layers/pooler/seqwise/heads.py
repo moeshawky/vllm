@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Sequence-level pooling heads for token aggregation.
+
+Defines the SequencePoolerHead abstract base class and concrete
+implementations including embedding heads (for retrieval) and
+classifier heads (for classification), with optional projection,
+activation, and normalization sub-modules.
+"""
+
 from abc import ABC, abstractmethod
 from collections.abc import Set
 from typing import TypeAlias
@@ -17,6 +25,13 @@ SequencePoolerHeadOutput: TypeAlias = torch.Tensor | list[torch.Tensor]
 
 
 class SequencePoolerHead(nn.Module, ABC):
+    """Abstract base class for sequence pooling heads.
+
+    Computes pooled output from sequence-level pooling method
+    outputs and pooling metadata. Subclasses must implement
+    get_supported_tasks and forward.
+    """
+
     @abstractmethod
     def get_supported_tasks(self) -> Set[PoolingTask]:
         raise NotImplementedError
@@ -31,12 +46,29 @@ class SequencePoolerHead(nn.Module, ABC):
 
 
 class EmbeddingPoolerHead(SequencePoolerHead):
+    """Pooling head for embedding-based tasks (e.g., retrieval).
+
+    Optionally applies a projection layer, activation, and
+    type conversion to the pooled data. Supports matryoshka
+    dimensionality reduction and normalization.
+    """
+
     def __init__(
         self,
         projector: ProjectorFn | None = None,
         head_dtype: torch.dtype | str | None = None,
         activation: ActivationFn | None = None,
     ) -> None:
+        """Initialize the embedding pooling head.
+
+        Args:
+            projector: Optional projection layer to transform
+                pooled data before activation.
+            head_dtype: Optional dtype to cast pooled data to
+                before projection and activation.
+            activation: Optional activation function to apply
+                after projection.
+        """
         super().__init__()
 
         self.projector = projector
@@ -44,6 +76,12 @@ class EmbeddingPoolerHead(SequencePoolerHead):
         self.activation = activation
 
     def extra_repr(self) -> str:
+        """Return a string representation of the embedding head.
+
+        Returns:
+            String listing configured attributes (head_dtype,
+            projector, activation).
+        """
         attrs = []
         if self.head_dtype is not None:
             attrs.append(f"head_dtype={self.head_dtype}")
@@ -54,6 +92,11 @@ class EmbeddingPoolerHead(SequencePoolerHead):
         return ", ".join(attrs)
 
     def get_supported_tasks(self) -> Set[PoolingTask]:
+        """Return the set of supported tasks for embedding heads.
+
+        Returns:
+            Set containing {"embed"}.
+        """
         return {"embed"}
 
     def forward(
@@ -61,6 +104,20 @@ class EmbeddingPoolerHead(SequencePoolerHead):
         pooled_data: SequencePoolingMethodOutput,
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolerHeadOutput:
+        """Compute the embedding pooling head output.
+
+        Applies projection, dimensionality reduction, type
+        conversion, activation, and matryoshka truncation
+        to the pooled sequence data.
+
+        Args:
+            pooled_data: Output from the sequence pooling method.
+            pooling_metadata: Metadata containing pooling parameters
+                and dimensions.
+
+        Returns:
+            Processed embedding tensor or list of embedding tensors.
+        """
         pooling_params = pooling_metadata.pooling_params
         if len(pooled_data) != len(pooling_params):
             raise ValueError(
@@ -118,6 +175,14 @@ class EmbeddingPoolerHead(SequencePoolerHead):
 
 
 class ClassifierPoolerHead(SequencePoolerHead):
+    """Pooling head for classification tasks.
+
+    Optionally applies a classifier layer, affine score
+    calibration (mean/sigma scaling), and activation to
+    produce logits. Supports matryoshka dimensionality
+    reduction and normalization.
+    """
+
     def __init__(
         self,
         classifier: ClassifierFn | None = None,
@@ -126,6 +191,20 @@ class ClassifierPoolerHead(SequencePoolerHead):
         head_dtype: torch.dtype | str | None = None,
         activation: ActivationFn | None = None,
     ) -> None:
+        """Initialize the classifier pooling head.
+
+        Args:
+            classifier: Optional classifier layer to produce
+                logits from pooled data.
+            logit_mean: Optional mean for affine score
+                calibration.
+            logit_sigma: Optional standard deviation for
+                affine score calibration.
+            head_dtype: Optional dtype to cast pooled data to
+                before classification.
+            activation: Optional activation function to apply
+                after calibration.
+        """
         super().__init__()
 
         self.classifier = classifier
@@ -135,6 +214,11 @@ class ClassifierPoolerHead(SequencePoolerHead):
         self.activation = activation
 
     def extra_repr(self) -> str:
+        """Return a string representation of the classifier head.
+
+        Returns:
+            String listing configured attributes.
+        """
         attrs = []
         if self.head_dtype is not None:
             attrs.append(f"head_dtype={self.head_dtype}")
@@ -149,6 +233,11 @@ class ClassifierPoolerHead(SequencePoolerHead):
         return ", ".join(attrs)
 
     def get_supported_tasks(self) -> Set[PoolingTask]:
+        """Return the set of supported tasks for classifier heads.
+
+        Returns:
+            Set containing {"classify"}.
+        """
         return {"classify"}
 
     def forward(
@@ -156,6 +245,19 @@ class ClassifierPoolerHead(SequencePoolerHead):
         pooled_data: SequencePoolingMethodOutput,
         pooling_metadata: PoolingMetadata,
     ) -> SequencePoolerHeadOutput:
+        """Compute the classifier pooling head output.
+
+        Applies classifier, affine score calibration, and
+        activation to produce logits from pooled sequence
+        data.
+
+        Args:
+            pooled_data: Output from the sequence pooling method.
+            pooling_metadata: Metadata containing pooling parameters.
+
+        Returns:
+            Logit tensor or list of logit tensors.
+        """
         pooling_params = pooling_metadata.pooling_params
         if len(pooled_data) != len(pooling_params):
             raise ValueError(
