@@ -67,6 +67,12 @@ def _remap_ignored_layers(
     ignored_layers: list[str],
     mtp_start_layer_idx: int,
 ) -> list[str]:
+    """Remap draft quantization ignored/exclude layer names for MTP layer indexing.
+
+    Layer names in the draft model are offset by mtp_start_layer_idx (the number
+    of layers in the target model) since the MTP layers continue the layer
+    numbering sequence.
+    """
     remapped: list[str] = []
     for name in ignored_layers:
         if name.startswith("mtp."):
@@ -160,6 +166,16 @@ def _make_draft_vllm_config(
     }
 )
 class Qwen4ExpMultiTokenPredictor(nn.Module):
+    """Qwen4Exp MTP draft model reusing the backbone with
+    residual_linear_shared fusion.
+
+    Takes the target model's hidden states and new token embedding, fuses them
+    via separate fc_embedding and fc_hidden projections (shared across HC
+    branches), and runs one decoder layer per speculative step. Returns two
+    hidden streams: a single stream [T, H] for the LM head and a multi-stream
+    [T, hc_count*H] for the next draft step. Uses HC final mixer to collapse
+    the multi-stream state.
+    """
     hf_to_vllm_mapper = Qwen3_5Model.hf_to_vllm_mapper | _HC_WEIGHTS_MAPPER
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
@@ -369,6 +385,13 @@ class Qwen4ExpMultiTokenPredictor(nn.Module):
     }
 )
 class Qwen4ExpMTP(nn.Module, SupportsPP, Qwen4ExpMixtureOfExperts):
+    """Qwen4Exp MTP draft model wrapper with LM head and logits processing.
+
+    Wraps Qwen4ExpMultiTokenPredictor, adds an LM head (optionally tied to
+    embedding weights) and a logits processor. Implements SupportsPP and
+    MixtureOfExperts interfaces. Remaps checkpoint weight names from the
+    MTP prefix to the draft model's internal naming.
+    """
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
         "gate_up_proj": ["gate_proj", "up_proj"],
