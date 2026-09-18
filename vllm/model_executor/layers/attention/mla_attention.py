@@ -671,6 +671,7 @@ class MLAAttention(nn.Module, AttentionLayerBase):
         output_shape: torch.Size | None = None,
         q_dcp_replicated: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Forward pass for MLA attention with latent vector processing."""
         if self.use_direct_call:
             forward_context: ForwardContext = get_forward_context()
             attn_metadata_raw = forward_context.attn_metadata

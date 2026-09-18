@@ -35,6 +35,7 @@ class BeamSearchSequence:
     stop_reason: int | str | None = None
 
     def get_prompt(self):
+        """Build an EngineInput from the current beam sequence's tokens."""
         prompt = self.orig_prompt
 
         if prompt["type"] == "enc_dec":
@@ -110,6 +111,8 @@ class BeamSearchOutput:
 
 
 class BeamSearchInstance:
+    """A beam search instance tracking active beams and completed beams for
+    a single prompt."""
     def __init__(
         self,
         prompt: TokensInput | MultiModalInput | EncoderDecoderInput,

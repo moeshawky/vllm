@@ -72,6 +72,7 @@ class TritonExperts(LoRAExpertsMixin, mk.FusedMoEExpertsModular):
         activation_key: QuantKey | None,
         activation_format: mk.FusedMoEActivationFormat,
     ) -> tuple[bool, str | None]:
+        """is_supported_config implementation."""
         supported, reason = mk.FusedMoEExperts.is_supported_config(
             cls,
             moe_config,

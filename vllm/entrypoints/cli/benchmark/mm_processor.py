@@ -59,6 +59,7 @@ class BenchmarkMMProcessorSubcommand(BenchmarkSubcommandBase):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> None:
+        """Add mm-processor CLI args; class docstring is parser description."""
         # The class docstring is the page overview / `--help` description.
         if cls.__doc__:
             parser.description = inspect.cleandoc(cls.__doc__)

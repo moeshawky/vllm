@@ -61,6 +61,7 @@ class RenderSubcommand(LaunchSubcommandBase):
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
+        """Execute the render subcommand: runs launch FastAPI via uvloop."""
         uvloop.run(run_launch_fastapi(args))
 
 

@@ -15,6 +15,7 @@ class BenchmarkLatencySubcommand(BenchmarkSubcommandBase):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> None:
+        """Add latency benchmark CLI args via vllm.benchmarks.latency.add_cli_args."""
         add_cli_args(parser)
 
     @staticmethod

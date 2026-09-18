@@ -93,6 +93,7 @@ def _build_anthropic_usage(
 
 
 def wrap_data_with_event(data: str, event: str):
+    """Wrap data in an SSE event frame with the given event name."""
     return f"event: {event}\ndata: {data}\n\n"
 
 

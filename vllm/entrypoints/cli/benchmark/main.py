@@ -21,6 +21,7 @@ logger = init_logger(__name__)
 
 
 def maybe_exec_rust_bench() -> None:
+    """Delegate `vllm bench serve` to the Rust binary if VLLM_USE_RUST_BENCH is set."""
     if sys.argv[1:3] != ["bench", "serve"] or not envs.VLLM_USE_RUST_BENCH:
         return
 

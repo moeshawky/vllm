@@ -17,6 +17,9 @@ class CLISubcommand:
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
+        """Execute the subcommand with the given argparse Namespace.
+        Must be overridden by subclasses.
+        """
         raise NotImplementedError("Subclasses should implement this method")
 
     def validate(self, args: argparse.Namespace) -> None:

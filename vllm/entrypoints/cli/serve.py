@@ -49,6 +49,11 @@ class ServeSubcommand(CLISubcommand):
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
+        """Execute the serve subcommand. Handles --grpc delegation,
+        headless mode, data-parallel load-balancing detection and validation,
+        api_server_count defaulting, elastic EP cap, and dispatch to
+        run_headless/run_multi_api_server/run_server.
+        """
         # If model is specified in CLI (as positional arg), it takes precedence
         if hasattr(args, "model_tag") and args.model_tag is not None:
             args.model = args.model_tag

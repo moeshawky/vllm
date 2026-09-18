@@ -23,6 +23,7 @@ logger = init_logger(__name__)
 
 
 def generative_scoring(request: Request) -> ServingGenerativeScoring | None:
+    """Dependency getter for ServingGenerativeScoring from the FastAPI request state."""
     return request.app.state.serving_generative_scoring
 
 
@@ -37,6 +38,8 @@ def generative_scoring(request: Request) -> ServingGenerativeScoring | None:
 @with_cancellation
 @load_aware_call
 async def create_generative_scoring(raw_request: Request):
+    """POST /generative_scoring endpoint handler. Validates JSON
+    request, resolves the handler and returns JSONResponse."""
     handler = generative_scoring(raw_request)
     if handler is None:
         raise NotImplementedError(
@@ -61,4 +64,5 @@ async def create_generative_scoring(raw_request: Request):
 
 
 def register_generative_scoring_api_router(app: FastAPI):
+    """Register the generative scoring router on a FastAPI app."""
     app.include_router(router)

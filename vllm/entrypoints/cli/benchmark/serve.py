@@ -15,6 +15,7 @@ class BenchmarkServingSubcommand(BenchmarkSubcommandBase):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> None:
+        """Add serving benchmark CLI args via vllm.benchmarks.serve.add_cli_args."""
         add_cli_args(parser)
 
     @staticmethod

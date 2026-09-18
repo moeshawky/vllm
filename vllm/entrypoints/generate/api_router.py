@@ -19,6 +19,7 @@ else:
 
 
 def register_generate_api_routers(app: FastAPI):
+    """Register all generate-mode API routers on a FastAPI app."""
     from vllm.entrypoints.openai.chat_completion.api_router import (
         attach_router as register_chat_api_router,
     )
@@ -61,6 +62,7 @@ async def init_generate_state(
     request_logger: RequestLogger | None,
     supported_tasks: tuple["SupportedTask", ...],
 ):
+    """Initialize the generate-mode serving state."""
     from vllm.entrypoints.anthropic.serving import AnthropicServingMessages
     from vllm.entrypoints.chat_utils import load_chat_template
 

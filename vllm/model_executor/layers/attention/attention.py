@@ -55,6 +55,8 @@ logger = init_logger(__name__)
 def validate_kv_sharing_target(
     current_layer_name, target_layer_name, static_forward_context
 ):
+    """Validates that a KV sharing target layer name is valid for the
+    current layer."""
     error_msg = (
         f"Specified KV sharing target layer for {current_layer_name} "
         f"is not valid: target layer {target_layer_name} "

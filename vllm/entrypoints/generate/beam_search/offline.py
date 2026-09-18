@@ -35,6 +35,7 @@ logger = init_logger(__name__)
 _MAX_NUM_ALLOWED_TOKEN_IDS = 1024
 
 
+# Cache vocab_size → index tensors for fast bitmask-to-token-ID lookup.
 _bitmask_cache: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
 

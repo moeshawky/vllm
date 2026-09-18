@@ -17,6 +17,8 @@ def get_generate_invocation_types(
     supported_tasks: tuple["SupportedTask", ...],
     model_config: ModelConfig | None = None,
 ):
+    """Return the list of (RequestType, (handler, endpoint)) tuples for
+    generate-mode tasks."""
     # NOTE: Items defined earlier take higher priority
     invocation_types: list[tuple[RequestType, tuple[GetHandlerFn, EndpointFn]]] = []
 

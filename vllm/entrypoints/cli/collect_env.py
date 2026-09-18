@@ -26,6 +26,7 @@ class CollectEnvSubcommand(CLISubcommand):
     def subparser_init(
         self, subparsers: argparse._SubParsersAction
     ) -> FlexibleArgumentParser:
+        """Build the parser for `vllm collect-env`."""
         return subparsers.add_parser(
             "collect-env",
             help="Start collecting environment information.",

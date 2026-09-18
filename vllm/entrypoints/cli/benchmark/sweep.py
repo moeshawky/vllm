@@ -15,6 +15,7 @@ class BenchmarkSweepSubcommand(BenchmarkSubcommandBase):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> None:
+        """Add sweep benchmark CLI args via vllm.benchmarks.sweep.cli.add_cli_args."""
         add_cli_args(parser)
 
     @staticmethod

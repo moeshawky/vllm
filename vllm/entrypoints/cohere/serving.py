@@ -175,6 +175,7 @@ _FINISH_REASON_MAP: dict[str | None, CohereFinishReason] = {
 def _map_finish_reason(
     reason: str | None, stop_reason: int | str | None = None
 ) -> CohereFinishReason:
+    """Map vLLM finish reasons to Cohere finish reasons."""
     # vLLM reports both EOS and matched stop strings as finish_reason="stop".
     # The latter is distinguished by the matched string in stop_reason.
     if reason == "stop" and isinstance(stop_reason, str):
@@ -254,6 +255,8 @@ class CohereServingChatV2(OpenAIServingChat):
         default_chat_template_kwargs: dict[str, Any] | None = None,
         is_reasoning_model: bool = True,
     ) -> None:
+        """Initialize the Cohere serving handler. The is_reasoning_model flag
+        controls whether reasoning is surfaced as thinking content or tool_plan."""
         super().__init__(
             engine_client=engine_client,
             models=models,
@@ -365,6 +368,7 @@ class CohereServingChatV2(OpenAIServingChat):
     def _convert_v2_to_chat_completion(
         cls, request: CohereChatV2Request
     ) -> ChatCompletionRequest:
+        """Convert a Cohere v2 request into its ChatCompletionRequest."""
         openai_messages: list[dict[str, Any]] = []
         cls._convert_messages(request.messages, openai_messages)
 
@@ -382,6 +386,7 @@ class CohereServingChatV2(OpenAIServingChat):
         messages: list,
         openai_messages: list[dict[str, Any]],
     ) -> None:
+        """Convert Cohere v2 messages to OpenAI message format."""
         for msg in messages:
             match msg:
                 case SystemChatMessageV2():
@@ -402,6 +407,7 @@ class CohereServingChatV2(OpenAIServingChat):
 
     @staticmethod
     def _coerce_text_content(content: str | list[Any]) -> str:
+        """Coerce content to a string, joining text blocks if content is a list."""
         if isinstance(content, str):
             return content
         parts: list[str] = []
@@ -413,6 +419,7 @@ class CohereServingChatV2(OpenAIServingChat):
 
     @classmethod
     def _convert_user_message(cls, msg: UserChatMessageV2) -> dict[str, Any]:
+        """Convert a Cohere UserChatMessageV2 to an OpenAI message dict."""
         if isinstance(msg.content, str):
             return {"role": "user", "content": msg.content}
 
@@ -440,6 +447,8 @@ class CohereServingChatV2(OpenAIServingChat):
 
     @classmethod
     def _convert_assistant_message(cls, msg: AssistantChatMessageV2) -> dict[str, Any]:
+        """Convert a Cohere AssistantChatMessageV2 to an OpenAI message dict.
+        Collapses thinking blocks into reasoning and preserves tool_plan."""
         out: dict[str, Any] = {"role": "assistant"}
 
         # Cohere splits reasoning out into ``thinking`` content blocks. We
@@ -484,6 +493,8 @@ class CohereServingChatV2(OpenAIServingChat):
 
     @classmethod
     def _convert_tool_message(cls, msg: ToolChatMessageV2) -> dict[str, Any]:
+        """Convert a Cohere ToolChatMessageV2 to an OpenAI message dict.
+        JSON-serializes document blocks as text."""
         if isinstance(msg.content, str):
             return {
                 "role": "tool",
@@ -546,6 +557,8 @@ class CohereServingChatV2(OpenAIServingChat):
         request: CohereChatV2Request,
         openai_messages: list[dict[str, Any]],
     ) -> ChatCompletionRequest:
+        """Build the base ChatCompletionRequest from the converted messages
+        and request fields."""
         return ChatCompletionRequest(
             model=request.model,
             messages=openai_messages,
@@ -570,6 +583,7 @@ class CohereServingChatV2(OpenAIServingChat):
         chat_req: ChatCompletionRequest,
         request: CohereChatV2Request,
     ) -> None:
+        """Apply streaming options to the chat request if stream is enabled."""
         if request.stream:
             chat_req.stream = True
             chat_req.stream_options = StreamOptions.model_validate(
@@ -582,6 +596,8 @@ class CohereServingChatV2(OpenAIServingChat):
         chat_req: ChatCompletionRequest,
         request: CohereChatV2Request,
     ) -> None:
+        """Apply response format to the chat request based on the
+        Cohere response_format field."""
         rf = request.response_format
         if rf is None or rf.type == "text":
             return
@@ -603,6 +619,8 @@ class CohereServingChatV2(OpenAIServingChat):
         chat_req: ChatCompletionRequest,
         request: CohereChatV2Request,
     ) -> None:
+        """Apply tools to the chat request. Maps Cohere strict_tools to
+        OpenAI per-function strict flag."""
         if not request.tools:
             return
         # Cohere's ``strict_tools`` is the spec-equivalent of OpenAI's
@@ -633,6 +651,8 @@ class CohereServingChatV2(OpenAIServingChat):
         chat_req: ChatCompletionRequest,
         request: CohereChatV2Request,
     ) -> None:
+        """Apply tool choice to the chat request. Maps Cohere
+        REQUIRED/NONE to OpenAI equivalents."""
         # Cohere v2's ``tool_choice`` only admits ``REQUIRED`` / ``NONE``
         # (see :data:`CohereToolChoice`); named-tool selection is not
         # part of the v2 spec. Map both onto OpenAI's equivalents.
@@ -1029,6 +1049,7 @@ class CohereServingChatV2(OpenAIServingChat):
         response: ChatCompletionResponse,
         request: CohereChatV2Request,
     ) -> CohereChatV2Response:
+        """Convert ChatCompletionResponse to CohereChatV2Response."""
         choice = response.choices[0]
         msg = choice.message
 

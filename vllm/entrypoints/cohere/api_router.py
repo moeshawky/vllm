@@ -73,6 +73,9 @@ if _SDK_AVAILABLE:
     router = APIRouter()
 
     def _serving(request: Request) -> CohereServingChatV2 | None:
+        """Retrieve the CohereServingChatV2 handler from the
+        FastAPI app state.
+        """
         return getattr(request.app.state, "cohere_serving_chat_v2", None)
 
     def _serving_render(request: Request) -> ServingRender | None:

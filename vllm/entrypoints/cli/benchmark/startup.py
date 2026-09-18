@@ -15,6 +15,7 @@ class BenchmarkStartupSubcommand(BenchmarkSubcommandBase):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> None:
+        """Add startup benchmark CLI args via vllm.benchmarks.startup.add_cli_args."""
         add_cli_args(parser)
 
     @staticmethod

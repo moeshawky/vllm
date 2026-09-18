@@ -25,6 +25,7 @@ from vllm.distributed.parallel_state import (
 from vllm.model_executor.layers.layernorm import GemmaRMSNorm
 
 MiB = 1024 * 1024
+# Constant defining 1 MiB in bytes for memory threshold calculations.
 
 # flashinfer fused all-reduce + RMSNorm is wired as a registered custom op in
 # allreduce_rms_fusion; both that op and the workspace helpers only exist when

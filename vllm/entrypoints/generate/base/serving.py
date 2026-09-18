@@ -123,6 +123,9 @@ def build_spec_decoding_metrics(
 
 @dataclass(kw_only=True)
 class ServeContext(Generic[RequestT]):
+    """Dataclass holding per-request serving context: the request, optional
+    raw_request, model_name, request_id, created_time, lora_request,
+    engine_inputs, and model_config."""
     request: RequestT
     raw_request: Request | None = None
     model_name: str
@@ -134,6 +137,9 @@ class ServeContext(Generic[RequestT]):
 
 
 class GenerateBaseServing(BaseServing, BeamSearchOnlineMixin):
+    """Base serving class for generate mode. Extends BaseServing and
+    BeamSearchOnlineMixin. Manages engine_client, renderer, input_processor,
+    KV connector support, and system fingerprint."""
     request_id_prefix: ClassVar[str] = """
     A short string prepended to every request’s ID.
     """
@@ -240,6 +246,7 @@ class GenerateBaseServing(BaseServing, BeamSearchOnlineMixin):
 
     @staticmethod
     def _get_session_id_from_headers(raw_request: Request | None) -> str | None:
+        """Extract session ID from the X-Session-ID header, if present."""
         if raw_request is None:
             return None
         if value := raw_request.headers.get(SESSION_ID_HEADER):
@@ -331,6 +338,7 @@ class GenerateBaseServing(BaseServing, BeamSearchOnlineMixin):
 
 
 def format_token_id_placeholder(token_id: int) -> str:
+    """Format a token ID as a 'token_id:N' placeholder string."""
     return f"token_id:{token_id}"
 
 

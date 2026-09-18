@@ -15,6 +15,7 @@ class BenchmarkThroughputSubcommand(BenchmarkSubcommandBase):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> None:
+        """Add throughput benchmark CLI args via vllm.benchmarks.throughput."""
         add_cli_args(parser)
 
     @staticmethod

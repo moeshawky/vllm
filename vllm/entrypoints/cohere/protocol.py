@@ -258,6 +258,7 @@ class CohereChatV2Request(BaseModel):
 
 
 class CohereUsageBilledUnits(BaseModel):
+    """Billed units breakdown for Cohere usage tracking."""
     input_tokens: float | None = None
     output_tokens: float | None = None
     search_units: float | None = None

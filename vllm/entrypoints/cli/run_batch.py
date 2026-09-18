@@ -25,6 +25,9 @@ class RunBatchSubcommand(CLISubcommand):
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
+        """Execute the run-batch subcommand. Starts Prometheus metrics
+        if enabled, then runs the batch main function via asyncio.run().
+        """
         from vllm.entrypoints.launchers.run_batch import main as run_batch_main
 
         logger.info(

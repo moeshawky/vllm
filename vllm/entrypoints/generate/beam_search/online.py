@@ -34,6 +34,10 @@ class BeamSearchOnlineMixin(ABC):
         trace_headers: Mapping[str, str] | None = None,
         session_id: str | None = None,
     ) -> AsyncGenerator[RequestOutput, None]:
+        """Async beam search for a single prompt. Creates beam_width parallel
+        tasks per token step, gathers results via asyncio.gather, scores
+        candidates by cumulative logprob, and yields a RequestOutput with
+        the best beams."""
         beam_width = params.beam_width
         max_tokens = params.max_tokens
         ignore_eos = params.ignore_eos

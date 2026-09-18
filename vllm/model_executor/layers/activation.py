@@ -16,6 +16,7 @@ from vllm.utils.collection_utils import LazyDict
 
 logger = init_logger(__name__)
 
+# Module-level logger for the activation module.
 
 @triton.jit
 def _swiglustep_and_mul_kernel(

@@ -33,6 +33,9 @@ router = APIRouter()
 
 
 def messages(request: Request) -> AnthropicServingMessages:
+    """Dependency getter for the AnthropicServingMessages handler
+    from the FastAPI app state.
+    """
     return request.app.state.anthropic_serving_messages
 
 

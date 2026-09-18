@@ -20,6 +20,7 @@ else:
 
 
 def _register_signal_handlers():
+    """Register signal handlers for SIGINT and SIGTSTP that call sys.exit(0)."""
     def signal_handler(sig, frame):
         sys.exit(0)
 

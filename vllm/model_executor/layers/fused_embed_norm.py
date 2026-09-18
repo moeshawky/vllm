@@ -29,6 +29,7 @@ from vllm.triton_utils import tl, triton
 
 @triton.jit
 def _rms_norm(x, w, eps, HIDDEN_SIZE: tl.constexpr):
+    """Triton JIT kernel computing RMS normalization in fused form."""
     x = x.to(tl.float32)
     mean_sq = tl.sum(x * x, axis=0) / HIDDEN_SIZE
     rrms = tl.rsqrt(mean_sq + eps)

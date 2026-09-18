@@ -15,6 +15,12 @@ logger = init_logger(__name__)
 
 
 def main():
+    """Run the vLLM CLI entrypoint.
+
+    Lazily imports all subcommand modules, builds a FlexibleArgumentParser
+    with subparsers for each command, handles --omni delegation to vllm-omni,
+    and dispatches to the selected subcommand's cmd function.
+    """
     import vllm.entrypoints.cli.benchmark.main
     import vllm.entrypoints.cli.collect_env
     import vllm.entrypoints.cli.launch

@@ -32,6 +32,8 @@ class ConvLayerBase(CustomOp):
         *,
         params_dtype: torch.dtype | None = None,
     ) -> None:
+        """Initializes a convolutional layer with channels, kernel size, stride,
+        padding, dilation, groups, and bias parameters."""
         super().__init__()
 
         if params_dtype is None:

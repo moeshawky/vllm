@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Attention implementations subpackage."""
+
 import torch
 
 from vllm.model_executor.layers.attention.attention import Attention
