@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Quark MoE quantization methods for vLLM.
+
+Implements various MoE quantization methods for the Quark
+framework including FP8, INT8, W4A8 FP8, OCP MX, and NVFP4
+schemes, each tailored to specific hardware and precision
+requirements."""
+
 from typing import Any
 
 import torch
@@ -93,6 +100,10 @@ __all__ = [
 
 
 class QuarkMoEMethod(FusedMoEMethodBase):
+    """Base class for Quark MoE quantization methods.
+
+    Provides the factory method for selecting the appropriate
+    QuarkMoEMethod subclass based on quantization configuration."""
     def __init__(self, moe: FusedMoEConfig):
         super().__init__(moe)
         self.has_bias = self.moe.has_bias
@@ -103,6 +114,8 @@ class QuarkMoEMethod(FusedMoEMethodBase):
         module: RoutedExperts,
         layer_name: str,
     ) -> "QuarkMoEMethod":
+        """Factory method returning the appropriate QuarkMoEMethod
+        subclass based on the layer's quantization configuration."""
         layer_quant_config = quant_config._find_matched_config(layer_name, module)
 
         if layer_quant_config.get("output_tensors") or layer_quant_config.get("bias"):
@@ -138,6 +151,10 @@ class QuarkMoEMethod(FusedMoEMethodBase):
 
 
 class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
+    """Quark W8A8 FP8 MoE quantization method.
+
+    Implements FP8 quantization for MoE expert weights with
+    per-tensor or per-channel scaling."""
     def __init__(
         self,
         weight_config: dict[str, Any],
@@ -876,6 +893,10 @@ class QuarkW8A8Int8MoEMethod(QuarkMoEMethod):
 
 
 class QuarkW4A8Fp8MoEMethod(QuarkMoEMethod):
+    """Quark W4A8 FP8 MoE quantization method using ROCm AITER.
+
+    Implements 4-bit weight quantization with 8-bit activation
+    for MoE layers on ROCm platforms."""
     def __init__(
         self,
         weight_config: dict[str, Any],
@@ -1032,6 +1053,10 @@ class QuarkW4A8Fp8MoEMethod(QuarkMoEMethod):
 
 
 class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
+    """Quark OCP MX MoE quantization method.
+
+    Implements OCP-MX format quantization for MoE layers
+    supporting MXFP4 and MXFP6 weight dtypes."""
     def __init__(
         self,
         weight_config: dict[str, Any],
@@ -1459,6 +1484,10 @@ class QuarkOCP_MX_MoEMethod(QuarkMoEMethod):
 
 
 class QuarkNvfp4MoEMethod(QuarkMoEMethod):
+    """Quark NVFP4 MoE quantization method.
+
+    Implements NVFP4 quantization for MoE expert weights,
+    converting fp16/bf16 weights to NVFP4 format."""
     def __init__(
         self,
         weight_config: dict[str, Any],

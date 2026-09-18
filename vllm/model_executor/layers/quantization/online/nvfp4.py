@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Online NVFP4 MoE quantization module.
+
+Provides the Nvfp4OnlineMoEMethod class which quantizes
+fp16/bf16 expert weights to NVFP4 format at load time,
+with per-token activation scales computed at runtime
+by the FlashInfer TRTLLM kernel. Blackwell (SM100) only.
+"""
+
 import torch
 from torch.nn import Module
 
@@ -101,6 +109,9 @@ class Nvfp4OnlineMoEMethod(OnlineMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process MoE weights after loading by quantizing them
+        to NVFP4 and setting up the fusion kernel. Skips if
+        already called."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -179,6 +190,9 @@ class Nvfp4OnlineMoEMethod(OnlineMoEMethodBase):
         self.moe_kernel.fused_experts.process_weights_after_loading(layer)
 
     def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig:
+        """Construct and return the FusedMoEQuantConfig for the
+        NVFP4 MoE kernel using the selected backend and layer
+        parameters."""
         return make_nvfp4_moe_quant_config(
             backend=self.nvfp4_backend,
             w13_scale=layer.w13_weight_scale,

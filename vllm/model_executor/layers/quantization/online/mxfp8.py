@@ -54,6 +54,7 @@ class Mxfp8OnlineLinearMethod(_Fp8OnlineLinearBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create weights for MXFP8 linear quantization."""
         if input_size_per_partition % MXFP8_BLOCK_SIZE != 0:
             raise ValueError(
                 f"MXFP8 requires input_size_per_partition "
@@ -72,6 +73,7 @@ class Mxfp8OnlineLinearMethod(_Fp8OnlineLinearBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process MXFP8 weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -91,6 +93,7 @@ class Mxfp8OnlineLinearMethod(_Fp8OnlineLinearBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply MXFP8 quantization to input."""
         return self.kernel.apply_weights(layer, x, bias)
 
 
@@ -116,6 +119,7 @@ class Mxfp8OnlineMoEMethod(OnlineMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create MXFP8 MoE quantization weights."""
         if (
             hidden_size % MXFP8_BLOCK_SIZE != 0
             or intermediate_size_per_partition % MXFP8_BLOCK_SIZE != 0
@@ -205,6 +209,7 @@ class Mxfp8OnlineMoEMethod(OnlineMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: torch.nn.Module
     ) -> "FusedMoEQuantConfig":
+        """Get fused MoE quantization configuration."""
         from vllm.model_executor.layers.fused_moe.oracle.fp8 import (
             make_fp8_moe_quant_config,
         )
@@ -230,6 +235,7 @@ class Mxfp8OnlineMoEMethod(OnlineMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process MXFP8 MoE weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 

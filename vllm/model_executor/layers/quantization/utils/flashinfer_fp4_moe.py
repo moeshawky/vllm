@@ -201,6 +201,21 @@ def prepare_static_weights_for_trtllm_fp4_moe(
     num_experts,
     is_gated_activation: bool,
 ):
+    """Prepare static quantized weights for the TRT-LLM FP4 MoE kernel.
+
+    Args:
+        gemm1_weights: Gate/up weights for each expert.
+        gemm2_weights: Down weights for each expert.
+        gemm1_scales_linear_fp4_bytes: Scales for gemm1 weights.
+        gemm2_scales_linear_fp4_bytes: Scales for gemm2 weights.
+        hidden_size: Hidden dimension.
+        intermediate_size: Intermediate dimension.
+        num_experts: Number of experts.
+        is_gated_activation: Whether the activation is gated.
+
+    Returns:
+        Tuple of shuffled and packed weights and scales.
+    """
     from flashinfer import nvfp4_block_scale_interleave
     from flashinfer.fused_moe.core import (
         _maybe_get_cached_w3_w1_permute_indices,
@@ -340,6 +355,27 @@ def prepare_nvfp4_moe_layer_for_fi_or_cutlass(
     torch.Tensor,
     torch.Tensor,
 ]:
+    """Prepare NVFP4 MoE layer weights for FlashInfer or Cutlass backend.
+
+    Reorders, shuffles, and aligns weights and scales for the
+    selected NVFP4 MoE backend kernel.
+
+    Args:
+        backend: The target NVFP4 MoE backend.
+        layer: The routed experts layer.
+        w13: Gate and up weights.
+        w13_scale: Scales for w13 weights.
+        w13_scale_2: Second set of w13 scales.
+        a13_scale: Activation scales for a13.
+        w2: Down weights.
+        w2_scale: Scales for w2 weights.
+        w2_scale_2: Second set of w2 scales.
+        a2_scale: Activation scales for a2.
+        is_act_and_mul: Whether activation is gated and multiplied.
+
+    Returns:
+        Tuple of prepared weights and scales.
+    """
     # Delayed import for circular dependency avoidance.
     from vllm.model_executor.layers.fused_moe.oracle.nvfp4 import (
         NvFp4MoeBackend,

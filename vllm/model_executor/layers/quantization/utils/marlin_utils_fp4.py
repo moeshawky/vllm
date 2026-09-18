@@ -32,6 +32,7 @@ logger = init_logger(__name__)
 
 
 def is_fp4_marlin_supported():
+    """Check if FP4 Marlin is supported on the current platform."""
     return current_platform.is_cuda() and current_platform.has_device_capability(75)
 
 
@@ -166,6 +167,23 @@ def apply_fp4_marlin_linear(
     input_dtype: torch.dtype | None = None,
     use_fp32_reduce: bool = USE_FP32_REDUCE_DEFAULT,
 ) -> torch.Tensor:
+    """Apply FP4 Marlin linear transformation to input.
+
+    Args:
+        input: Input tensor.
+        weight: FP4 quantized weight tensor.
+        weight_scale: Weight scale tensor.
+        weight_global_scale: Optional global scale tensor.
+        workspace: Workspace tensor for the Marlin kernel.
+        size_n: Output dimension size.
+        size_k: Input dimension size.
+        bias: Optional bias tensor.
+        input_dtype: Optional input quantization dtype.
+        use_fp32_reduce: Whether to use FP32 reduce.
+
+    Returns:
+        The output tensor.
+    """
     # For GPUs that lack FP4 hardware support, we can leverage the
     # Marlin kernel for fast weight-only FP4 quantization
 
@@ -221,6 +239,12 @@ def apply_fp4_marlin_linear(
 def prepare_fp4_layer_for_marlin(
     layer: torch.nn.Module, input_dtype: torch.dtype | None = None
 ) -> None:
+    """Prepare a linear layer's weights and scales for the FP4 Marlin kernel.
+
+    Args:
+        layer: The linear layer to prepare.
+        input_dtype: Optional input quantization dtype.
+    """
     is_nvfp4 = hasattr(layer, "weight_global_scale")
     if input_dtype is not None and input_dtype.itemsize == 1:
         if is_nvfp4:
@@ -351,6 +375,21 @@ def prepare_nvfp4_moe_layer_for_marlin(
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
 ]:
+    """Prepare NVFP4 MoE layer weights for the Marlin kernel.
+
+    Args:
+        layer: The routed experts layer.
+        w13: W13 weight tensor.
+        w13_scale: W13 scale tensor.
+        w13_scale_2: W13 second scale tensor.
+        w2: W2 weight tensor.
+        w2_scale: W2 scale tensor.
+        w2_scale_2: W2 second scale tensor.
+        is_act_and_mul: Whether activation is and-multiplied.
+
+    Returns:
+        Tuple of prepared weight and scale tensors.
+    """
     logger.warning_once(
         "Your GPU does not have native support for FP4 computation but "
         "FP4 quantization is being used. Weight-only FP4 compression will "
@@ -469,6 +508,12 @@ def prepare_nvfp4_moe_layer_for_marlin(
 def prepare_moe_fp4_layer_for_marlin(
     layer: torch.nn.Module, input_dtype: torch.dtype | None = None
 ) -> None:
+    """Prepare MoE FP4 layer weights and scales for the Marlin kernel.
+
+    Args:
+        layer: The module containing MoE weights.
+        input_dtype: Optional input quantization dtype.
+    """
     is_nvfp4 = hasattr(layer, "w13_weight_scale_2")
     if input_dtype is not None and input_dtype.itemsize == 1:
         if is_nvfp4:
@@ -686,6 +731,16 @@ def prepare_moe_mxfp4_layer_for_marlin(
 
 
 def rand_marlin_weight_nvfp4_like(weight, group_size, input_dtype=None):
+    """Generate random Marlin FP4 weights for testing.
+
+    Args:
+        weight: Reference weight tensor.
+        group_size: The quantization group size.
+        input_dtype: Optional input dtype.
+
+    Returns:
+        Tuple of (weight_ref, marlin_qweight, marlin_scales, global_scale).
+    """
     is_a_8bit = input_dtype is not None and input_dtype.itemsize == 1
 
     assert not is_a_8bit, "NVFP4 weight + INT8/FP8 activation is not supported."
@@ -743,6 +798,16 @@ def rand_marlin_weight_nvfp4_like(weight, group_size, input_dtype=None):
 
 
 def rand_marlin_weight_mxfp4_like(weight, group_size, input_dtype=None):
+    """Generate random Marlin MXFP4 weights for testing.
+
+    Args:
+        weight: Reference weight tensor.
+        group_size: The quantization group size.
+        input_dtype: Optional input dtype.
+
+    Returns:
+        Tuple of (weight_ref, marlin_qweight, marlin_scales).
+    """
     is_a_8bit = input_dtype is not None and input_dtype.itemsize == 1
     if is_a_8bit:
         assert input_dtype == torch.float8_e4m3fn, (

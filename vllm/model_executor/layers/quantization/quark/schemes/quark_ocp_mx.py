@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Quark OCP MX quantization scheme implementation.
+
+Provides the QuarkOCP_MX class implementing the OCP-MX
+quantization scheme for linear layers, supporting MXFP4
+and MXFP6 weight dtypes with simulated or native kernel
+execution depending on platform support."""
+
 from collections.abc import Callable
 from fractions import Fraction
 from typing import Any

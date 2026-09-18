@@ -35,6 +35,14 @@ def _pad_gated_weights(
         return w13, w13_scale, w2, w2_scale
 
     def pad_rows(tensor: torch.Tensor) -> torch.Tensor:
+        """Pad rows of a tensor to a multiple of 64.
+
+        Args:
+            tensor: Input tensor to pad.
+
+        Returns:
+            Padded tensor with rows aligned to 64.
+        """
         shape = tensor.shape
         return F.pad(
             tensor.reshape(shape[0], 2, half_size, *shape[2:]),

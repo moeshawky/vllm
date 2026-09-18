@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Base for online MoE quantization methods."""
+
 from abc import abstractmethod
 
 import torch
@@ -33,6 +35,7 @@ class OnlineMoEMethodBase(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create MoE quantization weights for a layer."""
         layer.num_experts = num_experts
         layer.orig_dtype = params_dtype
         layer.weight_block_size = None
@@ -128,10 +131,12 @@ class OnlineMoEMethodBase(FusedMoEMethodBase):
 
     @abstractmethod
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Process MoE weights after loading."""
         pass
 
     @property
     def supports_eplb(self) -> bool:
+        """Whether EPLB is supported by this MoE method."""
         return True
 
     def apply_monolithic(
@@ -141,6 +146,7 @@ class OnlineMoEMethodBase(FusedMoEMethodBase):
         router_logits: torch.Tensor,
         input_ids: torch.Tensor | None = None,
     ) -> torch.Tensor | UnfinalizedMoEOutput:
+        """Apply monolithic MoE computation."""
         assert self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply_monolithic(
@@ -167,6 +173,7 @@ class OnlineMoEMethodBase(FusedMoEMethodBase):
         shared_experts: SharedExperts | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        """Apply MoE computation to input."""
         assert not self.is_monolithic
         assert self.moe_kernel is not None
         return self.moe_kernel.apply(

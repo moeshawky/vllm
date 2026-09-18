@@ -29,10 +29,16 @@ logger = init_logger(__name__)
 
 
 def is_fp8_marlin_supported():
+    """Check if FP8 Marlin is supported on the current platform."""
     return current_platform.has_device_capability(75)
 
 
 def fp8_fused_exponent_bias_into_scales(scales):
+    """Fuse FP8 exponent bias into scale factors.
+
+    Returns:
+        Scales with fused exponent bias applied.
+    """
     fp8_exponent = 4
     if scales.dtype == torch.half:
         target_exponent = 5
@@ -57,6 +63,22 @@ def apply_fp8_marlin_linear(
     input_dtype: torch.dtype | None = None,
     use_fp32_reduce: bool = USE_FP32_REDUCE_DEFAULT,
 ) -> torch.Tensor:
+    """Apply FP8 Marlin linear transformation to input.
+
+    Args:
+        input: Input tensor.
+        weight: FP8 quantized weight tensor.
+        weight_scale: Weight scale tensor.
+        workspace: Workspace tensor.
+        size_n: Output dimension size.
+        size_k: Input dimension size.
+        bias: Optional bias tensor.
+        input_dtype: Optional input dtype.
+        use_fp32_reduce: Whether to use FP32 reduce.
+
+    Returns:
+        The output tensor.
+    """
     # For GPUs that lack FP8 hardware support, we can leverage the
     # Marlin kernel for fast weight-only FP8 quantization
 
@@ -109,6 +131,13 @@ def prepare_fp8_layer_for_marlin(
     size_k_first: bool = True,
     input_dtype: torch.dtype | None = None,
 ) -> None:
+    """Prepare an FP8 layer's weights and scales for the Marlin kernel.
+
+    Args:
+        layer: The linear layer to prepare.
+        size_k_first: Whether K dimension is first in weight layout.
+        input_dtype: Optional input quantization dtype.
+    """
     logger.warning_once(
         "Your GPU does not have native support for FP8 computation but "
         "FP8 quantization is being used. Weight-only FP8 compression will "
@@ -610,6 +639,16 @@ def prepare_mxfp8_moe_layer_for_marlin(
 
 
 def marlin_quant_fp8_torch(weight, group_size, input_dtype=None):
+    """Quantize FP8 weights to Marlin format using torch operations.
+
+    Args:
+        weight: The FP8 weight tensor.
+        group_size: The quantization group size.
+        input_dtype: Optional input dtype.
+
+    Returns:
+        Tuple of (weight_ref, marlin_qweight, marlin_scales).
+    """
     is_a_8bit = input_dtype is not None and input_dtype.itemsize == 1
     if is_a_8bit:
         assert input_dtype == torch.float8_e4m3fn

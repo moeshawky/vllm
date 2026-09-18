@@ -97,6 +97,7 @@ class Mxfp4OnlineLinearMethod(_Fp8OnlineLinearBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create weights for MXFP4 linear quantization."""
         if input_size_per_partition % MXFP4_BLOCK_SIZE != 0:
             raise ValueError(
                 f"MXFP4 requires input_size_per_partition "
@@ -115,6 +116,7 @@ class Mxfp4OnlineLinearMethod(_Fp8OnlineLinearBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process MXFP4 weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -134,6 +136,7 @@ class Mxfp4OnlineLinearMethod(_Fp8OnlineLinearBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply MXFP4 quantization to input."""
         return self.kernel.apply_weights(layer, x, bias)
 
 
@@ -160,6 +163,7 @@ class Mxfp4OnlineMoEMethod(OnlineMoEMethodBase):
         act_dtype: torch.dtype,
         moe_parallel_config: "FusedMoEParallelConfig",
     ) -> tuple[int, int]:
+        """Roundup sizes for MXFP4 MoE quantization."""
         hidden_size, intermediate_size_per_partition = super().maybe_roundup_sizes(
             hidden_size=hidden_size,
             intermediate_size_per_partition=intermediate_size_per_partition,
@@ -179,6 +183,7 @@ class Mxfp4OnlineMoEMethod(OnlineMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create MXFP4 MoE quantization weights."""
         if (
             hidden_size % MXFP4_BLOCK_SIZE != 0
             or intermediate_size_per_partition % MXFP4_BLOCK_SIZE != 0
@@ -260,6 +265,7 @@ class Mxfp4OnlineMoEMethod(OnlineMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: torch.nn.Module
     ) -> "FusedMoEQuantConfig | None":
+        """Get fused MoE quantization configuration."""
         # NOTE: unlike `QuarkOCP_MX_MoEMethod.get_fused_moe_quant_config`, this
         # does not branch on `self.mxfp4_backend in TRITON_BACKENDS or
         # AITER_MXFP4_FP8` to read `self.w13_precision_config`/
@@ -289,6 +295,7 @@ class Mxfp4OnlineMoEMethod(OnlineMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process MXFP4 MoE weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 

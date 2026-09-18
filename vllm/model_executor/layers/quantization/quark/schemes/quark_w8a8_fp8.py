@@ -1,6 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+Quark W8A8 FP8 quantization scheme.
+
+Implements FP8 weight quantization with per-tensor and per-channel
+scaling, supporting both standard and per-block variants.
+
+"""
+
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -42,6 +51,7 @@ logger = init_logger(__name__)
 
 
 class QuarkW8A8Fp8(QuarkScheme):
+    """Quark W8A8 FP8 quantization scheme with per-tensor or per-channel weights."""
     def __init__(
         self, weight_config: dict[str, Any], input_config: dict[str, Any] | None
     ):
@@ -77,10 +87,12 @@ class QuarkW8A8Fp8(QuarkScheme):
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return minimum device capability (lovelace and up)."""
         # lovelace and up
         return 89
 
     def process_weights_after_loading(self, layer) -> None:
+        """Requantize weights after loading for consistent kernel input."""
         # If per tensor, when we have a fused module (e.g. QKV) with per
         # tensor scales (thus N scales being passed to the kernel),
         # requantize so we can always run per tensor
@@ -146,6 +158,7 @@ class QuarkW8A8Fp8(QuarkScheme):
         weight_loader: Callable,
         **kwargs,
     ):
+        """Create weight and scale parameters for the W8A8 FP8 scheme."""
         output_size_per_partition = sum(output_partition_sizes)
         layer.logical_widths = output_partition_sizes
 
@@ -206,10 +219,12 @@ class QuarkW8A8Fp8(QuarkScheme):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply FP8 weights to the input tensor via the FP8 linear kernel."""
         return self.fp8_linear.apply_weights(layer, x, bias)
 
 
 class QuarkW8A8Fp8PerBlock(QuarkScheme):
+    """Quark W8A8 FP8 quantization scheme with per-block weight scaling."""
     def __init__(
         self, weight_config: dict[str, Any], input_config: dict[str, Any] | None
     ):
@@ -231,9 +246,11 @@ class QuarkW8A8Fp8PerBlock(QuarkScheme):
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return minimum device capability (inherits from QuarkW8A8Fp8)."""
         return QuarkW8A8Fp8.get_min_capability()
 
     def process_weights_after_loading(self, layer) -> None:
+        """Delegate weight processing to the FP8 linear kernel."""
         self.fp8_linear.process_weights_after_loading(layer)
 
     def create_weights(
@@ -245,6 +262,7 @@ class QuarkW8A8Fp8PerBlock(QuarkScheme):
         weight_loader: Callable,
         **kwargs,
     ):
+        """Create weight and scale parameters for the per-block W8A8 FP8 scheme."""
         input_size = kwargs.get("input_size", input_size_per_partition)
         output_size = kwargs.get("output_size", sum(output_partition_sizes))
         output_size_per_partition = sum(output_partition_sizes)
@@ -306,4 +324,5 @@ class QuarkW8A8Fp8PerBlock(QuarkScheme):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply per-block FP8 weights to the input tensor."""
         return self.fp8_linear.apply_weights(layer, x, bias)

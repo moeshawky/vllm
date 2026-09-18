@@ -1,6 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+Quark quantization scheme interface.
+
+Defines the abstract base class for all Quark quantization schemes,
+specifying the contract for weight creation, forward passes, and
+post-loading processing.
+
+"""
+
 from abc import ABC, abstractmethod
 
 import torch

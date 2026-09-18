@@ -45,6 +45,7 @@ if current_platform.is_rocm():
 
     @triton.jit
     def round_int8(x):
+        """Round to nearest integer, clamping to int8 range."""
         return tl.extra.hip.libdevice.round(x).to(tl.int8)
 
 
@@ -52,12 +53,14 @@ elif current_platform.is_xpu():
 
     @triton.jit
     def round_int8(x):
+        """Round to nearest integer, clamping to int8 range."""
         return tl.extra.intel.libdevice.round(x).to(tl.int8)
 
 else:
 
     @triton.jit
     def round_int8(x):
+        """Round to nearest integer, clamping to int8 range."""
         return tl.extra.cuda.libdevice.round(x).to(tl.int8)
 
 
@@ -71,6 +74,7 @@ def _per_token_quant_int8(
     N,
     BLOCK: tl.constexpr,
 ):
+    """Triton kernel for per-token int8 quantization."""
     # Adapted from https://github.com/InternLM/lmdeploy/blob/086481ed84b59bee3b8e4274e5fc69620040c048/lmdeploy/pytorch/kernels/cuda/w8a8_triton_kernels.py#L282
     row_id = tl.program_id(0)
 
@@ -88,6 +92,14 @@ def _per_token_quant_int8(
 
 
 def per_token_quant_int8(x):
+    """Quantize a tensor to int8 on a per-token basis.
+
+    Args:
+        x: Input tensor to quantize.
+
+    Returns:
+        Tuple of (quantized tensor, per-token scale factors).
+    """
     original_shape = x.shape
     if x.dim() > 2:
         x = x.view(-1, original_shape[-1])

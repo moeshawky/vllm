@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Quantization config compatibility utilities."""
 
 from typing import TYPE_CHECKING
 
@@ -113,6 +114,14 @@ def is_shared_expert_quant_fse_compatible(
         global_quant_config = quant_config.quant_config["global_quant_config"]
 
         def get_projection_quant_configs(layer_name: str) -> list[object]:
+            """Get quant configs for each projection in a layer.
+
+            Args:
+                layer_name: Full name of the layer including prefix.
+
+            Returns:
+                List of quantization configs for each projection.
+            """
             module_prefix, _, projection_name = layer_name.rpartition(".")
             packed_projection_names = quant_config.packed_modules_mapping.get(
                 projection_name, [projection_name]

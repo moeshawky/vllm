@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""TorchAO quantization integration."""
+
 import importlib
 import json
 import types
@@ -62,6 +64,15 @@ def _restore_weight_attrs(param, recorded_weight_attr):
 
 
 def torchao_version_at_least(torchao_version: str) -> bool:
+    """Check if the installed torchao version meets a minimum.
+
+    Args:
+        torchao_version: Minimum version string to check against.
+
+    Returns:
+        True when torchao is installed and its version is
+        at or above the requested minimum.
+    """
     if find_spec("torchao"):
         try:
             if version.parse(importlib.metadata.version("torchao")) >= version.parse(
@@ -152,13 +163,29 @@ class TorchAOConfig(QuantizationConfig):
         )
 
     def get_name(self) -> QuantizationMethods:
+        """Return the torchao quantization method name.
+
+        Returns:
+            The string "torchao".
+        """
         return "torchao"
 
     def get_supported_act_dtypes(self) -> list[torch.dtype]:
+        """Return the supported activation dtypes.
+
+        Returns:
+            List of supported activation dtypes:
+            float32, float16, bfloat16.
+        """
         return [torch.float32, torch.float16, torch.bfloat16]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the minimum compute capability for torchao.
+
+        Returns:
+            Minimum compute capability (75 for Turing+).
+        """
         return 75
 
     @staticmethod
@@ -242,6 +269,16 @@ class TorchAOConfig(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """Select the quantization method for a layer.
+
+        Args:
+            layer: The linear module to quantize.
+            prefix: The module prefix for the layer.
+
+        Returns:
+            A QuantizeMethodBase instance, or None for
+            unquantized layers.
+        """
         if not isinstance(layer, LinearBase):
             return None
 
@@ -337,6 +374,17 @@ class TorchAOLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create and quantize weight parameters for the layer.
+
+        Args:
+            layer: The module to create weights for.
+            input_size_per_partition: Input size per partition.
+            output_partition_sizes: Output sizes per partition.
+            input_size: Total input size.
+            output_size: Total output size.
+            params_dtype: Parameter dtype.
+            extra_weight_attrs: Additional weight attributes.
+        """
         weight = Parameter(
             torch.empty(
                 sum(output_partition_sizes),
@@ -361,9 +409,27 @@ class TorchAOLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply the linear layer with torchao-quantized weights.
+
+        Args:
+            layer: The linear module.
+            x: Input activations.
+            bias: Optional bias tensor.
+
+        Returns:
+            Output tensor from the linear computation.
+        """
         return F.linear(x, layer.weight, bias)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Process weights after model loading for torchao.
+
+        Converts weights to packed tensor format if needed
+        and restores weight attributes.
+
+        Args:
+            layer: The linear module to process.
+        """
         if self.quant_config.is_checkpoint_torchao_serialized:
             if not hasattr(layer, "weight"):
                 return

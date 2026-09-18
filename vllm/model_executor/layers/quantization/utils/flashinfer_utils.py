@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""FlashInfer MoE utility helpers for weight and activation transformations."""
+
 from typing import TYPE_CHECKING
 
 import torch
@@ -15,10 +17,23 @@ logger = init_logger(__name__)
 
 
 def activation_to_flashinfer_int(activation: MoEActivation) -> int:
+    """Convert a MoE activation enum to its FlashInfer integer type.
+
+    Args:
+        activation: The MoE activation type.
+
+    Returns:
+        The corresponding FlashInfer activation integer.
+    """
     return activation_to_flashinfer_type(activation).value
 
 
 def has_flashinfer_situ_activation() -> bool:
+    """Check if the installed FlashInfer supports SITU activation.
+
+    Returns:
+        True when FlashInfer has SITU activation type.
+    """
     try:
         from flashinfer.fused_moe.core import ActivationType
     except ImportError:
@@ -27,6 +42,18 @@ def has_flashinfer_situ_activation() -> bool:
 
 
 def activation_to_flashinfer_type(activation: MoEActivation) -> "ActivationType":
+    """Convert a MoE activation enum to its FlashInfer type.
+
+    Args:
+        activation: The MoE activation type.
+
+    Returns:
+        The corresponding FlashInfer ActivationType.
+
+    Raises:
+        ValueError: When the installed FlashInfer does not
+            support the requested activation.
+    """
     from flashinfer.fused_moe.core import ActivationType
 
     if activation == MoEActivation.SITU:
@@ -51,6 +78,14 @@ def activation_to_flashinfer_type(activation: MoEActivation) -> "ActivationType"
 
 
 def swap_w13_to_w31(x: torch.Tensor) -> torch.Tensor:
+    """Swap gate and up weights from [w1, w3] to [w3, w1] layout.
+
+    Args:
+        x: Input tensor of shape (E, 2*intermediate, H).
+
+    Returns:
+        Tensor with w13 weights reordered to [w3, w1].
+    """
     return (
         x.reshape(-1, 2, x.shape[-2] // 2, x.shape[-1]).flip(dims=[1]).reshape(x.shape)
     )
@@ -257,6 +292,18 @@ def align_trtllm_fp4_moe_hidden_dim_for_fi(
     w2_scale: torch.Tensor,
     min_alignment: int = 256,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+    """Pad hidden dim for TRT-LLM NVFP4 MoE weights to meet alignment.
+
+    Args:
+        w13: Gate and up weights.
+        w13_scale: Scales for w13 weights.
+        w2: Down weights.
+        w2_scale: Scales for w2 weights.
+        min_alignment: Required alignment in bytes.
+
+    Returns:
+        Padded weights, scales, and hidden size.
+    """
     num_experts, gate_up_dim, packed_hidden_size = w13.shape
     hidden_size = packed_hidden_size * 2
     padded_hidden_size = round_up(hidden_size, min_alignment)

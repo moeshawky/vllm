@@ -49,6 +49,16 @@ def query_marlin_supported_quant_types(
     include_fp_type: bool = True,
     device_capability: int | None = None,
 ):
+    """Return the scalar types supported by the Marlin kernel.
+
+    Args:
+        has_zp: Whether to include zero-point types.
+        include_fp_type: Whether to include FP types.
+        device_capability: The device capability to filter by.
+
+    Returns:
+        List of supported ScalarTypes.
+    """
     if current_platform.is_cpu():
         return _query_cpu_marlin_supported_quant_types(has_zp, include_fp_type)
 
@@ -92,6 +102,7 @@ def _query_cpu_marlin_supported_quant_types(
     has_zp: bool | None = None,
     include_fp_type: bool = True,
 ):
+    """Return the scalar types supported by Marlin on CPU."""
     # - has_zp is True: return quant_types that has zero points
     # - has_zp is False: return quant_types that has not zero points
     # - has_zp is None: both
@@ -121,6 +132,17 @@ def _check_marlin_supported(
     has_zp: bool,
     device_capability: int | None = None,
 ) -> tuple[bool, str | None]:
+    """Check if a Marlin quantization type is supported.
+
+    Args:
+        quant_type: The scalar type to check.
+        group_size: The quantization group size.
+        has_zp: Whether zero-point quantization is used.
+        device_capability: Optional device capability.
+
+    Returns:
+        Tuple of (supported, error_message).
+    """
     if device_capability is None:
         capability_tuple = current_platform.get_device_capability()
         device_capability = (
@@ -156,6 +178,11 @@ def check_marlin_supported(
     has_zp: bool = False,
     device_capability: int | None = None,
 ) -> bool:
+    """Check if Marlin supports the given quantization config.
+
+    Returns:
+        True if the config is supported.
+    """
     cond, _ = _check_marlin_supported(quant_type, group_size, has_zp, device_capability)
     return cond
 
@@ -163,6 +190,13 @@ def check_marlin_supported(
 def verify_marlin_supported(
     quant_type: ScalarType, group_size: int, has_zp: bool = False
 ) -> None:
+    """Raise ValueError if Marlin does not support the given config.
+
+    Args:
+        quant_type: The scalar type to check.
+        group_size: The quantization group size.
+        has_zp: Whether zero-point quantization is used.
+    """
     cond, err_msg = _check_marlin_supported(quant_type, group_size, has_zp)
     if not cond:
         assert err_msg is not None
@@ -175,6 +209,17 @@ def verify_marlin_supports_shape(
     input_size: int,
     group_size: int,
 ) -> None:
+    """Validate that Marlin supports the given shape dimensions.
+
+    Args:
+        output_size_per_partition: Output size per partition.
+        input_size_per_partition: Input size per partition.
+        input_size: Total input size.
+        group_size: Quantization group size.
+
+    Raises:
+        ValueError: If the shape is not supported.
+    """
     # Validate output_size_per_partition
     if output_size_per_partition % GPTQ_MARLIN_MIN_THREAD_N != 0:
         raise ValueError(
@@ -209,6 +254,11 @@ def check_marlin_supports_shape(
     input_size: int,
     group_size: int,
 ) -> tuple[bool, str | None]:
+    """Check if Marlin supports the given shape dimensions.
+
+    Returns:
+        Tuple of (supported, error_message).
+    """
     try:
         verify_marlin_supports_shape(
             output_size_per_partition, input_size_per_partition, input_size, group_size
@@ -305,6 +355,16 @@ def marlin_unpad_output(
 def check_marlin_supports_layer(
     layer: LinearBase, group_size: int, allow_tile_padding: bool = False
 ) -> bool:
+    """Check if Marlin supports a linear layer's shape.
+
+    Args:
+        layer: The linear layer.
+        group_size: The quantization group size.
+        allow_tile_padding: Whether to allow tile padding.
+
+    Returns:
+        True if the layer shape is supported.
+    """
     output_size_per_partition = (
         getattr(layer, "output_size_per_partition", None) or layer.output_size
     )
@@ -391,6 +451,11 @@ def check_moe_marlin_supports_layer(
     group_size: int,
     allow_tile_padding: bool = False,
 ) -> bool:
+    """Check if Marlin supports an MoE layer's shape and config.
+
+    Returns:
+        True if the MoE layer is supported.
+    """
     return check_moe_marlin_supports_config(
         layer.moe_config, group_size, allow_tile_padding
     )
@@ -434,12 +499,22 @@ def marlin_make_workspace_new(
 
 
 def marlin_is_k_full(act_order: bool, is_row_parallel: bool) -> bool:
+    """Check if the K dimension is full (not row-parallel sliced).
+
+    Returns:
+        True if K is the full dimension.
+    """
     return (not act_order) or (act_order and not is_row_parallel)
 
 
 def marlin_repeat_scales_on_all_ranks(
     act_order: bool, group_size: int, is_row_parallel: bool
 ) -> bool:
+    """Check if scales must be repeated on every rank.
+
+    Returns:
+        True if scales should be repeated across ranks.
+    """
     # Need to repeat scales on every rank if act_ordering or
     # channelwise and RowParallelLinear
     is_channelwise = group_size == -1
@@ -447,17 +522,28 @@ def marlin_repeat_scales_on_all_ranks(
 
 
 def marlin_make_empty_g_idx(device: torch.device) -> torch.Tensor:
+    """Create an empty int32 tensor for use as a G-index workspace."""
     return torch.nn.Parameter(
         torch.empty(0, dtype=torch.int, device=device), requires_grad=False
     )
 
 
 def marlin_sort_g_idx(g_idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sort G-index and return the sorted values with sort indices.
+
+    Returns:
+        Tuple of (sorted_g_idx, sort_indices).
+    """
     g_idx_sort_indices = torch.argsort(g_idx).to(torch.int)
     return g_idx[g_idx_sort_indices], g_idx_sort_indices
 
 
 def get_scale_perms():
+    """Return the scale permutation tables for Marlin.
+
+    Returns:
+        Tuple of (scale_perm, scale_perm_single).
+    """
     scale_perm: list[int] = []
     for i in range(8):
         scale_perm.extend([i + 8 * j for j in range(8)])
@@ -488,6 +574,11 @@ def marlin_permute_bias(s: torch.Tensor) -> torch.Tensor:
 
 
 def marlin_act_int8_process_scales(s: torch.Tensor):
+    """Process activation int8 scales for the Marlin kernel.
+
+    Returns:
+        Tuple of (processed scales, scale factor).
+    """
     a_scales_scale_factor = 1 / 4096 * s.max().float()
     s = s / s.max() * 4096
     s = s.round().to(torch.int16).view(s.dtype)
@@ -618,6 +709,7 @@ def moe_packed_to_marlin_zero_points(
 
 
 def maybe_warn_marlin_atomic_add_env():
+    """Warn if the experimental atomic-add reduce feature is not enabled."""
     if torch.compiler.is_dynamo_compiling():
         return
     if envs.VLLM_MARLIN_USE_ATOMIC_ADD:
@@ -633,6 +725,11 @@ def maybe_warn_marlin_atomic_add_env():
 def should_use_atomic_add_reduce(
     m: int, n: int, k: int, device: torch.device, dtype: torch.dtype
 ) -> bool:
+    """Determine if atomic-add reduce is faster than global reduce.
+
+    Returns:
+        True if atomic-add reduce should be used.
+    """
     # the performance of atomicAdd is better than global reduce
     # only when m*n is small and k is large
     if n >= 2048 or k < 2048 or device.type != "cuda":
@@ -657,6 +754,7 @@ _quant_fp8_method: QuantFP8 | None = None
 
 
 def get__quant_fp8_method() -> QuantFP8:
+    """Return the cached FP8 quantization method instance."""
     global _quant_fp8_method
     if _quant_fp8_method is None:
         _quant_fp8_method = QuantFP8(False, GroupShape.PER_TOKEN)
@@ -664,6 +762,11 @@ def get__quant_fp8_method() -> QuantFP8:
 
 
 def get_marlin_input_dtype(prefix: str | None = None):
+    """Get the Marlin input dtype from the environment variable.
+
+    Returns:
+        The torch dtype for Marlin input, or None if not configured.
+    """
     if envs.VLLM_MARLIN_INPUT_DTYPE is None:
         return
     elif envs.VLLM_MARLIN_INPUT_DTYPE.lower() == "int8":
@@ -686,6 +789,15 @@ def get_marlin_input_dtype(prefix: str | None = None):
 
 
 def marlin_quant_input(x: torch.Tensor, quant_dtype: torch.dtype):
+    """Quantize input to int8 or FP8 for the Marlin kernel.
+
+    Args:
+        x: Input tensor.
+        quant_dtype: The target quantization dtype.
+
+    Returns:
+        Tuple of (quantized tensor, scale factors).
+    """
     x = x.reshape(-1, x.shape[-1])
     if quant_dtype == torch.int8:
         return per_token_quant_int8(x)

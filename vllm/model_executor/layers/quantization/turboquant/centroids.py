@@ -51,6 +51,14 @@ def solve_lloyd_max(
     sigma = math.sqrt(sigma2)
 
     def pdf(x):
+        """Evaluate the Gaussian probability density function.
+
+        Args:
+            x: The point at which to evaluate the PDF.
+
+        Returns:
+            The probability density at x.
+        """
         return _gaussian_pdf(x, sigma2)
 
     lo, hi = -3.5 * sigma, 3.5 * sigma

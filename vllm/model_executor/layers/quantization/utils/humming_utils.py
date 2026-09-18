@@ -57,6 +57,11 @@ logger = init_logger(__name__)
 
 @dataclass(kw_only=True)
 class HummingMoEQuantConfig(FusedMoEQuantConfig):
+    """Quantization config for Humming MoE experts.
+
+    Holds per-sublayer (w13, w2) Humming layer configurations
+    alongside activation and weight quantization descriptors.
+    """
     w1_humming_config: "LayerConfig"
     w2_humming_config: "LayerConfig"
 
@@ -147,6 +152,7 @@ def _humming_weight_schema_to_quant_key(
 
 
 def _fp8_weight_schema_to_quant_key(schema: "Fp8WeightSchema") -> QuantKey:
+    """Convert an Fp8WeightSchema to a QuantKey."""
     if schema.weight_block_size is not None:
         gs_n, gs_k = schema.weight_block_size
         group_shape = GroupShape(row=gs_n, col=gs_k)
@@ -158,6 +164,7 @@ def _fp8_weight_schema_to_quant_key(schema: "Fp8WeightSchema") -> QuantKey:
 
 
 def _awq_weight_schema_to_quant_key(schema: "AWQWeightSchema") -> QuantKey:
+    """Convert an AWQWeightSchema to a QuantKey."""
     group_shape = _group_shape(schema.group_size)
     scale = ScaleDesc(
         dtype=torch.float16,
@@ -172,6 +179,7 @@ def _awq_weight_schema_to_quant_key(schema: "AWQWeightSchema") -> QuantKey:
 
 
 def _gptq_weight_schema_to_quant_key(schema: "GPTQWeightSchema") -> QuantKey:
+    """Convert a GPTQWeightSchema to a QuantKey."""
     group_shape = _group_shape(schema.group_size)
     scale = ScaleDesc(
         dtype=torch.float16,
@@ -184,6 +192,7 @@ def _gptq_weight_schema_to_quant_key(schema: "GPTQWeightSchema") -> QuantKey:
 def _compressed_tensors_weight_schema_to_quant_key(
     schema: "CompressedTensorsWeightSchema",
 ) -> QuantKey:
+    """Convert a CompressedTensorsWeightSchema to a QuantKey."""
     # Determine dtype from format/type/num_bits
     fmt = schema.format
     if fmt in ("int-quantized", "float-quantized", "naive-quantized"):
@@ -397,6 +406,15 @@ def input_schema_to_quant_key(
 
 
 def humming_is_layer_skipped(config: dict[str, Any], prefix: str):
+    """Check whether a layer should be skipped for Humming quantization.
+
+    Args:
+        config: Quantization config dict.
+        prefix: The module name prefix.
+
+    Returns:
+        True if the layer is skipped.
+    """
     if not config:
         return True
 
@@ -463,6 +481,17 @@ def prepare_humming_linear_layer_config(
     quant_config: dict,
     input_quant_config: dict | None = None,
 ) -> "LayerConfig":
+    """Prepare a Humming layer config by converting weight and input
+    schemas and transforming layer parameters.
+
+    Args:
+        layer: The linear layer to prepare.
+        quant_config: Weight quantization config dict.
+        input_quant_config: Optional input quantization config dict.
+
+    Returns:
+        The Humming layer config.
+    """
     from vllm.utils.humming import (
         BaseInputSchema,
         BaseWeightSchema,
@@ -543,6 +572,18 @@ def apply_humming_linear(
     compute_config: str,
     locks: torch.Tensor,
 ) -> torch.Tensor:
+    """Apply a Humming linear layer to input ``x``.
+
+    Args:
+        layer: The linear layer.
+        x: Input tensor.
+        layer_config: The Humming layer config.
+        compute_config: The compute config string.
+        locks: Tensor of locks for expert parallelism.
+
+    Returns:
+        The output tensor with the original shape minus the last dim.
+    """
     from vllm.utils.humming import humming_forward
 
     flatten_inputs = x.reshape(-1, x.size(-1))
@@ -578,6 +619,12 @@ def make_humming_moe_quant_config(
     gemm1_clamp_limit: float | None = None,
     humming_configs: dict[str, "LayerConfig"] | None = None,
 ) -> HummingMoEQuantConfig:
+    """Build a HummingMoEQuantConfig from individual quantization
+    descriptors for each expert sublayer.
+
+    Returns:
+        The constructed HummingMoEQuantConfig.
+    """
     assert humming_configs is not None
     if quant_dtype is None:
         a_quant_desc = FusedMoEQuantDesc(dtype=None)
@@ -630,6 +677,18 @@ def get_humming_moe_quant_config(
     gemm1_beta: float | None = None,
     gemm1_clamp_limit: float | None = None,
 ):
+    """Derive the HummingMoEQuantConfig from a RoutedExperts layer.
+
+    Args:
+        layer: The routed experts layer.
+        humming_configs: Optional pre-built Humming configs.
+        gemm1_alpha: Optional alpha for the first GEMM.
+        gemm1_beta: Optional beta for the first GEMM.
+        gemm1_clamp_limit: Optional clamp limit for the first GEMM.
+
+    Returns:
+        The derived HummingMoEQuantConfig.
+    """
     if humming_configs is None:
         humming_configs = layer.humming_configs
     input_schema = layer.input_schemas["w13"]
@@ -755,6 +814,17 @@ def make_humming_moe_kernel(
     experts_cls: type[mk.FusedMoEExperts],
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> mk.FusedMoEKernel:
+    """Create a Humming MoE kernel with the given config and experts class.
+
+    Args:
+        moe_quant_config: The quantization config.
+        moe_config: The FusedMoE config.
+        experts_cls: The experts class to use.
+        routing_tables: Optional routing tables.
+
+    Returns:
+        The constructed FusedMoEKernel.
+    """
     # Create Prepare/Finalize.
     prepare_finalize = maybe_make_prepare_finalize(
         moe=moe_config,

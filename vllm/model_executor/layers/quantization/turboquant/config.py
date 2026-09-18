@@ -122,6 +122,7 @@ class TurboQuantConfig:
 
     @property
     def n_centroids(self) -> int:
+        """Number of centroids (2**mse_bits)."""
         return 2**self.mse_bits
 
     @property

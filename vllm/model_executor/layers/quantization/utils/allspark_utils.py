@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""AllSpark quantization utility helpers."""
 
 import torch
 
@@ -19,6 +20,19 @@ def check_allspark_supported_dtype_shape(
     weight_dtype: ScalarType,
     act_dtype: torch.dtype,
 ):
+    """Check if AllSpark supports the given dtype and shape configuration.
+
+    Args:
+        input_size_per_partition: Input size per partition.
+        output_size_per_partition: Output size per partition.
+        group_size: Group size for quantization.
+        weight_dtype: The weight scalar type.
+        act_dtype: The activation dtype.
+
+    Returns:
+        A tuple of (supported, reason). Supported is True when
+        the configuration is valid for AllSpark on the current device.
+    """
     capability_tuple = current_platform.get_device_capability()
     device_capability = -1 if capability_tuple is None else capability_tuple.to_int()
 

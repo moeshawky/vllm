@@ -1,6 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+Quark quantization utility functions.
+
+Provides helpers for deep comparison, layer-name filtering,
+and MXFP4 weight quantization.
+
+"""
+
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Any
@@ -10,6 +19,7 @@ import torch
 
 
 def deep_compare(dict1: Any, dict2: Any) -> bool:
+    """Recursively compare two dicts/lists for deep equality."""
     if type(dict1) is not type(dict2):
         return False
     if isinstance(dict1, dict):
@@ -30,6 +40,7 @@ def should_ignore_layer(
     *,
     check_children: bool = False,
 ) -> bool:
+    """Check whether a layer should be ignored based on name and targets."""
     if layer_name is None:
         return False
 
@@ -125,6 +136,7 @@ def _is_equal_or_regex_match(
 
 # utility for tensor dims > 2 cases
 def quark_quantize_weight_to_mxfp4(w: torch.Tensor):
+    """Quantize a weight tensor to MXFP4 format using AITER."""
     assert w.dtype == torch.bfloat16, (
         "Quark dynamic quantization is supported only for fp16 weights and only to MXF4"
     )

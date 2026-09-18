@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Online FP8 (microscaling FP8) quantization methods."""
+
 from typing import TYPE_CHECKING
 
 import torch
@@ -131,6 +133,7 @@ class _Fp8OnlineLinearBase(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create FP8 quantization weights for a linear layer."""
         output_size_per_partition = sum(output_partition_sizes)
         weight_loader = extra_weight_attrs.get("weight_loader")
         layer.logical_widths = output_partition_sizes
@@ -183,6 +186,7 @@ class Fp8PerTensorOnlineLinearMethod(_Fp8OnlineLinearBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create weights for per-tensor FP8 quantization."""
         super().create_weights(
             layer,
             input_size_per_partition,
@@ -204,6 +208,7 @@ class Fp8PerTensorOnlineLinearMethod(_Fp8OnlineLinearBase):
         self.use_marlin = isinstance(self.fp8_linear, MarlinFP8ScaledMMLinearKernel)
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process FP8 weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -230,6 +235,7 @@ class Fp8PerTensorOnlineLinearMethod(_Fp8OnlineLinearBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply per-tensor FP8 quantization to input."""
         # if batch invariant mode is enabled, use BF16 dequant
         if envs.VLLM_BATCH_INVARIANT:
             if isinstance(self.fp8_linear, CutlassFP8ScaledMMLinearKernel):
@@ -281,6 +287,7 @@ class Fp8PerBlockOnlineLinearMethod(_Fp8OnlineLinearBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create weights for per-block FP8 quantization."""
         super().create_weights(
             layer,
             input_size_per_partition,
@@ -302,6 +309,7 @@ class Fp8PerBlockOnlineLinearMethod(_Fp8OnlineLinearBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process FP8 weights after loading for per-block quantization."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -326,6 +334,7 @@ class Fp8PerBlockOnlineLinearMethod(_Fp8OnlineLinearBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply per-block FP8 quantization to input."""
         assert self.weight_block_size is not None
 
         # Note: batch invariance already handled in the function below
@@ -357,6 +366,7 @@ class Fp8PtpcOnlineLinearMethod(_Fp8OnlineLinearBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        """Create weights for PTPC FP8 quantization."""
         super().create_weights(
             layer,
             input_size_per_partition,
@@ -386,6 +396,7 @@ class Fp8PtpcOnlineLinearMethod(_Fp8OnlineLinearBase):
             )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process PTPC FP8 weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -410,6 +421,7 @@ class Fp8PtpcOnlineLinearMethod(_Fp8OnlineLinearBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply PTPC FP8 quantization to input."""
         # if batch invariant mode is enabled dequant
         if envs.VLLM_BATCH_INVARIANT and not isinstance(
             self.fp8_linear, CutlassFP8ScaledMMLinearKernel
@@ -521,6 +533,7 @@ class _Fp8OnlineMoEBase(OnlineMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: torch.nn.Module
     ) -> "FusedMoEQuantConfig":
+        """Get fused MoE quantization configuration."""
         from vllm.model_executor.layers.fused_moe.oracle.fp8 import (
             make_fp8_moe_quant_config,
         )
@@ -563,6 +576,7 @@ class Fp8PerTensorOnlineMoEMethod(_Fp8OnlineMoEBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process FP8 MoE weights after loading."""
         # TODO(@ksayers): inplace fp8 quant kernel, initialize scales with ones
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
@@ -626,6 +640,7 @@ class Fp8PerBlockOnlineMoEMethod(_Fp8OnlineMoEBase):
         act_dtype: torch.dtype,
         moe_parallel_config,
     ) -> tuple[int, int]:
+        """Roundup hidden and intermediate sizes for blockwise FP8 MoE."""
         hidden_size, intermediate_size_per_partition = super().maybe_roundup_sizes(
             hidden_size=hidden_size,
             intermediate_size_per_partition=intermediate_size_per_partition,
@@ -640,6 +655,7 @@ class Fp8PerBlockOnlineMoEMethod(_Fp8OnlineMoEBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process blockwise FP8 MoE weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -744,6 +760,7 @@ class Fp8PtpcOnlineMoEMethod(_Fp8OnlineMoEBase):
             )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process PTPC FP8 MoE weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Online INT8 quantization methods."""
+
 from typing import TYPE_CHECKING
 
 import torch
@@ -48,6 +50,7 @@ class Int8OnlineMoEMethod(OnlineMoEMethodBase):
         )
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        """Process INT8 MoE weights after loading."""
         if getattr(layer, "_already_called_process_weights_after_loading", False):
             return
 
@@ -123,6 +126,7 @@ class Int8OnlineMoEMethod(OnlineMoEMethodBase):
     def get_fused_moe_quant_config(
         self, layer: torch.nn.Module
     ) -> "FusedMoEQuantConfig | None":
+        """Get fused MoE quantization configuration."""
         return make_int8_moe_quant_config(
             int8_backend=self.int8_backend,
             w1_scale=getattr(layer, "w13_scale", None),

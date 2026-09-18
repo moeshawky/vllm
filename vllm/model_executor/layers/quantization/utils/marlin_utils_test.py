@@ -18,6 +18,13 @@ from .quant_utils import (
 
 
 class MarlinWorkspace:
+    """Workspace for Marlin kernel operations.
+
+    Args:
+        out_features: Number of output features.
+        min_thread_n: Minimum thread count in N dimension.
+        max_parallel: Maximum parallelism for workspace.
+    """
     def __init__(self, out_features, min_thread_n, max_parallel):
         assert out_features % min_thread_n == 0, (
             "out_features = {} is indivisible by min_thread_n = {}".format(
@@ -33,6 +40,19 @@ class MarlinWorkspace:
 def marlin_permute_weights(
     q_w, size_k, size_n, perm, tile=GPTQ_MARLIN_TILE, is_a_8bit=False
 ):
+    """Permute GPTQ-quantized weights into Marlin tile layout.
+
+    Args:
+        q_w: Quantized weight tensor.
+        size_k: K dimension size.
+        size_n: N dimension size.
+        perm: Permutation table.
+        tile: Marlin tile size.
+        is_a_8bit: Whether using 8-bit weights.
+
+    Returns:
+        Permuted weight tensor.
+    """
     assert q_w.shape == (size_k, size_n)
     assert size_k % tile == 0, f"size_k = {size_k}, tile = {tile}"
     assert size_n % tile == 0, f"size_k = {size_n}, tile = {tile}"
@@ -52,6 +72,19 @@ def marlin_permute_weights(
 
 
 def marlin_weights(q_w, size_k, size_n, num_bits, perm, is_a_8bit=False):
+    """Pack permuted weights into Marlin format.
+
+    Args:
+        q_w: Permed quantized weight tensor.
+        size_k: K dimension size.
+        size_n: N dimension size.
+        num_bits: Number of quantization bits.
+        perm: Permutation table.
+        is_a_8bit: Whether using 8-bit weights.
+
+    Returns:
+        Packed weight tensor in Marlin layout.
+    """
     # Permute
     q_w = marlin_permute_weights(q_w, size_k, size_n, perm, is_a_8bit=is_a_8bit)
 
@@ -71,6 +104,15 @@ def marlin_weights(q_w, size_k, size_n, num_bits, perm, is_a_8bit=False):
 
 
 def get_weight_perm(num_bits: int, is_a_8bit: bool = False):
+    """Generate the weight permutation table for Marlin.
+
+    Args:
+        num_bits: Number of quantization bits (4 or 8).
+        is_a_8bit: Whether using 8-bit weights.
+
+    Returns:
+        Permutation tensor.
+    """
     perm_list: list[int] = []
     if is_a_8bit:
         for i in range(32):
@@ -133,6 +175,19 @@ def marlin_quantize(
     test_perm: torch.Tensor | None = None,
     input_dtype: torch.dtype | None = None,
 ):
+    """Quantize weights to Marlin format for testing.
+
+    Args:
+        w: Weight tensor.
+        quant_type: Scalar quantization type.
+        group_size: Quantization group size.
+        act_order: Whether to use activation ordering.
+        test_perm: Optional test permutation.
+        input_dtype: Optional input dtype.
+
+    Returns:
+        List of reference weight, quantized weight, scales, g_idx, etc.
+    """
     is_a_8bit = input_dtype is not None and input_dtype.itemsize == 1
 
     size_k, size_n = w.shape
@@ -179,6 +234,17 @@ def awq_marlin_quantize(
     group_size: int,
     input_dtype: torch.dtype | None = None,
 ):
+    """Quantize AWQ weights to Marlin format for testing.
+
+    Args:
+        w: Weight tensor.
+        quant_type: Scalar quantization type.
+        group_size: Quantization group size.
+        input_dtype: Optional input dtype.
+
+    Returns:
+        List of reference weight, quantized weight, scales, and zero points.
+    """
     is_a_8bit = input_dtype is not None and input_dtype.itemsize == 1
     size_k, size_n = w.shape
 

@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Quark quantization methods for vLLM.
+
+Implements the QuarkLinearMethod and QuarkConfig classes
+that support various quantization schemes including NVFP4,
+FP8, MXFP4, and INT8 through the Quark framework.
+"""
+
 import fnmatch
 from typing import TYPE_CHECKING, Any, cast
 
@@ -56,6 +63,10 @@ _DEEPSEEK_V3_FAMILY_MODEL_TYPES = frozenset({"deepseek_v3", "deepseek_v32"})
 
 
 class QuarkConfig(QuantizationConfig):
+    """Configuration class for Quark quantization schemes.
+
+    Manages quantization parameters, KV-cache settings, and
+    scheme selection for DeepSeek-family models."""
     def __init__(
         self,
         quant_config: dict[str, Any],
@@ -112,16 +123,20 @@ class QuarkConfig(QuantizationConfig):
                 self.dynamic_mxfp4_quant = True
 
     def get_linear_method(self) -> "QuarkLinearMethod":
+        """Return the QuarkLinearMethod instance for this configuration."""
         return QuarkLinearMethod(self)
 
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
+        """Return the supported activation data types for Quark quantization."""
         return [torch.float16, torch.bfloat16]
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return the minimum GPU compute capability required by Quark."""
         return 70
 
     def get_name(self) -> QuantizationMethods:
+        """Return the quantization method name identifier: 'quark'."""
         return "quark"
 
     def apply_vllm_mapper(  # noqa: B027
@@ -155,6 +170,8 @@ class QuarkConfig(QuantizationConfig):
     def get_quant_method(
         self, layer: torch.nn.Module, prefix: str
     ) -> "QuantizeMethodBase | None":
+        """Select and return the appropriate quantize method for a layer
+        based on its configuration and type."""
         # Check if the layer is skipped for quantization.
         exclude_layers = cast(list[str], self.quant_config.get("exclude"))
         if should_ignore_layer(
@@ -192,6 +209,8 @@ class QuarkConfig(QuantizationConfig):
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "QuarkConfig":
+        """Construct a QuarkConfig instance from a dictionary of
+        quantization configuration parameters."""
         export_config = config.get("export")
         if export_config is None:
             raise ValueError(
@@ -270,6 +289,7 @@ class QuarkConfig(QuantizationConfig):
 
     @classmethod
     def get_config_filenames(cls) -> list[str]:
+        """Return an empty list as Quark does not use separate config files."""
         return []
 
     def _check_scheme_supported(self, min_capability: int, error: bool = True) -> bool:
@@ -579,6 +599,8 @@ class QuarkConfig(QuantizationConfig):
     def get_layer_quant_config_from_name(
         self, layer_name: str
     ) -> dict[str, Any] | None:
+        """Retrieve the quantization configuration for a given layer name
+        from the packed modules mapping or layer_quant_config."""
         proj_name = layer_name.split(".")[-1]
         if proj_name in self.packed_modules_mapping:
             shard_proj_names = self.packed_modules_mapping[proj_name]
@@ -717,6 +739,8 @@ class QuarkConfig(QuantizationConfig):
     def get_scheme(
         self, layer: torch.nn.Module, layer_name: str, dynamic_mxfp4_quant: bool = False
     ) -> "QuarkScheme":
+        """Determine and return the QuarkScheme for a layer based on
+        its quantization configuration and name."""
         layer_quant_config = self._find_matched_config(layer_name, layer)
 
         # Find the quant_scheme
@@ -743,10 +767,16 @@ class QuarkConfig(QuantizationConfig):
 
 
 class QuarkLinearMethod(LinearMethodBase):
+    """Linear quantization method for the Quark framework.
+
+    Applies the selected QuarkScheme to linear layers, handling
+    weight creation and forward passes."""
     def __init__(self, quantization_config: QuarkConfig):
         self.quantization_config = quantization_config
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Delegate weight processing to the layer's scheme after
+        quantization weights have been loaded."""
         layer.scheme.process_weights_after_loading(layer)
 
     def create_weights(

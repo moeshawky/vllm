@@ -1,6 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+Quark W4A8 MXFP4+FP8 quantization scheme.
+
+Implements mixed-precision quantization with MXFP4 weights and FP8
+activations, supporting both AITER kernel acceleration and emulation
+fallback.
+
+"""
+
 from collections.abc import Callable
 from fractions import Fraction
 from typing import Any
@@ -79,9 +89,11 @@ class QuarkW4A8_MXFP4_FP8(QuarkScheme):
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return minimum device capability required for this scheme."""
         return 70
 
     def get_packed_dim(self, dim: int) -> int:
+        """Return packed dimension for MXFP4 packing."""
         assert dim % 2 == 0, f"Dimension {dim} must be even for MXFP4 packing"
         return dim // 2
 
@@ -94,6 +106,7 @@ class QuarkW4A8_MXFP4_FP8(QuarkScheme):
         weight_loader: Callable,
         **kwargs,
     ):
+        """Create weight parameters for the W4A8 MXFP4+FP8 scheme."""
         output_size_per_partition = sum(output_partition_sizes)
         layer.logical_widths = output_partition_sizes
         layer.input_size_per_partition = input_size_per_partition
@@ -141,6 +154,7 @@ class QuarkW4A8_MXFP4_FP8(QuarkScheme):
             layer.register_parameter("input_scale", input_scale)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Process weights and scales after loading is complete."""
         # Ensuring weights & scales are non-trainable
         layer.weight = torch.nn.Parameter(layer.weight.data, requires_grad=False)
         layer.weight_scale = torch.nn.Parameter(
@@ -164,6 +178,7 @@ class QuarkW4A8_MXFP4_FP8(QuarkScheme):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Apply weights to the input tensor, returning the quantized output."""
         if self.use_aiter_kernel:
             return self._apply_aiter_kernel(layer, x, bias)
         else:

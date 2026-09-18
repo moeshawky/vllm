@@ -10,6 +10,14 @@ MACHETE_PREPACKED_BLOCK_SHAPE = [64, 128]
 
 
 def query_machete_supported_quant_types(zero_points: bool) -> list[ScalarType]:
+    """Return the ScalarTypes supported by the Machete kernel.
+
+    Args:
+        zero_points: Whether to include types with zero-point support.
+
+    Returns:
+        List of supported ScalarTypes for Machete quantization.
+    """
     if zero_points:
         return [scalar_types.uint4, scalar_types.uint8]
     else:
@@ -37,6 +45,16 @@ def query_machete_supported_group_sizes(act_type: torch.dtype) -> list[int]:
 def check_machete_supports_shape(
     in_features: int, out_features: int
 ) -> tuple[bool, str | None]:
+    """Check if the Machete kernel supports the given input and output
+    feature dimensions.
+
+    Args:
+        in_features: Input feature dimension.
+        out_features: Output feature dimension.
+
+    Returns:
+        Tuple of (supported, reason). ``reason`` is None when supported.
+    """
     if in_features % MACHETE_PREPACKED_BLOCK_SHAPE[0] != 0:
         return (
             False,

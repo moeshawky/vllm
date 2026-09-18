@@ -6,6 +6,11 @@ import torch
 
 
 def update_tensor_inplace(dst: torch.Tensor, src: torch.Tensor):
+    """Update ``dst`` in-place to match ``src`` shape and stride.
+
+    If the underlying storage differs, copies data and deletes the
+    old tensor reference.
+    """
     assert dst.dtype == src.dtype, "Tensors must have the same dtype"
 
     # update tensor shape and stride
@@ -22,6 +27,9 @@ def update_tensor_inplace(dst: torch.Tensor, src: torch.Tensor):
 def replace_parameter(
     mod: torch.nn.Module, name: str, new: torch.Tensor | torch.nn.Parameter
 ) -> None:
+    """Replace a module parameter with a new tensor, updating in-place
+    when storage is compatible, otherwise re-registering the parameter.
+    """
     old = getattr(mod, name)
     if (
         type(old) is type(new)

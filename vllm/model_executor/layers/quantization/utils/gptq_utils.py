@@ -23,6 +23,13 @@ else:
 # Match dynamic rules with module name (prefix) and override quantize
 # config if module (prefix) matches a rule
 def override_config(config: AutoGPTQConfig, prefix: str):
+    """Override quantization config values based on dynamic rules
+    matching the module prefix.
+
+    Args:
+        config: The AutoGPTQConfig to modify in-place.
+        prefix: The module name prefix used to match dynamic rules.
+    """
     weight_bits = get_dynamic_override(config, prefix, "bits", config.weight_bits)
     if isinstance(weight_bits, int):
         config.weight_bits = weight_bits
@@ -54,6 +61,18 @@ def get_dynamic_override(
     key: str | None = None,
     default_value: int | bool | None = None,
 ) -> dict | int | bool | None:
+    """Get a quantization config value overridden by a dynamic rule
+    matching the layer name.
+
+    Args:
+        config: The AutoGPTQConfig containing dynamic rules.
+        layer_name: The module name prefix to match against rules.
+        key: The config key to look up. None returns the whole dict.
+        default_value: Value returned when no rule matches.
+
+    Returns:
+        The overridden value, the full pattern dict, or the default.
+    """
     for pattern, pattern_dict in config.dynamic.items():
         # Negative match: matched modules are excluded from quantized init
         if pattern.startswith("-:"):
@@ -70,6 +89,14 @@ def get_dynamic_override(
 
 
 def flatten_list(lst: list[Any]) -> list[Any]:
+    """Flatten a nested list into a single-level list.
+
+    Args:
+        lst: A potentially nested list of any elements.
+
+    Returns:
+        A flat list containing all elements in depth-first order.
+    """
     output = []
 
     def _flatten(lst: list[Any]):
@@ -88,6 +115,18 @@ def is_layer_gptq_quantized(
     quantized_layers: list[str],
     fused_mapping: Mapping[str, list[str]] = MappingProxyType({}),
 ) -> bool:
+    """Check whether a layer identified by ``prefix`` is GPTQ-quantized.
+
+    Handles fused module mappings by checking all shard prefixes.
+
+    Args:
+        prefix: The module name prefix (e.g. model.layers.0.self_attn.q_proj).
+        quantized_layers: List of quantized layer name substrings.
+        fused_mapping: Mapping of fused module names to their shard names.
+
+    Returns:
+        True if the layer is GPTQ-quantized.
+    """
     # prefix: model.layers.0.self_attn.q_proj
     # proj_name: q_proj
 
@@ -136,6 +175,19 @@ def get_linear_quant_method(
     prefix: str,
     linear_method_cls: type,
 ):
+    """Determine the quantization method for a linear layer
+    based on GPTQ config and dynamic overrides.
+
+    Args:
+        config: The AutoGPTQConfig.
+        layer: The linear module to check.
+        prefix: The module name prefix.
+        linear_method_cls: The base linear method class.
+
+    Returns:
+        The quantized linear method, or an unquantized fallback,
+        or None if the layer is not a linear type.
+    """
     cloned_config = deepcopy(config)
     parallel_lm_head_quantized = (
         isinstance(layer, ParallelLMHead) and cloned_config.lm_head_quantized

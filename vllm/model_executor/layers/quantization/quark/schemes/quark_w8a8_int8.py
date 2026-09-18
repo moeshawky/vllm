@@ -1,6 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+
+Quark W8A8 INT8 quantization scheme.
+
+Implements INT8 weight quantization with per-tensor or per-channel
+scaling, targeting Turing and newer hardware.
+
+"""
+
 from collections.abc import Callable
 
 import torch
@@ -21,6 +30,7 @@ logger = init_logger(__name__)
 
 
 class QuarkW8A8Int8(QuarkScheme):
+    """Quark W8A8 INT8 quantization scheme with per-tensor or per-channel weights."""
     def __init__(
         self,
         qscheme: str,
@@ -33,6 +43,7 @@ class QuarkW8A8Int8(QuarkScheme):
 
     @classmethod
     def get_min_capability(cls) -> int:
+        """Return minimum device capability (turing and up)."""
         # turing and up
         return 75
 
@@ -45,6 +56,7 @@ class QuarkW8A8Int8(QuarkScheme):
         weight_loader: Callable,
         **kwargs,
     ):
+        """Create weight and scale parameters for the W8A8 INT8 scheme."""
         layer.logical_widths = output_partition_sizes
 
         # Quark stores per-channel weight_scale as 1D [N]; reshape to [N, 1].
@@ -124,6 +136,7 @@ class QuarkW8A8Int8(QuarkScheme):
     # Checkpoints are serialized in quark format, which is
     # different from the format the kernel may want. Handle repacking here.
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        """Repack checkpoint weights into the kernel's expected format."""
         layer.register_parameter("weight_zero_point", None)
         delattr(layer, "weight_zero_point")
         if self.input_symmetric:
@@ -135,4 +148,5 @@ class QuarkW8A8Int8(QuarkScheme):
     def apply_weights(
         self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None
     ) -> torch.Tensor:
+        """Apply INT8 weights to the input tensor via the INT8 kernel."""
         return self.kernel.apply_weights(layer, x, bias)

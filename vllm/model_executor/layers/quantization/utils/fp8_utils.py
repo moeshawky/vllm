@@ -40,6 +40,14 @@ logger = init_logger(__name__)
 
 
 def is_fp8(x: torch.dtype | torch.Tensor) -> bool:
+    """Check if a dtype or tensor is an FP8 type.
+
+    Args:
+        x: A torch dtype or tensor.
+
+    Returns:
+        True if the dtype is float8_e4m3fn or float8_e4m3fnuz.
+    """
     if isinstance(x, torch.Tensor):
         x = x.dtype
     return x == torch.float8_e4m3fn or x == torch.float8_e4m3fnuz
@@ -139,6 +147,7 @@ def _silu_mul_quant_fp8_packed_kernel(
     BLOCK_M: tl.constexpr,
     HAS_CLAMP: tl.constexpr,
 ):
+    """Triton kernel for gated activation + FP8 quantization in packed layout."""
     GROUPS_PER_PACK: tl.constexpr = 4
     hidden_size: tl.constexpr = N // 2
 
@@ -235,6 +244,19 @@ def silu_mul_quant_fp8_packed_triton(
     alpha: float = 1.0,
     beta: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a gated activation tensor to FP8 using the Triton kernel.
+
+    Args:
+        input: Input tensor with shape [M, N].
+        group_size: Group size for quantization.
+        output_q: Optional output tensor.
+        clamp_limit: Optional clamp limit.
+        alpha: Alpha for the activation function.
+        beta: Beta for the activation function.
+
+    Returns:
+        Tuple of (quantized tensor, scale tensor).
+    """
     assert input.dim() == 2
     assert input.is_contiguous()
 
@@ -1068,6 +1090,19 @@ def deepgemm_post_process_weight_scale_block(
     num_groups: int,
     is_sfa: bool = False,
 ) -> torch.Tensor:
+    """Post-process weight scales for DeepGEMM block-quantized kernels.
+
+    Args:
+        ws: Weight scale tensor.
+        mn: Number of rows.
+        k: Number of columns.
+        quant_block_shape: Block quantization shape.
+        num_groups: Number of groups.
+        is_sfa: Whether this is a shared-forward attention.
+
+    Returns:
+        The processed scale tensor.
+    """
     if ws.dtype in (torch.float8_e8m0fnu, torch.uint8):
         # Scales already in E8M0 from checkpoint; upcast to fp32 and let
         # DeepGEMM pack the layout expected by the target architecture.
@@ -1096,6 +1131,19 @@ def deepgemm_post_process_fp8_weight_block(
     is_bmm: bool = False,
     bmm_batch_size: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Post-process FP8 weight blocks for DeepGEMM kernels.
+
+    Args:
+        wq: Quantized weight tensor.
+        ws: Scale tensor.
+        quant_block_shape: Block quantization shape.
+        use_e8m0: Whether to use E8M0 scales.
+        is_bmm: Whether this is a batched matrix multiply.
+        bmm_batch_size: Batch size for BMM.
+
+    Returns:
+        Tuple of (processed weight, processed scale).
+    """
     assert wq.dtype == torch.float8_e4m3fn, (
         "Expected quantized tensor dtype "
         f"to be torch.float8_e4m3fn, got {wq.dtype} instead."
@@ -1161,6 +1209,18 @@ def prepare_fp8_moe_layer_for_deepgemm(
     w2_scale: torch.Tensor,
     block_shape: tuple[int],
 ):
+    """Prepare FP8 MoE layer weights for DeepGEMM.
+
+    Args:
+        w13: W13 weight tensor.
+        w2: W2 weight tensor.
+        w13_scale: W13 scale tensor.
+        w2_scale: W2 scale tensor.
+        block_shape: Block quantization shape.
+
+    Returns:
+        Tuple of (w13, w2, w13_scale, w2_scale).
+    """
     w13, w13_scale = deepgemm_post_process_fp8_weight_block(
         wq=w13,
         ws=w13_scale,
