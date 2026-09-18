@@ -3,7 +3,7 @@
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal
 
 import torch
 import torch.nn as nn
@@ -538,13 +538,16 @@ class LlavaNextVideoForConditionalGeneration(
         self,
         num_video_tokens: int,
     ) -> int:
-        """Return the number of tokens after spatial pooling.
+        # Invert the spatial pooling done by `vision_resampler`: each frame
+        # contributes `pooled_grid_length ** 2` tokens after the language
+        # model's placeholder count, but `patch_grid_length ** 2` tokens
+        # when it leaves the vision encoder.
+        pooled_tokens_per_frame = self.pooled_grid_length**2
+        if num_video_tokens <= 0 or pooled_tokens_per_frame <= 0:
+            return 0
 
-        Inverts the spatial pooling stride to compute how many encoder output
-        tokens correspond to the input frame count.
-        """
-        stride = self.config.spatial_pool_stride
-        return num_video_tokens // (stride * stride)
+        num_frames = num_video_tokens // pooled_tokens_per_frame
+        return num_frames * (self.patch_grid_length**2)
 
     def get_num_mm_connector_tokens(
         self,

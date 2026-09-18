@@ -300,9 +300,7 @@ class SiglipEncoderInfo(VisionEncoderInfo[SiglipVisionConfig]):
         return image_size // patch_size
 
 
-# Adapted from
-#  https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/sig
-#   lip/modeling_siglip.py#L216
+# Adapted from https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/siglip/modeling_siglip.py#L216
 class SiglipVisionEmbeddings(nn.Module):
     """Implements patch embedding, position embedding, and positional encoding
     interpolation for SigLIP vision inputs.
@@ -462,11 +460,7 @@ class SiglipAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
     ) -> tuple[torch.Tensor, None]:
-        """Compute QKV projections, split into heads, run attention, and apply
-        output projection.
-
-        Input shape: Batch x Time x Channel
-        """
+        """Input shape: Batch x Time x Channel"""
         qkv_states, _ = self.qkv_proj(hidden_states)
         query_states, key_states, value_states = qkv_states.chunk(3, dim=-1)
         out = self.attn(query_states, key_states, value_states)
@@ -638,6 +632,9 @@ class SiglipEncoder(nn.Module):
 
 
 class SiglipTextTransformer(nn.Module):
+    """Text transformer with embeddings, encoder, final layer norm, and
+    projection head.
+    """
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             ".q_proj": (".qkv_proj", "q"),
@@ -645,9 +642,6 @@ class SiglipTextTransformer(nn.Module):
             ".v_proj": (".qkv_proj", "v"),
         }
     )
-    """Text transformer with embeddings, encoder, final layer norm, and
-    projection head.
-    """
 
     def __init__(
         self,
@@ -891,7 +885,12 @@ class SiglipVisionTransformer(nn.Module):
     def maybe_layer_norm_and_apply_head(
         self, encoder_outputs: torch.Tensor
     ) -> torch.Tensor:
-        """Conditionally apply post-layer norm and head to encoder outputs."""
+        """Apply the post layer norm and head if they are enabled,
+        given the last hidden states tensor.
+
+        args:
+            encoder_outputs: The last hidden states from the visual encoder.
+        """
         if self.post_layernorm is not None:
             encoder_outputs = self.post_layernorm(encoder_outputs)
         if self.head is not None:
@@ -974,7 +973,7 @@ class SiglipVisionModel(nn.Module):
         )
 
 
-# Adapted from:
+# Adapted from: https://github.com/huggingface/transformers/blob/v4.54.1/src/transformers/models/siglip/modeling_siglip.py#L200
 #  https://github.com/huggingface/transformers/blob/v4.54.1/src/transformers/models/sig
 #   lip/modeling_siglip.py#L200
 class SiglipTextEmbeddings(nn.Module):
@@ -1193,18 +1192,25 @@ class SiglipEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         )
 
     def _process_image_inputs(self, inputs: SiglipImagePixelInputs) -> torch.Tensor:
-        """Apply get_image_features to pixel values."""
-        return self.get_image_features(inputs.data)
+        pixel_values = inputs["data"]
+
+        return self.get_image_features(pixel_values)
 
     def _embed_text_input_ids(
         self,
         input_ids: torch.Tensor,
         embed_input_ids: Callable[[torch.Tensor], torch.Tensor],
         *,
-        is_multimodal: bool,
+        is_multimodal: torch.Tensor | None,
     ) -> torch.Tensor:
-        """Pad or truncate embeddings to match text_projection_size."""
-        inputs_embeds = embed_input_ids(input_ids)
+        inputs_embeds = super()._embed_text_input_ids(
+            input_ids,
+            embed_input_ids,
+            is_multimodal=is_multimodal,
+        )
+
+        # NOTE: inputs_embeds in model runner has size text_config.projection_size
+        # (instead of text_config.hidden_size) to accommodate image embeddings
         inputs_embeds_size = self.text_projection_size
         if inputs_embeds.shape[1] < inputs_embeds_size:
             inputs_embeds = torch.cat(
@@ -1226,14 +1232,16 @@ class SiglipEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
     def embed_input_ids(
         self,
         input_ids: torch.Tensor,
-        multimodal_embeddings: MultiModalEmbeddings,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
         *,
-        is_multimodal: bool = True,
+        is_multimodal: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Handle multimodal embedding routing and token mask computation."""
-        text_input_ids, mm_token_mask = dual_encoder_has_text_tokens(
-            multimodal_embeddings is not None and len(multimodal_embeddings) > 0,
-            is_multimodal,
+        has_mm_embeddings = (
+            multimodal_embeddings is not None and len(multimodal_embeddings) > 0
+        )
+        self._mm_token_mask = is_multimodal
+        self._has_text_tokens = dual_encoder_has_text_tokens(
+            has_mm_embeddings, is_multimodal
         )
 
         if multimodal_embeddings is None or is_multimodal is None:
@@ -1246,35 +1254,21 @@ class SiglipEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         )
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
-        """Parse image input and return vision embeddings."""
-        pixel_values = self._parse_and_validate_image_input(**kwargs)
-        if pixel_values is None:
+        image_input = self._parse_and_validate_image_input(**kwargs)
+        if image_input is None:
             return []
 
-        vision_embeddings = self._process_image_inputs(pixel_values)
+        vision_embeddings = self._process_image_inputs(image_input)
         return vision_embeddings
 
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input_ids: torch.Tensor | None,
         positions: torch.Tensor,
-        intermediate_tensors: IntermediateTensors | None,
+        intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ) -> torch.Tensor:
-        """Merge text and vision features, handling PP constraints and embedding
-        dimension padding.
-        """
-        # If no image is provided and we're on a PP worker
-        # that's not the first, we should skip the image processing.
-        if intermediate_tensors is not None and not self.is_first_pp_rank():
-            return super().forward(
-                input_ids,
-                positions,
-                intermediate_tensors,
-                inputs_embeds,
-            )
-
         if intermediate_tensors is not None:
             raise RuntimeError("PP is not supported for this model")
 

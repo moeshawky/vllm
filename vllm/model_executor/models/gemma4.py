@@ -948,16 +948,12 @@ class Gemma4SelfDecoderLayers(nn.Module):
 
     def forward(
         self,
+        input_ids: torch.Tensor | None,
         positions: torch.Tensor,
-        hidden_states: torch.Tensor,
-        residual: torch.Tensor | None,
-        per_layer_input: torch.Tensor | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        per_layer_inputs: torch.Tensor | None = None,
+        **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Run one decoder layer: attention, MLP/MoE, and optional PLE.
-
-        Applies input layernorm, self-attention, post-attention layernorm,
-        MLP or MoE block, and optional Per-Layer Embedding gate/projection.
-        """
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
             per_layer_inputs = self.project_per_layer_inputs(

@@ -84,9 +84,6 @@ class TeleChat2Model(LlamaModel):
         """De-interleaves TeleChat2's single key_value tensor into separate
         k and v tensors for the qkv_proj mapper."""
         total_num_heads = self.config.n_head
-        # tensor. De-interleave it into separate k/v so the qkv_proj mapper
-        # can stack them.
-        total_num_heads = self.config.n_head
         head_dim = self.config.hidden_size // total_num_heads
         for name, loaded_weight in weights:
             if "self_attn.key_value" in name:
@@ -139,3 +136,4 @@ class TeleChat2ForCausalLM(LlamaForCausalLM):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         """Loads model weights using AutoWeightsLoader with hf_to_vllm_mapper."""
         loader = AutoWeightsLoader(self)
+        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)

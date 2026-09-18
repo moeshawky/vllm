@@ -120,11 +120,13 @@ ALL_ATTENTION_FUNCTIONS.register("vllm_mla", vllm_mla_attention_forward)
 class TransformersForCausalLM(CausalMixin, Base):
     """Causal LM class combining CausalMixin and Base for transformers
     text-only models."""
+    ...
 
 
 class TransformersMoEForCausalLM(MoEMixin, CausalMixin, Base):
     """MoE causal LM class combining MoEMixin, CausalMixin, and Base for
     transformers models."""
+    ...
 
 
 # Multimodal models
@@ -136,6 +138,7 @@ class TransformersMoEForCausalLM(MoEMixin, CausalMixin, Base):
 class TransformersMultiModalForCausalLM(MultiModalMixin, CausalMixin, Base):
     """Multimodal causal LM class combining MultiModalMixin, CausalMixin,
     and Base registered with MULTIMODAL_REGISTRY."""
+    ...
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -148,11 +151,13 @@ class TransformersMultiModalMoEForCausalLM(
 ):
     """Multimodal MoE causal LM class combining MoEMixin, MultiModalMixin,
     CausalMixin, and Base."""
+    ...
 
 
 # Embedding models
 class TransformersEmbeddingModel(EmbeddingMixin, LegacyMixin, Base):
     """Embedding model class combining EmbeddingMixin, LegacyMixin, and Base."""
+    ...
 
 
 class TransformersMoEEmbeddingModel(EmbeddingMixin, MoEMixin, Base): ...
@@ -172,6 +177,7 @@ class TransformersForSequenceClassification(
 ):
     """Sequence classification model class combining SequenceClassificationMixin,
     LegacyMixin, and Base."""
+    ...
 
 
 class TransformersMoEForSequenceClassification(

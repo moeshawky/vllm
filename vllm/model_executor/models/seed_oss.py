@@ -297,7 +297,7 @@ class SeedOssModel(nn.Module):
         *,
         vllm_config: VllmConfig,
         prefix: str = "",
-        decoder_layer_type: type[torch.nn.Module] = SeedOssDecoderLayer,
+        decoder_layer_type: type[nn.Module] = SeedOssDecoderLayer,
     ):
         """Initialize embedding, decoder layers, and final norm; validate sliding
         window configuration.

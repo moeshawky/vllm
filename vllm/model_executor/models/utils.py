@@ -843,9 +843,6 @@ class LayerFn(Protocol):
         make_layers; subclasses must implement __call__ returning a torch.nn.Module
         given a prefix string."""
 
-    """Creates a torch.nn.Module for a given layer prefix; must be implemented by
-        subclasses."""
-
     def __call__(self, prefix: str) -> torch.nn.Module: ...
 
 

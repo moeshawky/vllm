@@ -43,7 +43,6 @@ from .utils import (
 )
 
 KVCache = tuple[torch.Tensor, torch.Tensor]
-"""Type alias for the KV cache tuple used in Mamba state management."""
 
 
 class MambaDecoderLayer(nn.Module):
