@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # ruff: noqa: E402
+"""Monkeypatches and environment overrides applied at vllm import time.
+
+Sets CUDA forward-compatibility LD_LIBRARY_PATH before torch is first
+imported, configures process-wide environment variables, and installs
+five version-gated torch._inductor monkeypatches to work around upstream
+bugs in torch 2.9.0 through 2.11.
+"""
 import importlib.util
 import os
 

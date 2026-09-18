@@ -16,6 +16,9 @@ import contextlib
 from collections.abc import AsyncGenerator
 
 SSE_KEEP_ALIVE_COMMENT = ": keep-alive\n\n"
+# SSE comment field per SSE spec; colon prefix marks it as a comment
+# field, ignored by compliant clients but counted as bytes for
+# proxy read-timeout logic.
 
 
 def with_sse_keep_alive(

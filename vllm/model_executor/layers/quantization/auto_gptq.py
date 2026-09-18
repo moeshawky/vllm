@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""AutoGPTQ quantization implementation using Marlin kernels.
+
+Provides AutoGPTQConfig, AutoGPTQLinearMethod, AutoGPTQMoEMethod, and
+the dynamic quantization config override utilities.
+"""
+
 from copy import deepcopy
 from typing import Any
 
@@ -74,6 +80,19 @@ def get_moe_quant_method(
     prefix: str,
     moe_method_cls: type,
 ):
+    """Deep-copies config, applies dynamic override for the given module prefix,
+    then constructs the MoE method class. Returns None if the dynamic override
+    says to skip (False).
+
+    Args:
+        config: AutoGPTQConfig instance to deep-copy and override.
+        layer: RoutedExperts layer for which to select the MoE method.
+        prefix: Module prefix used for dynamic override lookup.
+        moe_method_cls: Class to instantiate for the MoE method.
+
+    Returns:
+        MoE method instance, or UnquantizedFusedMoEMethod if overridden to skip.
+    """
     cloned_config = deepcopy(config)
 
     assert isinstance(layer, RoutedExperts)

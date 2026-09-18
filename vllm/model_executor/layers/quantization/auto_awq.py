@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""AutoAWQ quantization implementation.
+
+Provides AutoAWQConfig, AutoAWQLinearMethod, AutoAWQMarlinLinearMethod,
+AutoAWQMoEMethod, and the AWQ-to-standard format conversion utilities.
+"""
+
 from typing import TYPE_CHECKING, Any, Union
 
 import torch

@@ -76,6 +76,11 @@ def layer_norm_func(hidden_states, weight, variance_epsilon):
 
 
 class LayerNorm(nn.Module):
+    """Layer normalization with tensor-parallel weight loading.
+
+    Applies a normalized linear transformation using the custom
+    ``layer_norm_func`` compiled with torch.compile.
+    """
     def __init__(self, param_shape=None, eps=1e-5):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(param_shape))
@@ -102,6 +107,11 @@ def rms_norm_func(hidden_states, weight, variance_epsilon):
 
 
 class RMSNorm(nn.Module):
+    """Root mean square normalization with tensor-parallel weight loading.
+
+    Applies RMS normalization using the custom ``rms_norm_func``
+    compiled with torch.compile.
+    """
     def __init__(self, param_shape=None, eps=1e-6):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(param_shape))
@@ -128,6 +138,12 @@ def select_norm_impl(config: CohereConfig) -> tuple[type[nn.Module], float]:
 
 # Copied from transformers.models.llama.modeling_llama.LlamaMLP Llama->Cohere
 class CohereMLP(nn.Module):
+    """Merged gate-up projection MLP with SiLU activation.
+
+    Uses MergedColumnParallelLinear for the combined gate and up
+    projections, RowParallelLinear for the down projection, and
+    SiluAndMul as the activation function.
+    """
     def __init__(
         self,
         config: CohereConfig,
@@ -169,6 +185,12 @@ class CohereMLP(nn.Module):
 
 
 class CohereAttention(nn.Module):
+    """Tensor-parallel attention with sliding window and QK normalization.
+
+    Supports Cohere v1 (no sliding window) and v2 (interleaved sliding
+    windows). Optionally applies QK normalization via separate norm
+    layers on the query and key heads.
+    """
     def __init__(
         self,
         config: CohereConfig | Cohere2Config,
@@ -289,6 +311,11 @@ class CohereAttention(nn.Module):
 
 
 class CohereDecoderLayer(nn.Module):
+    """Single Cohere decoder layer with attention and MLP.
+
+    Applies pre-normalization, self-attention, and a gated MLP
+    with tensor-parallel all-reduce on the combined output.
+    """
     def __init__(
         self,
         config: CohereConfig | Cohere2Config,
@@ -337,6 +364,12 @@ class CohereDecoderLayer(nn.Module):
 
 @support_torch_compile
 class CohereModel(nn.Module):
+    """Core Cohere transformer model with pipeline parallelism.
+
+    Embeds tokens, applies a stack of decoder layers, and
+    normalizes the final hidden states. Supports pipeline
+    parallelism via ``make_layers``.
+    """
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
 
@@ -402,6 +435,12 @@ class CohereModel(nn.Module):
 
 
 class CohereForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsQuant):
+    """Cohere model for causal language modeling with LoRA support.
+
+    Wraps ``CohereModel`` with a language model head, logits
+    processor, and weight mappers for HF-to-vLLM checkpoint
+    conversion. Supports LoRA-adapted inference.
+    """
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_stacked={
             # weight_name: (param_name, shard_id)

@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Utility functions and type mappings for compressed-tensors quantization.
+
+Provides STRATEGY_TO_PARAMETER_TYPE and STRATEGY_TO_WEIGHT_QUANT_KEY
+mappings, plus format detection and layer-skipping helpers.
+"""
+
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 

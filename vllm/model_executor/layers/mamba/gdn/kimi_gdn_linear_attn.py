@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Kimi Gated DeltaNet attention implementation."""
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Input schemas and utilities for the engine client (LLMEngine/AsyncLLM).
 
+Provides TokensInput, EmbedsInput, MultiModalInput, and related factory
+functions, along with ModalityData and prompt types from ``.llm``.
+"""
 from .engine import (
     DecoderOnlyEngineInput,
     EmbedsInput,

@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Harmony tool adapters for gpt_oss.
+
+Defines the ``Tool`` base class and two concrete adapters used by
+``DemoToolServer``: ``HarmonyBrowserTool`` (gpt_oss SimpleBrowserTool over
+an Exa search backend, gated on ``EXA_API_KEY``) and ``HarmonyPythonTool``
+(gpt_oss Docker-based Python tool). Both adapters run only when the installed
+``gpt_oss`` package meets ``MIN_GPT_OSS_VERSION``.
+"""
 import json
 import os
 from abc import ABC, abstractmethod

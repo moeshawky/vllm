@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Compressed-tensors quantization implementation.
+
+Provides CompressedTensorsConfig, CompressedTensorsLinearMethod,
+CompressedTensorsMoEMethod, and scheme classes for loading
+compressed-tensor format models.
+"""
+
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, cast
 

@@ -27,6 +27,12 @@ _DATE_FORMAT = "%m-%d %H:%M:%S"
 
 
 def _use_color() -> bool:
+    """Returns True if colored log output should be used.
+
+    Checks NO_COLOR and VLLM_LOGGING_COLOR env vars first; if
+    VLLM_LOGGING_COLOR is "auto" (default), checks isatty() on the
+    configured stream (stdout or stderr).
+    """
     if envs.NO_COLOR or envs.VLLM_LOGGING_COLOR == "0":
         return False
     if envs.VLLM_LOGGING_COLOR == "1":

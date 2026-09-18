@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Logprob container types for OpenAI-compatible logprobs.
+
+Logprob holds one token logprob, rank, and decoded text; FlatLogprobs stores
+all positions and ranks in flat primitive lists with per-position start and
+end indices and mimics list[dict[int, Logprob]] so callers can treat it as
+a sequence. The module also provides the create and append helpers used while
+decoding.
+"""
 import itertools
 from collections.abc import Iterable, Iterator, MutableSequence
 from dataclasses import dataclass, field

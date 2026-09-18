@@ -19,6 +19,8 @@ logger = init_logger(__name__)
 def poly_norm(
     x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, variance_epsilon: float
 ) -> torch.Tensor:
+    """Computes poly-normalized output using the custom poly_norm kernel,
+    applying weight and bias with a variance epsilon."""
     from vllm import _custom_ops as ops
 
     out = torch.empty_like(x)

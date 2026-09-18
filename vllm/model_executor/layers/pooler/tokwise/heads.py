@@ -35,6 +35,7 @@ class TokenPoolerHead(nn.Module, ABC):
         pooled_data: list[TokenPoolingMethodOutputItem],
         pooling_metadata: PoolingMetadata,
     ) -> list[TokenPoolerHeadOutputItem]:
+        """Forward pass for token-level pooling."""
         pooling_params = pooling_metadata.pooling_params
         if len(pooled_data) != len(pooling_params):
             raise ValueError(

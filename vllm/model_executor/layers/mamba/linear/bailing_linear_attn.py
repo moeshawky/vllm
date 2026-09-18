@@ -61,6 +61,7 @@ def clear_linear_attention_cache_for_new_sequences(
     state_indices_tensor: torch.Tensor,
     attn_metadata: LinearAttentionMetadata,
 ) -> None:
+    """Clear KV cache blocks for new prefill sequences with zero context."""
     num_prefills = getattr(attn_metadata, "num_prefills", 0)
     if num_prefills <= 0:
         return

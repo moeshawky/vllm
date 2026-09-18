@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Defines the LogitsProcessor callable type and NoBadWordsLogitsProcessor.
+
+LogitsProcessor maps (past token ids, next-token logits) to modified logits,
+with an optional prompt-token first argument. NoBadWordsLogitsProcessor
+biases logits to -inf for tokens that would complete a forbidden word.
+"""
 from collections.abc import Callable, Sequence
 from typing import TypeAlias
 

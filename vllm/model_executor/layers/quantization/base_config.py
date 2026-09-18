@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Base quantization configuration and method interfaces for vLLM.
+
+Defines QuantizationConfig and QuantizeMethodBase abstract classes,
+plus utility functions for detecting implemented embedding methods.
+"""
+
 import inspect
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any

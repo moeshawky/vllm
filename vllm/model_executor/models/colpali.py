@@ -65,6 +65,11 @@ class ColPaliMultiModalProcessor(PaliGemmaMultiModalProcessor):
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> BatchFeature:
+        """Apply the HF processor with truncation disabled.
+
+        Selects valid mm items and calls call_hf_processor
+        with truncation=False to preserve image tokens.
+        """
         valid_mm_items = mm_items.select(
             {k for k, c in mm_items.get_all_counts().items() if c > 0}
         )
@@ -130,6 +135,12 @@ class ColPaliModel(
     )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+        """Initialize ColPali model with lazy projection-head creation.
+
+        Resolves hidden_size, determines embed_dim,
+        and creates the projection layer only if dim
+        is known; otherwise defers to load_weights.
+        """
         super().__init__(vllm_config=vllm_config, prefix=prefix)
 
         config = vllm_config.model_config.hf_config

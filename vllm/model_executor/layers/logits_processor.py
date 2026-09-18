@@ -46,6 +46,8 @@ def _flashinfer_topk() -> Callable[..., tuple[torch.Tensor, torch.Tensor]] | Non
 
 
 def _topk(scores: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """Returns top-k values and indices using FlashInfer when available
+    and CUDA, otherwise torch.topk."""
     impl = _flashinfer_topk()
     if impl is None or not scores.is_cuda:
         return torch.topk(scores, k, dim=-1)

@@ -165,6 +165,12 @@ def _get_kda_state_shape_for_config(
 
 
 def _build_rope_parameters(config: PretrainedConfig) -> dict | None:
+    """Build rope parameters from config, removing partial_rotary_factor.
+
+    Deep-copies the config's rope_parameters, pops the
+    partial_rotary_factor (which would shrink the rotary
+    cache), and merges rope_scaling settings.
+    """
     rope_parameters = copy.deepcopy(getattr(config, "rope_parameters", None)) or {}
     if "rope_theta" not in rope_parameters and hasattr(config, "rope_theta"):
         rope_parameters["rope_theta"] = config.rope_theta
@@ -185,6 +191,11 @@ def _build_rope_parameters(config: PretrainedConfig) -> dict | None:
 
 
 def _get_layer_swiglu_limit(limit_list: list | None, layer_idx: int) -> float | None:
+    """Get the swiglu limit for a layer, returning None if unlimited.
+
+    Returns None if the limit list is None, the layer index
+    exceeds the list, or the limit is None or zero.
+    """
     if limit_list is None or layer_idx >= len(limit_list):
         return None
     limit = limit_list[layer_idx]
@@ -194,6 +205,11 @@ def _get_layer_swiglu_limit(limit_list: list | None, layer_idx: int) -> float | 
 
 
 def _load_a_log(param: torch.nn.Parameter, loaded_weight: torch.Tensor) -> None:
+    """Load A_log parameter with TP-aware sharding for 1D and 2D weights.
+
+    For 1D weights, narrow-shards by TP rank; for 2D,
+    delegates to sharded_weight_loader.
+    """
     tp_rank = get_tensor_model_parallel_rank()
     tp_size = get_tensor_model_parallel_world_size()
     if loaded_weight.ndim == 1:
@@ -217,6 +233,11 @@ def _configure_ling_fp8_quant_config(
     quant_config: QuantizationConfig | None,
     config: PretrainedConfig,
 ) -> None:
+    """Configure FP8 quantization settings for Ling hardware.
+
+    Sets ignored_layers_match_mode, is_scale_e8m0, and
+    validates routed_quant_method is mxfp4.
+    """
     if not _is_block_fp8_config(quant_config):
         return
 

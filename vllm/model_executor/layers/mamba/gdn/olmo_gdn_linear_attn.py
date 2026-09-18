@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+"""OLMo Hybrid Gated DeltaNet attention implementation."""
+
 import torch
 from einops import rearrange
 from torch import nn

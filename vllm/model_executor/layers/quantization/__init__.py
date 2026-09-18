@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""vLLM quantization dispatch module.
+
+Registers and resolves quantization configuration classes by method name.
+Contains the canonical QuantizationMethods literal type and the registry
+of quantization method names.
+"""
+
 from typing import Literal, get_args
 
 from vllm.logger import init_logger
@@ -9,6 +16,8 @@ from vllm.platforms import current_platform
 
 logger = init_logger(__name__)
 
+# Canonical literal type listing all registered quantization method names.
+# Extended by register_quantization_config at runtime.
 QuantizationMethods = Literal[
     "awq",
     "auto_awq",
@@ -46,12 +55,16 @@ QuantizationMethods = Literal[
 ]
 QUANTIZATION_METHODS: list[str] = list(get_args(QuantizationMethods))
 
+# Methods no longer supported but retained for backward compatibility
+# in checkpoint loading.
 DEPRECATED_QUANTIZATION_METHODS = [
     "fbgemm_fp8",
     "fp_quant",
 ]
 
 # The customized quantization methods which will be added to this dict.
+# Registry mapping custom quantization method names to their config classes,
+# populated via register_quantization_config decorator.
 _CUSTOMIZED_METHOD_TO_QUANT_CONFIG = {}
 
 

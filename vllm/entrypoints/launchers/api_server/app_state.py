@@ -25,6 +25,18 @@ async def init_app_state(
     args: Namespace,
     supported_tasks: tuple["SupportedTask", ...] | None = None,
 ) -> None:
+    """Initialize the FastAPI app state with engine client, models, renderer,
+    tokenization, and serving objects. Sets up OpenAI serving models, online
+    renderer, and dispatch-based state initialization.
+
+    Args:
+        engine_client: The engine client providing the vLLM config and
+            model configuration.
+        state: The Starlette application state to populate.
+        args: Parsed command-line arguments.
+        supported_tasks: Tuple of supported task types; falls back to
+            FALLBACK_SUPPORTED_TASKS if None.
+    """
     vllm_config = engine_client.vllm_config
 
     if args.tool_call_parser is not None:

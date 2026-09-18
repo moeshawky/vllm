@@ -47,6 +47,8 @@ def _fused_qk_rmsnorm_rope_gate_kernel(
     MROPE_SECTION_H: tl.constexpr,
     MROPE_SECTION_W: tl.constexpr,
 ):
+    """Triton JIT kernel fusing QK-RMSNorm, partial RoPE, and gate copy into
+    a single launch."""
     token = tl.program_id(0)
     head = tl.program_id(1)
     is_k = head >= num_q_heads

@@ -63,6 +63,7 @@ WEIGHT_LOADER_V2_SUPPORTED = [
     "ModelOptNvFp4W4A16LinearMethod",
     "HummingLinearMethod",
 ]
+# List of LinearMethod names supporting weight_loader_v2 loading.
 
 
 def register_weight_loader_v2_supported_method(cls):

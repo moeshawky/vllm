@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Cosmos3 Edge multimodal model with SigLIP2 vision encoder
+and Nemotron-H language backbone.
+"""
+
 from collections.abc import Iterable
 
 import torch

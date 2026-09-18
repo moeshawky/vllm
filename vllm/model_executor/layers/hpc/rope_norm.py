@@ -26,6 +26,7 @@ from vllm.v1.attention.backends.utils import NULL_BLOCK_ID
 logger = init_logger(__name__)
 
 _hpc_rope_norm_instances: dict[str, HpcRopeNorm] = {}
+# Module-level dict caching HpcRopeNorm instances by name.
 
 
 class QkNormPolicy(IntEnum):

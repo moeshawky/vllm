@@ -43,6 +43,11 @@ from vllm.sequence import IntermediateTensors
 
 
 def _get_draft_hf_config(vllm_config: VllmConfig) -> PretrainedConfig:
+    """Get the draft model HF config, falling back to main model config.
+
+    Returns speculative_config.draft_model_config.hf_config
+    if available, otherwise vllm_config.model_config.hf_config.
+    """
     speculative_config = vllm_config.speculative_config
     if speculative_config is not None:
         draft_model_config = speculative_config.draft_model_config
@@ -52,6 +57,11 @@ def _get_draft_hf_config(vllm_config: VllmConfig) -> PretrainedConfig:
 
 
 class BailingMoeV3MTPSharedHead(nn.Module):
+    """Identity head wrapper for multi-token prediction.
+
+    Applies a ParallelLMHead and passes through
+    hidden_states unchanged as the identity forward.
+    """
     def __init__(
         self,
         config: PretrainedConfig,
@@ -71,6 +81,12 @@ class BailingMoeV3MTPSharedHead(nn.Module):
 
 
 class BailingMoeV3MultiTokenPredictorLayer(nn.Module):
+    """Multi-token predictor layer with dual-norm and Eh_proj.
+
+    Applies Enorm/Hnorm, eh_proj on concatenated
+    inputs and previous hidden_states, MLA attention,
+    MoE MLP, and dual-norm fusion with dropped args.
+    """
     def __init__(
         self,
         *,
@@ -146,6 +162,12 @@ class BailingMoeV3MultiTokenPredictorLayer(nn.Module):
 
 
 class BailingMoeV3MultiTokenPredictor(nn.Module):
+    """Multi-token predictor with modulo round-robin layer keying.
+
+    Uses nn.ModuleDict keyed by str(idx) with
+    absolute-index keying and round-robin selection
+    over layers for speculative decoding.
+    """
     def __init__(
         self,
         *,
@@ -191,6 +213,11 @@ class BailingMoeV3MultiTokenPredictor(nn.Module):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
+        """Apply MTP layer via modulo round-robin selection.
+
+        Uses spec_step_idx modulo num_mtp_layers to
+        select the absolute-index layer key.
+        """
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         current_step_idx = spec_step_idx % self.num_mtp_layers
@@ -208,6 +235,11 @@ class BailingMoeV3MultiTokenPredictor(nn.Module):
         spec_step_idx: int = 0,
         lm_head: nn.Module | None = None,
     ) -> torch.Tensor:
+        """Compute logits with head fallback and identity pass-through.
+
+        Uses mtp_layer.shared_head.head if lm_head
+        is not provided, then delegates to logits_processor.
+        """
         current_step_idx = spec_step_idx % self.num_mtp_layers
         mtp_layer = self.layers[str(self.mtp_start_layer_idx + current_step_idx)]
         head = lm_head if lm_head is not None else mtp_layer.shared_head.head
@@ -216,6 +248,12 @@ class BailingMoeV3MultiTokenPredictor(nn.Module):
 
 @support_torch_compile
 class BailingMoeV3MTPModel(nn.Module, SupportsPP):
+    """MTP model wrapper for Bailing MoE v3 speculative decoding.
+
+    Configures the predictor under the model attribute
+    with Ling FP8 quantization and an optional lm_head
+    slot, sharing the HF-to-vLLM mapper from the parent.
+    """
     hf_to_vllm_mapper = BailingMoeV3ForCausalLM.hf_to_vllm_mapper
 
     packed_modules_mapping = {
@@ -281,6 +319,12 @@ class BailingMoeV3MTPModel(nn.Module, SupportsPP):
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights with multi-stage remap and completeness check.
+
+        Applies the HF-to-vLLM mapper, MXFP4 remap,
+        stacked params mapping, and raises ValueError
+        if any MTP layer weights are missing.
+        """
         weights = self.hf_to_vllm_mapper.apply(weights)
         weights = _maybe_remap_ling_mxfp4_weight_names(weights, self.quant_config)
         stacked_params_mapping = [

@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Tool server abstractions for the Responses API.
+
+Defines the ``ToolServer`` interface and two implementations:
+``MCPToolServer``, which fetches tool descriptions from remote MCP servers
+over SSE and opens per-request MCP client sessions, and ``DemoToolServer``,
+which wraps the in-process gpt_oss browser and Python tools from
+``vllm.entrypoints.mcp.tool``.
+"""
 from abc import ABC, abstractmethod
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import TYPE_CHECKING, Any

@@ -219,6 +219,8 @@ def fi_chunk_gated_delta_rule(
 
 @CustomOp.register("chunk_gated_delta_rule")
 class ChunkGatedDeltaRule(CustomOp):
+    """Custom op for chunked gated delta rule attention."""
+
     def __init__(self) -> None:
         super().__init__()
         vllm_config = get_current_vllm_config()

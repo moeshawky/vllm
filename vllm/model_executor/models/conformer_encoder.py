@@ -15,6 +15,13 @@ from vllm.model_executor.layers.linear import ReplicatedLinear
 
 
 class Conv2dSubsampling(nn.Module):
+    """2D convolutional subsampling for audio frames.
+
+    Applies two stride-2 convolutions with ReLU to reduce
+    the temporal dimension by 4x, then projects to the model
+    dimension. The 4x subsampling and mask-slicing contract
+    are the key mechanics.
+    """
     def __init__(self, idim: int, d_model: int, out_channels: int = 32):
         super().__init__()
         self.conv = nn.Sequential(
@@ -37,6 +44,11 @@ class Conv2dSubsampling(nn.Module):
     def forward(
         self, x: torch.Tensor, x_mask: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Subsample input features and compute attention mask.
+
+        Unsplits to 4D, applies the two-stage conv, and
+        slices the mask by the 4x subsampling factor.
+        """
         x = x.unsqueeze(1)
         x = self.conv(x)
         N, C, T, D = x.size()
@@ -47,11 +59,23 @@ class Conv2dSubsampling(nn.Module):
 
 
 class Swish(nn.Module):
+    """Swish activation: x * sigmoid(x).
+
+    One-line activation applied in conformer feed-forward
+    and convolution blocks.
+    """
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.sigmoid(x)
 
 
 class RelPositionalEncoding(nn.Module):
+    """Relative positional encoding with 2*max_len-1 table layout.
+
+    Builds a sinusoidal positional embedding table of size
+    2*max_len-1 using flipped positive and dropped-duplicate
+    negative halves, then slices a window for the input
+    length during forward.
+    """
     def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
         pe_positive = torch.zeros(max_len, d_model, requires_grad=False)
@@ -71,6 +95,11 @@ class RelPositionalEncoding(nn.Module):
         self.pe = torch.cat([pe_positive, pe_negative], dim=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Slice the positional embedding window for the input length.
+
+        Uses the precomputed 2*max_len-1 table and extracts
+        a centered window of length T.
+        """
         # Tmax = 2 * max_len - 1
         Tmax, T = self.pe.size(1), x.size(1)
         pos_emb = self.pe[:, Tmax // 2 - T + 1 : Tmax // 2 + T].clone().detach()
@@ -78,6 +107,12 @@ class RelPositionalEncoding(nn.Module):
 
 
 class ConformerFeedForward(nn.Module):
+    """Conformer feed-forward network with residual connection.
+
+    Applies pre-layer-normalization, expansion by 4x via
+    ReplicatedLinear, Swish activation, and projection back
+    to d_model with a residual add.
+    """
     def __init__(self, d_model: int):
         super().__init__()
         self.pre_layer_norm = nn.LayerNorm(d_model)
@@ -103,6 +138,12 @@ class ConformerFeedForward(nn.Module):
 
 
 class EncoderMultiHeadAttention(nn.Module):
+    """Multi-head attention with per-stream layer norms and mask gating.
+
+    Computes Q, K, V projections with separate layer norms,
+    applies optional mask gating (1=valid), and produces
+    the attention output via a final linear projection.
+    """
     def __init__(self, n_head: int, d_model: int):
         super().__init__()
         assert d_model % n_head == 0
@@ -123,6 +164,11 @@ class EncoderMultiHeadAttention(nn.Module):
     def forward_qkv(
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Project Q, K, V with head-first layout for consumer compatibility.
+
+        Applies layer normalization, linear projection, and
+        transposes to (batch, n_head, seq, d_k) layout.
+        """
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
         sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
 
@@ -155,6 +201,11 @@ class EncoderMultiHeadAttention(nn.Module):
         v: torch.Tensor,
         mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply mask gating and compute the weighted attention output.
+
+        Uses mask polarity 1=valid, doubles-fill to block
+        invalid positions before and after softmax.
+        """
         if mask is not None:
             mask = mask.unsqueeze(1)
             mask = mask.eq(0)
@@ -167,6 +218,13 @@ class EncoderMultiHeadAttention(nn.Module):
 
 
 class RelPosMultiHeadAttention(EncoderMultiHeadAttention):
+    """Relative multi-head attention with ac/bd matrix split.
+
+    Computes attention via two additive matrices: the standard
+    content-addressing matrix (ac) and a relative-position
+    bias matrix (bd), with a learned position bias and a
+    relative shift operation.
+    """
     def __init__(self, n_head: int, d_model: int):
         super().__init__(n_head, d_model)
         d_k = d_model // n_head
@@ -176,6 +234,11 @@ class RelPosMultiHeadAttention(EncoderMultiHeadAttention):
         self.pos_bias_v = nn.Parameter(torch.empty([n_head, d_k]))
 
     def _rel_shift(self, x):
+        """Apply relative shift to the position-bias matrix.
+
+        Uses a zero-pad and view/roll to implement the
+        relative position bias indexing.
+        """
         N, H, T1, T2 = x.size()
         zero_pad = torch.zeros((N, H, T1, 1), device=x.device, dtype=x.dtype)
         x_padded = torch.cat([zero_pad, x], dim=-1)
@@ -192,6 +255,12 @@ class RelPosMultiHeadAttention(EncoderMultiHeadAttention):
         pos_emb: torch.Tensor,
         mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute relative-position multi-head attention.
+
+        Builds the ac and bd matrices, applies the relative
+        shift, and delegates to forward_attention and
+        forward_output.
+        """
         sz_b, len_q = q.size(0), q.size(1)
         residual = q
         q, k, v = self.forward_qkv(q, k, v)
@@ -217,6 +286,13 @@ class RelPosMultiHeadAttention(EncoderMultiHeadAttention):
 
 
 class ConformerConvolution(nn.Module):
+    """Conformer convolution block with GLU and double mask fill.
+
+    Applies pointwise expansion, depthwise convolution with
+    batch normalization, Swish activation, and pointwise
+    projection. Masks are applied before and after the
+    convolution using the mask polarity (1=valid).
+    """
     def __init__(self, d_model: int, kernel_size: int = 33):
         super().__init__()
         assert kernel_size % 2 == 1
@@ -243,6 +319,12 @@ class ConformerConvolution(nn.Module):
     def forward(
         self, x: torch.Tensor, mask: torch.Tensor | None = None
     ) -> torch.Tensor:
+        """Apply conformer convolution with residual and double mask.
+
+        Pre-norms, applies GLU-gated depthwise conv, and
+        masks invalid positions before and after the
+        convolution with a residual add.
+        """
         residual = x
         out = self.pre_layer_norm(x)
         out = out.transpose(1, 2)
@@ -262,6 +344,13 @@ class ConformerConvolution(nn.Module):
 
 
 class RelPosEmbConformerBlock(nn.Module):
+    """Relatively-positioned conformer block with the 0.5-sandwich layout.
+
+    Applies ffn1, multi-head attention, convolution, ffn2,
+    and layer norm in the conformer signature:
+    ``0.5 * x + 0.5 * ffn1(x)`` → MHSA → conv →
+    ``0.5 * out + 0.5 * ffn2(out)`` → norm.
+    """
     def __init__(self, d_model: int, n_head: int, kernel_size: int = 33):
         super().__init__()
         self.ffn1 = ConformerFeedForward(d_model)
@@ -316,6 +405,11 @@ class ConformerEncoder(nn.Module):
         input_lengths: torch.Tensor,
         pad: bool = True,
     ):
+        """Run the conformer encoder pipeline on padded input.
+
+        Applies context padding, subsampling, positional
+        encoding, and the block stack with dual-mask usage.
+        """
         if pad:
             padded_input = F.pad(
                 padded_input,

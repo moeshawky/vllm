@@ -1,6 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Weight-remap shim for the Cosmos3 unified checkpoint.
+
+Defines a single subclass of Qwen3VLForConditionalGeneration whose only
+content is a WeightsMapper translating the flat Cosmos3 key layout
+onto Qwen3-VL's nested language_model/visual tree, plus an
+allow_patterns_overrides glob selecting only the reasoner shards from
+Diffusers checkpoints. The class body defines no methods; all
+forward/decode behavior is inherited unchanged.
+"""
+
 import regex
 
 from vllm.model_executor.models.qwen3_vl import Qwen3VLForConditionalGeneration

@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Central registry of all VLLM_* environment variables.
 
+Exposes lazy module-level attributes via __getattr__ that evaluate the
+getter lambda on first access. After enable_envs_cache() is called
+(post service init), all values are frozen via functools.cache.
+The environment_variables dict maps var names to zero-arg callables;
+TYPE_CHECKING block at the top provides type stubs for type checkers.
+"""
 import functools
 import json
 import logging
