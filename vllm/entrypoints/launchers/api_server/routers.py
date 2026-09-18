@@ -15,6 +15,10 @@ def register_api_routers(
     supported_tasks: tuple["SupportedTask", ...],
     model_config: ModelConfig | None = None,
 ):
+    """Register all API routers on the FastAPI app. Includes core vLLM routes,
+    models, Sagemaker, dev routes, generate, scale-out, speech-to-text, pooling,
+    and fault tolerance routers.
+    """
     from vllm.entrypoints.serve import register_vllm_serve_api_routers
 
     register_vllm_serve_api_routers(app)

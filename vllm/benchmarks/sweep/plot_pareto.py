@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Plot the Pareto frontier between tokens/s/user and tokens/s/GPU from
+saved parameter-sweep results. Derives per-user and per-GPU throughput for
+every summary.json record, keeps the non-dominated points, and saves one
+annotated scatter plot under <experiment_dir>/pareto. Registered as the
+`vllm bench sweep plot_pareto` subcommand (SweepPlotParetoArgs.parser_name,
+cli.py SUBCOMMANDS).
+"""
 import argparse
 import math
 from concurrent.futures import ProcessPoolExecutor
@@ -20,6 +27,10 @@ if TYPE_CHECKING:
 
 
 def _first_present(run_data: dict[str, object], keys: list[str]):
+    """Return the first value found in run_data across a list of candidate
+    key names, trying each key in its original form and with '_'/'-' separators
+    swapped. Returns None when no candidate key is present in the record.
+    """
     for key in keys:
         for candidate in {key, key.replace("_", "-"), key.replace("-", "_")}:
             if candidate in run_data:
@@ -33,6 +44,11 @@ def _get_numeric(
     *,
     allow_zero: bool = True,
 ) -> float | None:
+    """Resolve a numeric value from run_data by candidate keys (via
+    _first_present) and convert it to float. Raises ValueError naming the
+    offending value when conversion fails. Returns None when no candidate
+    key is present, or when the value is 0 and allow_zero is False.
+    """
     value = _first_present(run_data, keys)
     if value is None:
         return None
@@ -55,6 +71,12 @@ def _infer_user_count(
     run_data: dict[str, object],
     user_count_var: str | None,
 ) -> float | None:
+    """Estimate the concurrent user count for one sweep run. Tries the configured
+    user_count_var then the literal key 'request_rate' (non-zero values only, via
+    _get_numeric allow_zero=False); when neither yields a value, falls back to the
+    observed 'max_concurrent_requests'. Returns None when no candidate is usable,
+    which makes _prepare_records skip the run.
+    """
     candidates = [user_count_var] if user_count_var else []
     candidates.extend(["request_rate"])
     user_count = _get_numeric(run_data, candidates, allow_zero=False)
@@ -69,6 +91,12 @@ def _infer_gpu_count(
     run_data: dict[str, object],
     gpu_count_var: str | None,
 ) -> float:
+    """Estimate the GPU count for one sweep run. Uses the configured gpu_count_var
+when present (non-zero); otherwise multiplies tensor_parallel_size,
+pipeline_parallel_size, and data_parallel_size (each also matched with
+'-'/'_' key variants), starting from 1.0. A run record with none of
+those keys therefore reports 1 GPU.
+"""
     direct_candidates = [gpu_count_var] if gpu_count_var else []
     direct_gpu_count = _get_numeric(run_data, direct_candidates, allow_zero=False)
     if direct_gpu_count:
@@ -92,6 +120,10 @@ def _get_throughput(
     run_data: dict[str, object],
     throughput_var: str,
 ) -> float:
+    """Return the run record's output throughput under the given key, raising
+    ValueError listing the record's available keys when the key is absent or
+    non-numeric.
+    """
     throughput = _get_numeric(run_data, [throughput_var])
     if throughput is None:
         raise ValueError(
@@ -108,6 +140,13 @@ def _prepare_records(
     user_count_var: str | None,
     gpu_count_var: str | None,
 ) -> tuple[list[dict[str, object]], int]:
+    """Expand raw sweep records into plot-ready records. For each record
+    it reads output_throughput (fatal when missing), estimates the user count
+    (the record is skipped and counted when that fails) and the GPU count,
+    then adds tokens_per_user, tokens_per_gpu, user_count_estimate, and
+    gpu_count fields on top of the original record. Returns (prepared_records,
+    skipped_missing_users_count).
+    """
     prepared = []
     skipped_missing_users = 0
 
@@ -142,6 +181,13 @@ def _pareto_frontier(
     *,
     epsilon: float = 1e-9,
 ) -> "pd.DataFrame":
+    """Extract the non-dominated (Pareto) frontier of a 2-D point set where
+    both axes are to be maximized. Sorts points by x descending, then y descending,
+    and keeps a point whenever its y is within epsilon of the best y seen so far
+    — x is already maximal among the remaining rows, so matching the running
+    best y means no kept point dominates it. Returns the original DataFrame rows
+    at the kept indices.
+    """
     sorted_df = df.sort_values([x_col, y_col], ascending=[False, False])
     frontier_indices = []
     best_y = -math.inf
@@ -152,6 +198,10 @@ def _pareto_frontier(
             frontier_indices.append(idx)
             best_y = max(best_y, y_val)
 
+    # Keep the row when its y is within epsilon of the best y so far: x
+    # is already non-increasing (sorted descending), so a row still matching
+    # the running best y is not dominated by any previously kept row;
+    # epsilon admits near-duplicate y values as frontier points.
     return df.loc[frontier_indices]
 
 
@@ -159,6 +209,10 @@ def _get_fig_path(
     fig_dir: Path,
     fig_group: tuple[tuple[str, str], ...],
 ) -> Path:
+    """Build the output path for the Pareto figure: <fig_dir>/PARETO.png,
+    with group key=value segments appended when a group is present, the whole
+    name passed through sanitize_filename.
+    """
     parts = ["PARETO"]
     if fig_group:
         parts.extend(f"{k}={v}" for k, v in fig_group)
@@ -173,6 +227,14 @@ def _plot_fig(
     *,
     dry_run: bool,
 ):
+    """Draw the Pareto frontier for one group and save it under fig_dir.
+    Converts the group records to a DataFrame, drops rows with missing per-user
+    or per-GPU throughput, prints the planned output path, and returns early
+    in dry_run without importing matplotlib. Computes the frontier, renders
+    all points as a grey scatter with the frontier overlaid as a line,
+    annotates each frontier point with the requested key=value pairs when
+    label_by is given, and saves the figure.
+    """
     fig_group, fig_data = fig_group_data
     fig_path = _get_fig_path(fig_dir, fig_group)
 
@@ -263,6 +325,13 @@ def plot_pareto(
     *,
     dry_run: bool,
 ):
+    """Entry point for the plot_pareto subcommand. Loads every summary.json
+    under output_dir (raising ValueError when none are found), prepares the
+    records via _prepare_records (printing how many runs were skipped for a
+    missing user count), raises ValueError when no record survives, and
+    dispatches _plot_fig over the resulting groups into <output_dir>/pareto
+    via the executor (in-process DummyExecutor when there is a single group).
+    """
     fig_dir = output_dir / "pareto"
     raw_data = [
         run_data
@@ -314,6 +383,11 @@ def plot_pareto(
 
 @dataclass
 class SweepPlotParetoArgs:
+    """CLI argument holder for the `vllm bench sweep plot_pareto` subcommand.
+    from_cli_args() builds the instance from the parsed Namespace (splitting
+    --label-by); add_cli_args() registers the subparser arguments;
+    run_main() forwards the fields to plot_pareto().
+    """
     output_dir: Path
     user_count_var: str | None
     gpu_count_var: str | None
@@ -328,6 +402,10 @@ class SweepPlotParetoArgs:
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
+        """Build a SweepPlotParetoArgs from parsed CLI args. Verifies EXPERIMENT_DIR
+        exists (raising ValueError otherwise) and splits the --label-by comma
+        list (None or empty string -> []).
+        """
         output_dir = Path(args.EXPERIMENT_DIR)
         if not output_dir.exists():
             raise ValueError(f"No parameter sweep results under {output_dir}")
@@ -344,6 +422,11 @@ class SweepPlotParetoArgs:
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser):
+        """Register the plot_pareto subcommand arguments: EXPERIMENT_DIR positional,
+        --user-count-var (default 'max_concurrency'), --gpu-count-var (default None),
+        --label-by (default 'max_concurrency,gpu_count'), and --dry-run. Returns the
+        parser.
+        """
         parser.add_argument(
             "EXPERIMENT_DIR",
             type=str,
@@ -381,6 +464,9 @@ class SweepPlotParetoArgs:
 
 
 def run_main(args: SweepPlotParetoArgs):
+    """Forward the SweepPlotParetoArgs fields to plot_pareto() and return
+    its result.
+    """
     return plot_pareto(
         output_dir=args.output_dir,
         user_count_var=args.user_count_var,
@@ -391,6 +477,9 @@ def run_main(args: SweepPlotParetoArgs):
 
 
 def main(args: argparse.Namespace):
+    """CLI entry point for the plot_pareto subcommand: build SweepPlotParetoArgs
+    from the parsed Namespace and call run_main.
+    """
     run_main(SweepPlotParetoArgs.from_cli_args(args))
 
 

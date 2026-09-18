@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Sweep subcommand for startup-time benchmarks: expands the serve_params
+x startup_params Cartesian product, rewrites each `vllm bench startup`
+invocation with the combination overrides and a forced --output-json,
+caches per-run JSON under experiment_dir (skipping runs whose output
+already exists), and merges every record into summary.csv."""
+
 import argparse
 import json
 import shlex
@@ -26,6 +32,9 @@ except ImportError:
 
 @lru_cache(maxsize=1)
 def _get_supported_startup_keys() -> set[str]:
+    """lru_cached set of every key the real `vllm bench startup` CLI accepts:
+    each argparse dest plus each --option string normalized to underscore form.
+    Built once by parsing the genuine startup parser with add_help=False."""
     parser = FlexibleArgumentParser(add_help=False)
     add_startup_cli_args(parser)
 
@@ -41,6 +50,9 @@ def _get_supported_startup_keys() -> set[str]:
 
 
 def _is_supported_param(param_key: str, supported: set[str]) -> bool:
+    """Decides whether a sweep key may be applied: _benchmark_name always
+    passes; otherwise the first dotted segment of the key is dash-normalized and
+    checked against the supported set."""
     if param_key == "_benchmark_name":
         return True
     prefix = param_key.split(".", 1)[0]
@@ -51,6 +63,10 @@ def _is_supported_param(param_key: str, supported: set[str]) -> bool:
 def _filter_params(
     params: ParameterSweep, *, supported: set[str], strict: bool
 ) -> ParameterSweep:
+    """Projects every ParameterSweepItem onto the supported keys. Dropped
+    keys are reported per item (label from _benchmark_name or as_text); strict=True
+    raises ValueError, otherwise the message is printed. A fully dropped item becomes
+    an empty combination."""
     filtered = []
     for item in params:
         kept: dict[str, object] = {}
@@ -83,6 +99,9 @@ def _update_run_data(
     startup_overrides: ParameterSweepItem,
     run_number: int,
 ) -> dict[str, object]:
+    """Stamps run_number onto the benchmark JSON record and overlays the
+    serve combination keys, then the startup combination keys (startup wins on key
+    conflicts)."""
     run_data["run_number"] = run_number
     run_data.update(serve_overrides)
     run_data.update(startup_overrides)
@@ -90,6 +109,8 @@ def _update_run_data(
 
 
 def _strip_arg(cmd: list[str], keys: tuple[str, ...]) -> list[str]:
+    """Removes flags from a command list in both forms: the space form (the
+    flag plus its following value) and the --flag=value form."""
     stripped: list[str] = []
     skip_next = False
     for arg in cmd:
@@ -106,6 +127,9 @@ def _strip_arg(cmd: list[str], keys: tuple[str, ...]) -> list[str]:
 
 
 def _apply_output_json(cmd: list[str], output_path: Path) -> list[str]:
+    """Strips any existing --output-json / --output_json from the command
+    and appends the sweep's own, pointing at the per-run output path, so the result
+    location never depends on the user's startup_cmd."""
     keys = ("--output-json", "--output_json")
     cmd = _strip_arg(cmd, keys)
     return [*cmd, keys[0], str(output_path)]
@@ -116,6 +140,9 @@ def _get_comb_base_path(
     serve_comb: ParameterSweepItem,
     startup_comb: ParameterSweepItem,
 ) -> Path:
+    """Names the per-combination dir: SERVE-<name> and/or STARTUP-<name>
+    segments (whichever combination is non-empty) joined by '-' and passed through
+    sanitize_filename."""
     parts = list[str]()
     if serve_comb:
         parts.extend(("SERVE-", serve_comb.name))
@@ -126,6 +153,8 @@ def _get_comb_base_path(
 
 
 def _get_comb_run_path(base_path: Path, run_number: int | None) -> Path:
+    """run_number=None maps to the combination's summary.json; a concrete
+    run number maps to run=<n>.json."""
     if run_number is None:
         return base_path / "summary.json"
     return base_path / f"run={run_number}.json"
@@ -141,6 +170,11 @@ def run_benchmark(
     show_stdout: bool,
     dry_run: bool,
 ) -> dict[str, object] | None:
+    """Executes one run of one combination: applies serve then startup overrides
+    to startup_cmd, forces --output-json, and if the output file already exists
+    reuses it (resume path). Otherwise it runs the command with check=True, reads
+    the JSON back, overlays the combination keys, and rewrites the file. dry_run
+    prints the plan and returns None."""
     cmd = serve_overrides.apply_to_cmd(startup_cmd)
     cmd = startup_overrides.apply_to_cmd(cmd)
     cmd = _apply_output_json(cmd, output_path)
@@ -197,6 +231,9 @@ def run_comb(
     show_stdout: bool,
     dry_run: bool,
 ) -> list[dict[str, object]] | None:
+    """Runs num_runs of one combination into run=<n>.json files, collects
+    the per-run records, and writes the combination's summary.json; returns None
+    in dry-run mode before writing."""
     comb_data = list[dict[str, object]]()
     for run_number in range(num_runs):
         run_data = run_benchmark(
@@ -232,6 +269,10 @@ def run_combs(
     show_stdout: bool,
     dry_run: bool,
 ) -> "pd.DataFrame | None":
+    """Cartesian product of serve_params and startup_params through run_comb;
+    in real mode merges every record into a pandas DataFrame and
+    writes experiment_dir/summary.csv.
+    Returns None in dry-run mode."""
     all_data = list[dict[str, object]]()
     for serve_comb in serve_params:
         for startup_comb in startup_params:
@@ -258,6 +299,10 @@ def run_combs(
 
 @dataclass
 class SweepStartupArgs:
+    """Argument dataclass for the `vllm bench sweep startup` subcommand.
+    Parses the startup command string, loads the two sweep JSON files (defaulting
+    each to a single empty combination), filters them to startup-supported keys
+    (strict optional), and names the experiment by argument or timestamp."""
     startup_cmd: list[str]
     serve_params: ParameterSweep
     startup_params: ParameterSweep
@@ -275,6 +320,11 @@ class SweepStartupArgs:
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
+        """shlex.splits the startup command, loads --serve-params / --startup-params
+        (a single empty combination when omitted), filters both
+        against _get_supported_startup_keys
+        under --strict-params, defaults the experiment name to a timestamp, and requires
+        num_runs >= 1."""
         startup_cmd = shlex.split(args.startup_cmd)
 
         if args.serve_params:
@@ -318,6 +368,9 @@ class SweepStartupArgs:
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
+        """Registers the subcommand flags: --startup-cmd (default 'vllm bench
+        startup'), --serve-params, --startup-params, --strict-params, -o/--output-dir,
+        -e/--experiment-name, --num-runs, --show-stdout, --dry-run, --resume."""
         parser.add_argument(
             "--startup-cmd",
             type=str,
@@ -390,6 +443,9 @@ class SweepStartupArgs:
         return parser
 
     def resolve_experiment_dir(self) -> Path:
+        """Computes output_dir/experiment_name and enforces the resume contract:
+        --resume requires the dir to exist, a fresh run requires it to be absent; either
+        violation raises ValueError."""
         experiment_dir = self.output_dir / self.experiment_name
 
         if self.resume:
@@ -403,6 +459,10 @@ class SweepStartupArgs:
 
     @contextmanager
     def run_ctx(self, experiment_dir: Path):
+        """Context manager around the whole experiment: in dry-run it yields
+        and prints the save path; in real mode it re-wraps any
+        BaseException in a RuntimeError
+        pointing at --resume, so a partially finished experiment can be continued."""
         if self.dry_run:
             yield
             print(f"Experiment will be saved at: {experiment_dir}")
@@ -419,6 +479,8 @@ class SweepStartupArgs:
 
 
 def run_main(args: SweepStartupArgs):
+    """Resolves the experiment dir and, under run_ctx, runs run_combs with
+    the parsed fields."""
     experiment_dir = args.resolve_experiment_dir()
 
     with args.run_ctx(experiment_dir):
@@ -434,6 +496,8 @@ def run_main(args: SweepStartupArgs):
 
 
 def main(args: argparse.Namespace):
+    """CLI entry point: converts the parsed argparse namespace into SweepStartupArgs
+    and calls run_main."""
     run_main(SweepStartupArgs.from_cli_args(args))
 
 

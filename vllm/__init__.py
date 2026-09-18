@@ -13,6 +13,9 @@ import typing
 # other modules are imported.
 import vllm.env_override  # noqa: F401
 
+# PEP 562 lazy import table consumed by the module-level __getattr__ below:
+# maps each public name to a 'relative.module:attr' pair that is imported
+# on first access.
 MODULE_ATTRS = {
     "AsyncEngineArgs": ".engine.arg_utils:AsyncEngineArgs",
     "EngineArgs": ".engine.arg_utils:EngineArgs",
@@ -63,6 +66,10 @@ if typing.TYPE_CHECKING:
 else:
 
     def __getattr__(name: str) -> typing.Any:
+        """PEP 562 module attribute loader: resolves a name from MODULE_ATTRS
+        by importing the relative module named in the table (against
+        __package__) and returning the requested attribute; raises
+        AttributeError for names absent from the table."""
         from importlib import import_module
 
         if name in MODULE_ATTRS:

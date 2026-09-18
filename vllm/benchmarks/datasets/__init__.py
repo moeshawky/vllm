@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Re-exports the benchmark dataset constructors and helper functions
+defined in vllm.benchmarks.datasets.datasets (random/ShareGPT/MLPerf/multimodal
+datasets, sample generation, image/audio/video processing, LoRA tokenizer caching)
+plus RangeRatio from vllm.benchmarks.datasets.utils, so callers import them
+from vllm.benchmarks.datasets directly."""
 from vllm.benchmarks.datasets.datasets import (
     DEFAULT_NUM_PROMPTS,
     AIMODataset,

@@ -1,6 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Registers the XPU (Intel GPU) vLLM custom ops. The module defines
+paired _impl/_fake functions for torch.ops._xpu_C kernels (fp8/fp4/int4 GEMM
+meta-shape fakes, DeepSeek scaling RoPE, MXFP8/MXFP4 quantization, fp8 MQA logits,
+GDN attention core, top-k/top-p sampler, fused sparse-indexer RoPE+quant), a
+Triton selective-scan (SSM) kernel, and the xpu_ops class exposing flash-attention,
+dynamic int8 quant, and selective-scan entry points. xpu_ops.register_ops_once()
+runs at import (line 1293); the five GEMM fake impls are only registered when
+the matching torch.ops._xpu_C symbol exists (hasattr guards, lines 28, 45, 60,
+78, 98)."""
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -21,6 +30,10 @@ if TYPE_CHECKING:
         return lambda name: fn
 else:
     try:
+        # torch.library.register_fake is the current name for abstract-impl
+        # registration; older torch builds expose only impl_abstract,
+        # so the try/except keeps the @register_fake('_xpu_C::...') fake
+        # impls below working on both.
         from torch.library import register_fake
     except ImportError:
         from torch.library import impl_abstract as register_fake
@@ -220,6 +233,9 @@ def _xpu_ops_deepseek_scaling_rope_impl(
     rotary_dim: int,
     is_neox_style: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Delegates to torch.ops._xpu_C.deepseek_scaling_rope, applying DeepSeek-style
+      scaling rotary embeddings to query (and key when provided); returns the (query,
+      key) pair. Requires key to be non-None (assert at line 223)."""
     assert key is not None
     return torch.ops._xpu_C.deepseek_scaling_rope(
         positions, query, key, offsets, cos_sin_cache, rotary_dim, is_neox_style
@@ -303,6 +319,10 @@ def _xpu_fp8_mqa_logits_impl(
     cu_seqlen_ks: torch.Tensor,
     cu_seqlen_ke: torch.Tensor,
 ) -> torch.Tensor:
+    """Delegates to torch.ops._xpu_C.fp8_mqa_logits: scores FP8-quantized
+      MQA queries against their key ranges using per-row weights and cu_seqlen_ks/
+      cu_seqlen_ke bounds. Output shape (q.shape[0], k_quant.shape[0]) with dtype
+      float32, per the paired meta impl."""
     return torch.ops._xpu_C.fp8_mqa_logits(
         q,
         k_quant,
@@ -337,6 +357,10 @@ def _xpu_fp8_paged_mqa_logits_impl(
     schedule_metadata: torch.Tensor,
     max_model_len: int,
 ) -> torch.Tensor:
+    """Delegates to torch.ops._xpu_C.fp8_paged_mqa_logits: MQA logits over
+      a paged FP8 KV cache using block_tables, context_lens, and a schedule_metadata
+      plan. Output shape (batch_size * next_n, max_model_len) with dtype float32,
+      per the paired meta impl (lines 360-365)."""
     return torch.ops._xpu_C.fp8_paged_mqa_logits(
         q,
         kv_cache,
@@ -375,6 +399,10 @@ def _topk_topp_sample_impl(
     seeds: torch.Tensor | None,
     lambda_: float = 1.0,
 ) -> None:
+    """Delegates to torch.ops._xpu_C.topk_topp_sampler, which applies top-k/top-p
+      filtering (min-p via lambda_) to logits and writes the sampled token ids in
+      place into random_sampled; writes logits_to_return when it is not None. Returns
+      None — the result lives in the mutated tensors."""
     torch.ops._xpu_C.topk_topp_sampler(
         random_sampled, logits_to_return, logits, k, p, logprobs_mode, seeds, lambda_
     )
@@ -506,6 +534,11 @@ def _xpu_deepseek_fused_indexer_q_rope_mxfp4_fake(
 def _xpu_mxfp8_quantize_impl(
     x: torch.Tensor, dtype: torch.dtype | None = None
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantizes the last dimension of x into MXFP8 blocks of 32 elements:
+      calls torch.ops._C.per_token_group_fp8_quant to fill x_q (fp8) and x_s
+      (float32 scales), then casts x_s to torch.float8_e8m0fnu. dtype defaults to
+      current_platform.fp8_dtype() and is validated against the two fp8 dtypes;
+      asserts the last dim is divisible by 32."""
     MXFP8_BLOCK_SIZE = 32
     assert x.shape[-1] % MXFP8_BLOCK_SIZE == 0
     if dtype is not None:
@@ -557,6 +590,11 @@ def _xpu_mxfp8_quantize_fake(
 def _xpu_mxfp4_quantize_impl(
     x: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantizes a 2-D tensor into MXFP4 (E2M1) with 32-element blocks:
+      torch.ops._C.per_token_group_quant_mxfp4 writes packed nibbles (two per uint8
+      byte) into x_q and float32 block scales into x_s; returns x_q viewed as
+      torch.float4_e2m1fn_x2 and x_s cast to torch.float8_e8m0fnu. Asserts 2-D
+      input, last dim divisible by 32, and contiguity."""
     MXFP4_BLOCK_SIZE = 32
     eps = 1e-10
     assert x.ndim == 2, "input must be 2-D"
@@ -596,6 +634,9 @@ def _xpu_mxfp4_quantize_fake(
 
 @triton.jit
 def _softplus(x):
+    """Triton softplus with an overflow cutoff: for x <= 20.0 computes log(exp(x)
+      + 1); for larger x returns x, since exp(x) overflows fp32 well before the log
+      would cancel it."""
     return tl.where(x <= 20.0, tl.math.log(tl.math.exp(x) + 1.0), x)
 
 
@@ -677,6 +718,13 @@ def _selective_scan_fwd_kernel(
     CACHE_ENABLED: tl.constexpr,
     BLOCK_DSTATE: tl.constexpr,
 ):
+    """Triton forward pass of a selective-state-space (SSM) scan, one program
+    per (batch, dim) pair. Walks the sequence tokens in order, updating state =
+    exp(delta * A) * state + delta * u * B and writing out = sum(state * C) (+ D
+    * u) in place into delta (out aliases delta; out_z aliases z, per the comment
+    at lines 613-614). Supports varlen batches (query_start_loc boundaries), optional
+    delta softplus/bias, initial SSM state load, and APC chunked mode (CACHE_ENABLED)
+    that snapshots the state after each chunk into ssm_states via cache_indices."""
     batch_idx = tl.program_id(0)
     dim_idx = tl.program_id(1)
     group_idx = dim_idx // dim_ngroups_ratio
@@ -1290,4 +1338,7 @@ class xpu_ops:
             _OPS_REGISTERED = True
 
 
+# Registration runs at import time so the ops exist before any model
+# build references them; the _OPS_REGISTERED flag keeps re-imports and re-calls
+# from registering twice.
 xpu_ops.register_ops_once()

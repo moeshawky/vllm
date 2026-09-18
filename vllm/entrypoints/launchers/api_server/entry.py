@@ -39,6 +39,9 @@ async def build_async_engine_client(
     usage_context: UsageContext = UsageContext.OPENAI_API_SERVER,
     client_config: dict[str, Any] | None = None,
 ) -> AsyncIterator[EngineClient]:
+    """Context manager creating an EngineClient from CLI arguments. Handles
+    forkserver setup and yields the async LLM engine.
+    """
     if os.getenv("VLLM_WORKER_MULTIPROC_METHOD") == "forkserver":
         # The executor is expected to be mp.
         # Pre-import heavy modules in the forkserver process
@@ -202,6 +205,9 @@ async def run_server_worker(
 
 
 def main():
+    """Main entry point for the API server CLI. Sets up environment, parses
+    arguments, validates, and runs the server with uvloop.
+    """
     import uvloop
 
     from vllm.entrypoints.serve.utils.api_utils import cli_env_setup

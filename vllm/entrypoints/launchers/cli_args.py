@@ -30,6 +30,9 @@ from .utils.constants import (
 
 
 class LoRAParserAction(argparse.Action):
+    """Custom argparse.Action that parses --lora-modules values into LoRAModulePath
+    objects. Supports both 'name=path' format and JSON list format.
+    """
     def __call__(
         self,
         parser: argparse.ArgumentParser,
@@ -343,6 +346,10 @@ class FrontendArgs(BaseFrontendArgs):
         cls,
         frontend_kwargs: dict[str, Any],
     ) -> dict[str, Any]:
+        """Extend BaseFrontendArgs._customize_cli_kwargs with JSON parsing for
+        allowed_origins/methods/headers, append action for middleware,
+        and comma-separated handling for disable_access_log_for_endpoints.
+        """
         frontend_kwargs = super()._customize_cli_kwargs(frontend_kwargs)
 
         # Special case: allowed_origins, allowed_methods, allowed_headers all

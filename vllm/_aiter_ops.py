@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""ROCm AITER integration layer: import-time promotion of PyTorch's
+HIP runtime for AITER JIT extensions, aiter availability/arch probes, torch
+  custom-op registration, and the rocm_aiter_ops facade over AITER GEMM/MoE/
+  attention/quantization kernels for gfx9 and gfx12."""
 import ctypes
 import functools
 import os
@@ -2025,6 +2029,10 @@ class rocm_aiter_ops:
 
     @staticmethod
     def register_ops_once() -> None:
+        """Idempotently registers every AITER torch custom op, guarded by the
+        module-level _OPS_REGISTERED flag; on ROCm gfx11 without aiter support it
+        registers only the rocm_aiter_sparse_attn_indexer op before returning, and
+        on non-ROCm platforms it is a no-op."""
         global _OPS_REGISTERED
 
         if not (
@@ -2854,6 +2862,10 @@ class rocm_aiter_ops:
         flash_layout: bool,
         apply_scale: bool,
     ):
+        """Applies RoPE and writes K/V into the paged cache in place via the
+        aiter Triton fused_qk_rope_reshape_and_cache kernel: splits the packed
+        cos_sin_cache into (cos, sin) halves along the last dim, and reuses
+        the query/key tensors as the q/k output buffers (output_zeros=False)."""
         from aiter.ops.triton.fused_kv_cache import fused_qk_rope_reshape_and_cache
 
         cos, sin = cos_sin_cache.chunk(2, dim=-1)

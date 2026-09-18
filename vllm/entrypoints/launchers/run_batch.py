@@ -214,6 +214,9 @@ AllResponse: TypeAlias = (
 
 
 class BatchResponseData(OpenAIBaseModel):
+    """Response data container holding status_code, request_id, and body for
+    each batch response.
+    """
     # HTTP status code of the response.
     status_code: int = 200
 
@@ -294,6 +297,9 @@ def make_arg_parser(parser: FlexibleArgumentParser):
 
 
 def parse_args():
+    """Parse command-line arguments for the batch runner. Handles backward
+    compatibility for deprecated --url flag.
+    """
     parser = FlexibleArgumentParser(description="vLLM OpenAI-Compatible batch runner.")
     args = make_arg_parser(parser).parse_args()
 
@@ -319,6 +325,9 @@ _BAR_FORMAT = "{desc}: {percentage:3.0f}% Completed | {n_fmt}/{total_fmt} [{elap
 
 
 class BatchProgressTracker:
+    """Tracks batch request progress with a tqdm progress bar. Manages total
+    count and updates on submission/completion.
+    """
     def __init__(self):
         self._total = 0
         self._pbar: tqdm | None = None
@@ -346,6 +355,8 @@ class BatchProgressTracker:
 
 
 async def read_file(path_or_url: str) -> str:
+    """Read a file from local path or HTTP URL, returning its text content.
+    """
     if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
         async with aiohttp.ClientSession() as session, session.get(path_or_url) as resp:
             resp.raise_for_status()
@@ -543,6 +554,9 @@ async def download_bytes_from_url(
 def make_error_request_output(
     request: BatchRequestInput, error_msg: str
 ) -> BatchRequestOutput:
+    """Create a BatchRequestOutput representing a failed request with error
+    message.
+    """
     batch_output = BatchRequestOutput(
         id=f"vllm-{random_uuid()}",
         custom_id=request.custom_id,
@@ -815,6 +829,8 @@ async def build_endpoint_registry(
 
 
 def validate_run_batch_args(args):
+    """Validate run batch arguments, checking reasoning parser registration.
+    """
     valid_reasoning_parsers = ReasoningParserManager.list_registered()
     if (
         reasoning_parser := args.structured_outputs_config.reasoning_parser
@@ -829,6 +845,9 @@ async def run_batch(
     engine_client: EngineClient,
     args: Namespace,
 ) -> None:
+    """Execute a batch of requests. Reads input file, processes each request
+    concurrently, and writes results.
+    """
     endpoint_registry = await build_endpoint_registry(
         engine_client=engine_client,
         args=args,
@@ -882,6 +901,9 @@ async def run_batch(
 
 
 async def main(args: Namespace):
+    """Main entry point for batch processing. Builds the async engine client
+    and runs the batch.
+    """
     from vllm.entrypoints.launchers.api_server.entry import build_async_engine_client
     from vllm.usage.usage_lib import UsageContext
 

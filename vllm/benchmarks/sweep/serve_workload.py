@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Sweep subcommand that explores a workload axis against a live inference
+server. For each (serve, bench) combination it runs a serial endpoint
+(max_concurrency=1) and a batch endpoint (max_concurrency=dataset size),
+estimates the workload value each endpoint actually produced, benchmarks
+the np.linspace-interpolated levels between them via serve.run_comb,
+and writes summary.csv under the experiment dir.
+"""
 import argparse
 import math
 from dataclasses import dataclass, fields
@@ -30,11 +37,21 @@ except ImportError:
 
 WorkloadVariable = Literal["request_rate", "max_concurrency"]
 
+# The two workload axes the sweep can explore: request_rate (requests
+# per second injected by the benchmark) and max_concurrency (cap on
+# in-flight requests enforced by the benchmark). The --workload-var
+# CLI choices are derived from this Literal via get_args.
+
 
 def _estimate_workload_value(
     run_data: dict[str, object],
     workload_var: WorkloadVariable,
 ):
+    """Estimates the workload-axis value a completed run actually
+    produced. For request_rate it returns the measured request_throughput;
+    for max_concurrency it returns request_throughput * mean_e2el_ms / 1000
+    (throughput times mean latency in seconds, a Little's-law form).
+    """
     request_throughput = float(run_data["request_throughput"])  # type: ignore
     if workload_var == "request_rate":
         return request_throughput
@@ -49,6 +66,9 @@ def _estimate_workload_avg(
     runs: list[dict[str, object]],
     workload_var: WorkloadVariable,
 ):
+    """Averages _estimate_workload_value over the per-run records of one
+    workload level (sum divided by the run count).
+    """
     total = sum(_estimate_workload_value(run, workload_var) for run in runs)
     return total / len(runs)
 
@@ -66,6 +86,10 @@ def run_comb_workload(
     workload_var: WorkloadVariable,
     workload_value: int,
 ) -> list[dict[str, object]] | None:
+    """Runs one workload level as a serve.run_comb call: merges
+    {workload_var: workload_value} into the bench combination and names
+    the result dir with a WL-<var>=<value> suffix through _get_comb_base_path.
+    """
     bench_comb_workload = bench_comb | {workload_var: workload_value}
 
     return run_comb(
@@ -98,6 +122,15 @@ def explore_comb_workloads(
     num_runs: int,
     dry_run: bool,
 ):
+    """Explores one workload axis for one (serve_comb, bench_comb) pair.
+    Requires workload_iters >= 2, resolves the dataset size from
+    bench_comb["num_prompts"] or a --num-prompts flag in bench_cmd,
+    runs the serial (value=1) and batch (value=dataset size) endpoints,
+    estimates the measured workload value of each endpoint (ceil for
+    serial, floor for batch), then benchmarks the de-duplicated np.linspace
+    levels between them. Returns the concatenated per-run records, or
+    None when an endpoint produced no data.
+    """
     print("[WL START]")
     print(f"Serve parameters: {serve_comb.as_text() or '(None)'}")
     print(f"Bench parameters: {bench_comb.as_text() or '(None)'}")
@@ -208,6 +241,11 @@ def explore_combs_workloads(
     num_runs: int,
     dry_run: bool,
 ):
+    """Top-level driver for the serve_workload subcommand. Rejects bench_params
+    that already pin the workload axis, loops serve_params x bench_params under
+    server_ctx, appends every non-None run record to one list, and in real mode
+    writes experiment_dir/summary.csv via pandas.
+    """
     if any(bench_comb.has_param(workload_var) for bench_comb in bench_params):
         raise ValueError(
             f"You should not override `{workload_var}` in `bench_params` "
@@ -254,6 +292,11 @@ def explore_combs_workloads(
 
 @dataclass
 class SweepServeWorkloadArgs(SweepServeArgs):
+    """Argument dataclass for the `vllm bench sweep serve_workload` subcommand.
+    Extends SweepServeArgs with workload_var (the axis to explore) and
+    workload_iters (the number of workload levels); from_cli_args re-projects
+    every SweepServeArgs field by name and appends the two workload fields.
+    """
     workload_var: WorkloadVariable
     workload_iters: int
 
@@ -264,6 +307,12 @@ class SweepServeWorkloadArgs(SweepServeArgs):
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
+        """Builds the dataclass from a parsed namespace. Builds the base
+        SweepServeArgs first, then re-projects its fields by name via
+        dataclasses.fields (the comment notes super() is avoided because
+        from_cli_args calls cls()) and appends workload_var / workload_iters
+        from the namespace.
+        """
         # NOTE: Don't use super() as `from_cli_args` calls `cls()`
         base_args = SweepServeArgs.from_cli_args(args)
 
@@ -275,6 +324,11 @@ class SweepServeWorkloadArgs(SweepServeArgs):
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
+        """Registers the workload options on the subparser after the inherited
+        serve options: --workload-var (choices from the WorkloadVariable Literal,
+        default request_rate) and --workload-iters (int, default 10, counting
+        the two endpoint iterations used to bracket the range).
+        """
         parser = super().add_cli_args(parser)
 
         workload_group = parser.add_argument_group("workload options")
@@ -298,6 +352,11 @@ class SweepServeWorkloadArgs(SweepServeArgs):
 
 
 def run_main(args: SweepServeWorkloadArgs):
+    """Resolves the experiment dir and, under args.run_ctx, runs
+    explore_combs_workloads with every parsed field (serve_cmd, bench_cmd,
+    after_bench_cmd, params, link_vars, workload axis, iteration count,
+    num_runs, dry_run).
+    """
     experiment_dir = args.resolve_experiment_dir()
 
     with args.run_ctx(experiment_dir):
@@ -319,6 +378,9 @@ def run_main(args: SweepServeWorkloadArgs):
 
 
 def main(args: argparse.Namespace):
+    """CLI entry point: converts the parsed argparse namespace into
+    SweepServeWorkloadArgs and calls run_main.
+    """
     run_main(SweepServeWorkloadArgs.from_cli_args(args))
 
 

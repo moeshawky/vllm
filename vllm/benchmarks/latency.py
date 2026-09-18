@@ -21,6 +21,10 @@ from vllm.utils.argparse_utils import FlexibleArgumentParser
 def save_to_pytorch_benchmark_format(
     args: argparse.Namespace, results: dict[str, Any]
 ) -> None:
+    """Converts latency results into PyTorch's benchmark record format via
+      convert_to_pytorch_benchmark_format and writes them to <output_json stem>.
+      pytorch.json — only when the converter returns records; called from main
+      after the JSON write when --output-json is set (line 178)."""
     pt_records = convert_to_pytorch_benchmark_format(
         args=args,
         metrics={"latency": results["latencies"]},
@@ -32,6 +36,12 @@ def save_to_pytorch_benchmark_format(
 
 
 def add_cli_args(parser: FlexibleArgumentParser):
+    """Registers the latency-benchmark CLI flags (input/output length, batch
+      size, n — which also doubles as beam_width when --use-beam-search is
+      set, warmup/iteration counts, --profile, --output-json, --disable-detokenize),
+      then chains EngineArgs.add_cli_args and forces enable_prefix_caching=False
+      because V1's default prefix caching skews single-batch latency numbers (comment
+      at lines 75-76)."""
     parser.add_argument("--input-len", type=int, default=32)
     parser.add_argument("--output-len", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -78,6 +88,12 @@ def add_cli_args(parser: FlexibleArgumentParser):
 
 
 def main(args: argparse.Namespace):
+    """Runs the single-batch latency benchmark: builds an LLM from EngineArgs,
+      asserts max_model_len >= input_len + output_len, creates batch_size dummy token
+      prompts with ids in [0, 10000), warms up num_iters_warmup unmeasured runs, then
+      either profiles one run (torch/cuda/proton) or times num_iters runs and prints
+      avg + 10/25/50/75/90/99 percentiles; writes JSON (and the PyTorch-format sibling)
+      when --output-json is set."""
     engine_args = EngineArgs.from_cli_args(args)
 
     # Lazy import to avoid importing LLM when the bench command is not selected.

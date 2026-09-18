@@ -16,6 +16,9 @@ logger = init_logger(__name__)
 
 
 def load_log_config(log_config_file: str | None) -> dict | None:
+    """Load a logging configuration JSON file. Returns None if no file specified
+    or on error.
+    """
     if not log_config_file:
         return None
     try:
@@ -66,6 +69,9 @@ _running_tasks: set[asyncio.Task] = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """FastAPI lifespan context manager. Starts stats logging task, freezes
+    GC heap on startup, cancels tasks and shuts down services on exit.
+    """
     try:
         if app.state.log_stats:
             engine_client: EngineClient = app.state.engine_client

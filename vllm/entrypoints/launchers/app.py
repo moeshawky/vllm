@@ -21,6 +21,11 @@ def build_app(
     supported_tasks: tuple["SupportedTask", ...] | None = None,
     model_config: ModelConfig | None = None,
 ) -> FastAPI:
+    """Build a FastAPI application for the vLLM API server. Configures the
+    app with optional FastAPI docs, registers API routers, attaches endpoint plugins,
+    initializes exception handling and middleware, and applies Sagemaker standards
+    bootstrap.
+    """
     if supported_tasks is None:
         warnings.warn(
             "The 'supported_tasks' parameter was not provided to "

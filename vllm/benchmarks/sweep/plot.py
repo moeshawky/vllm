@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Plot performance curves from saved parameter-sweep results. Loads
+every summary.json under an experiment directory, splits the records into one
+seaborn figure per --fig-by group, applies --filter-by row predicates and --bin-by
+column rounding, and saves one PNG per group. Registered as the `vllm bench
+sweep plot` subcommand (SweepPlotArgs.parser_name, cli.py SUBCOMMANDS).
+"""
 import argparse
 import json
 from abc import ABC, abstractmethod
@@ -24,11 +30,24 @@ if TYPE_CHECKING:
 
 @dataclass
 class PlotFilterBase(ABC):
+    """Base class for the row-predicate classes registered in PLOT_FILTERS.
+    Instances carry the column name (var) and the target value (target) parsed
+    from one CLI filter token. Subclasses implement apply() to return the
+    DataFrame rows satisfying the predicate. parse_str() parses a 'column OP
+    value' token and picks the subclass from PLOT_FILTERS by operator.
+    """
     var: str
     target: str
 
     @classmethod
     def parse_str(cls, s: str):
+        """Parse one 'column OP value' filter token into a PlotFilterBase
+        subclass instance. Operators are matched in PLOT_FILTERS insertion order
+        (longest keys first: ==, !=, <=, >=, then < and >). The value keeps
+        only the text after the operator with surrounding single/double quotes
+        stripped. Raises ValueError naming the valid operators when no registered
+        operator appears in the string.
+        """
         for op_key in PLOT_FILTERS:
             if op_key in s:
                 key, value = s.split(op_key)
@@ -50,8 +69,17 @@ class PlotFilterBase(ABC):
 
 @dataclass
 class PlotEqualTo(PlotFilterBase):
+    """Row predicate that keeps rows whose column equals the target. The
+    target is first converted to float so numeric-string values ('1000') compare
+    equal against numeric columns; when float() fails the target is compared as
+    a string.
+    """
     @override
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Filter the DataFrame to rows where df[var] equals target. Converts
+        self.target to float when parseable (so numeric columns match numeric-string
+        values) and falls back to the raw string otherwise.
+        """
         target: float | str
         try:
             target = float(self.target)
@@ -63,8 +91,15 @@ class PlotEqualTo(PlotFilterBase):
 
 @dataclass
 class PlotNotEqualTo(PlotFilterBase):
+    """Row predicate that keeps rows whose column differs from the target.
+    Same numeric-first coercion as PlotEqualTo: a parseable-numeric target
+    compares as float, otherwise as string.
+    """
     @override
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Filter the DataFrame to rows where df[var] differs from target,
+        with the target coerced to float when parseable.
+        """
         target: float | str
         try:
             target = float(self.target)
@@ -76,29 +111,52 @@ class PlotNotEqualTo(PlotFilterBase):
 
 @dataclass
 class PlotLessThan(PlotFilterBase):
+    """Row predicate that keeps rows whose column is strictly less than the
+    float target. The target must be numeric; float(self.target) raises a bare
+    ValueError for non-numeric values.
+    """
     @override
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Filter the DataFrame to rows where df[var] < float(self.target).
+        Unlike PlotEqualTo, a non-numeric target raises ValueError from
+        float() without a message.
+        """
         return df[df[self.var] < float(self.target)]
 
 
 @dataclass
 class PlotLessThanOrEqualTo(PlotFilterBase):
+    """Row predicate that keeps rows whose column is less than or equal to
+    the float target. The target must be numeric.
+    """
     @override
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Filter the DataFrame to rows where df[var] <= float(self.target).
+        """
         return df[df[self.var] <= float(self.target)]
 
 
 @dataclass
 class PlotGreaterThan(PlotFilterBase):
+    """Row predicate that keeps rows whose column is strictly greater than
+    the float target. The target must be numeric.
+    """
     @override
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Filter the DataFrame to rows where df[var] > float(self.target).
+        """
         return df[df[self.var] > float(self.target)]
 
 
 @dataclass
 class PlotGreaterThanOrEqualTo(PlotFilterBase):
+    """Row predicate that keeps rows whose column is greater than or equal
+    to the float target. The target must be numeric.
+    """
     @override
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Filter the DataFrame to rows where df[var] >= float(self.target).
+        """
         return df[df[self.var] >= float(self.target)]
 
 
@@ -114,14 +172,26 @@ PLOT_FILTERS: dict[str, type[PlotFilterBase]] = {
 
 
 class PlotFilters(list[PlotFilterBase]):
+    """Ordered list of PlotFilterBase instances. parse_str() splits a
+    comma-separated CLI string into one filter per item; apply() chains
+    the predicates, so a row must survive every filter to remain in the
+    result.
+    """
     @classmethod
     def parse_str(cls, s: str):
+        """Parse a comma-separated filter string into a PlotFilters
+        list. An empty string yields an empty list (no filtering);
+        each item is parsed by PlotFilterBase.parse_str.
+        """
         if not s:
             return cls()
 
         return cls(PlotFilterBase.parse_str(e) for e in s.split(","))
 
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Apply every predicate in order to the DataFrame and return
+        the rows that pass all of them.
+        """
         for item in self:
             df = item.apply(df)
 
@@ -130,11 +200,20 @@ class PlotFilters(list[PlotFilterBase]):
 
 @dataclass
 class PlotBinner:
+    """Rounds a column down to a multiple of bin_size so nearby points
+    collapse into a single plotted value. parse_str() parses a 'column%bin_size'
+    token from the PLOT_BINNERS registry.
+    """
     var: str
     bin_size: float
 
     @classmethod
     def parse_str(cls, s: str):
+        """Parse one 'column%bin_size' token into a PlotBinner. The operator
+        is matched in PLOT_BINNERS insertion order and the value after '%'
+        must parse as float. Raises ValueError when no registered operator
+        appears.
+        """
         for op_key in PLOT_BINNERS:
             if op_key in s:
                 key, value = s.split(op_key)
@@ -152,20 +231,33 @@ class PlotBinner:
         return df
 
 
+# Registry mapping the binning operator '%' to PlotBinner.
+# PlotBinner.parse_str() matches operators in this dict's insertion order,
+# mirroring the PLOT_FILTERS registry above.
 PLOT_BINNERS: dict[str, type[PlotBinner]] = {
     "%": PlotBinner,
 }
 
 
 class PlotBinners(list[PlotBinner]):
+    """Ordered list of PlotBinner instances. parse_str() splits a comma-separated
+    CLI string into one binner per item; apply() rounds each configured column
+    in sequence on a copy of the DataFrame.
+    """
     @classmethod
     def parse_str(cls, s: str):
+        """Parse a comma-separated 'column%size' string into a PlotBinners
+        list; an empty string yields no binning.
+        """
         if not s:
             return cls()
 
         return cls(PlotBinner.parse_str(e) for e in s.split(","))
 
     def apply(self, df: "pd.DataFrame") -> "pd.DataFrame":
+        """Apply each binner in sequence; each binner works on df.copy(), so
+        the input frame is not mutated.
+        """
         for item in self:
             df = item.apply(df)
 
@@ -223,6 +315,11 @@ def _get_fig_path(fig_dir: Path, group: tuple[tuple[str, str], ...], fig_name: s
 
 
 class DummyExecutor:
+    """In-process stand-in for concurrent.futures.ProcessPoolExecutor. Exposes
+    map as the builtin map and a no-op context manager, so plot() can dispatch
+    _plot_fig through the same executor.map call without spawning worker
+    processes for a single figure group.
+    """
     map = map
 
     def __enter__(self) -> Self:
@@ -256,6 +353,15 @@ def _plot_fig(
     fig_height: float,
     fig_dpi: int,
 ):
+    """Draw one figure for a single fig-by group and save it under fig_dir.
+    Builds a row/column grid with full_groupby over row_by/col_by, checks that
+    every requested variable exists in the result columns, applies PlotFilters
+    then PlotBinners, and prints a skip note when no rows remain.
+    With 3 or fewer curve_by variables they map one-to-one onto seaborn
+    hue/style/size; beyond that the variables are concatenated into a single
+    'curve_group' string used as hue. Saves the FacetGrid at fig_dpi
+    and closes the figure.
+    """
     # Lazy-import matplotlib/pandas/seaborn
     try:
         import matplotlib.pyplot as plt
@@ -436,6 +542,13 @@ def plot(
     fig_height: float = 6.4,
     fig_dpi: int = 300,
 ):
+    """Entry point for the plot subcommand. Loads every summary.json under
+    output_dir (recursively), raises ValueError when none are found, groups
+    the records by the fig_by variables, and dispatches _plot_fig per group
+    — in a ProcessPoolExecutor when more than one group exists, otherwise
+    in-process via DummyExecutor. all() forces the lazy executor.map
+    generator to run.
+    """
     all_data = [
         run_data
         for path in output_dir.rglob("**/summary.json")
@@ -481,6 +594,11 @@ def plot(
 
 @dataclass
 class SweepPlotArgs:
+    """CLI argument holder for the `vllm bench sweep plot` subcommand.
+    from_cli_args() builds the instance from a parsed Namespace (splitting
+    comma lists, parsing filters and binners); add_cli_args() registers
+    the subparser arguments; run_main() forwards the fields to plot().
+    """
     output_dir: Path
     fig_dir: Path
     fig_by: list[str]
@@ -504,6 +622,12 @@ class SweepPlotArgs:
 
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace):
+        """Build a SweepPlotArgs from parsed CLI args. Verifies EXPERIMENT_DIR
+        exists, splits --fig-by/--row-by/--col-by/--curve-by comma lists
+        (None or empty becomes []), parses --filter-by and --bin-by through
+        their parse_str methods, and derives error_bars as the negation of
+        --no-error-bars.
+        """
         output_dir = Path(args.EXPERIMENT_DIR)
         if not output_dir.exists():
             raise ValueError(f"No parameter sweep results under {output_dir}")
@@ -535,6 +659,13 @@ class SweepPlotArgs:
 
     @classmethod
     def add_cli_args(cls, parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
+        """Register the plot subcommand arguments: EXPERIMENT_DIR positional,
+        grid selection (--fig-by/--row-by/--col-by/--curve-by), axis variables
+        (--var-x default 'total_token_throughput', --var-y default
+        'median_ttft_ms'), --filter-by/--bin-by predicate strings,
+        --scale-x/--scale-y, --fig-name, --no-error-bars, --fig-height
+        (default 6.4), --fig-dpi (default 300), --dry-run. Returns the parser.
+        """
         parser.add_argument(
             "EXPERIMENT_DIR",
             type=str,
@@ -659,6 +790,8 @@ class SweepPlotArgs:
 
 
 def run_main(args: SweepPlotArgs):
+    """Forward every SweepPlotArgs field to plot() and return its result.
+    """
     return plot(
         output_dir=args.output_dir,
         fig_dir=args.fig_dir,
@@ -681,6 +814,9 @@ def run_main(args: SweepPlotArgs):
 
 
 def main(args: argparse.Namespace):
+    """CLI entry point: build a SweepPlotArgs from the parsed Namespace
+    and call run_main.
+    """
     run_main(SweepPlotArgs.from_cli_args(args))
 
 

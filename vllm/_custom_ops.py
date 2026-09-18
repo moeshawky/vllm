@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""Python bindings for vLLM's compiled custom ops: thin wrappers over
+torch.ops._C, _rocm_C, _moe_C, _C_cache_ops, _C_custom_ar, _C_cuda_utils and
+_qutlass_C, plus torch.compile fake-impl registrations and platform-specific
+(CUDA/ROCm/XPU/CPU) dispatch variants."""
 from enum import IntEnum
 from typing import TYPE_CHECKING, Literal
 
@@ -208,6 +212,11 @@ def rotary_embedding(
     rope_dim_offset: int = 0,
     inverse: bool = False,
 ) -> None:
+    """Applies rotary position embedding in place on query/key via the C++
+    rotary_embedding op. Calls the 6-argument form when rope_dim_offset is 0 and
+    inverse is False; otherwise passes rope_dim_offset and inverse explicitly. Both
+    forms resolve to the same op schema, where rope_dim_offset and inverse default
+    to 0/False (csrc/libtorch_stable/torch_bindings.cpp)."""
     if rope_dim_offset == 0 and not inverse:
         torch.ops._C.rotary_embedding(
             positions, query, key, head_size, cos_sin_cache, is_neox
@@ -312,6 +321,10 @@ def apply_repetition_penalties_torch(
     output_mask: torch.Tensor,
     repetition_penalties: torch.Tensor,
 ) -> None:
+    """Torch reference implementation of in-place repetition penalties:
+    repeats the per-sequence penalty across the vocab, substitutes 1.0 where the
+    token appears in neither prompt nor output, divides positive logits by the penalty
+    and multiplies negative logits by it."""
     repetition_penalties = repetition_penalties.unsqueeze(dim=1).repeat(
         1, logits.size(1)
     )
@@ -389,6 +402,10 @@ def rms_norm_per_block_quant(
     is_scale_transposed: bool = False,
     tma_alignment: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fused RMSNorm + per-block quantization that pre-allocates the quantized
+    output and the scale buffer. Supports a transposed scale layout and, when
+    tma_alignment is 4, a TMA-aligned strided scale buffer whose row stride is
+    padded to a multiple of the alignment; tma_alignment is asserted to be 0 or 4."""
     assert len(group_size) == 2
     output = torch.empty(input.shape, dtype=quant_dtype, device=input.device)
     if is_scale_transposed:
@@ -444,6 +461,10 @@ def silu_and_mul_per_block_quant(
     scale_ub: torch.Tensor | None = None,
     is_scale_transposed: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Fused SiLU-and-mul + per-block quantization for a packed [gate ||
+    up] 2D input: halves the last dimension, allocates the quantized output and
+    the per-group scales (optionally transposed), and dispatches to the C++
+    silu_and_mul_per_block_quant kernel."""
     assert input.ndim == 2, f"input must be 2D [batch, hidden*2], got {input.shape}"
     assert input.shape[-1] % 2 == 0, (
         f"input last dim must be even (gate||up layout), got {input.shape[-1]}"
@@ -496,6 +517,9 @@ def awq_dequantize(
     thx: int,
     thy: int,
 ) -> torch.Tensor:
+    """Dequantizes an AWQ-packed weight, routing to the Triton implementation
+    when VLLM_USE_TRITON_AWQ is set and to the C++ awq_dequantize op (with
+    split_k_iters, thx, thy tiling) otherwise."""
     if envs.VLLM_USE_TRITON_AWQ:
         from vllm.model_executor.layers.quantization.awq_triton import (
             awq_dequantize_triton,
@@ -529,6 +553,8 @@ def awq_gemm(
     qzeros: torch.Tensor,
     split_k_iters: int,
 ) -> torch.Tensor:
+    """AWQ quantized GEMM, routing to the Triton implementation when VLLM_USE_TRITON_AWQ
+      is set and to the C++ awq_gemm op otherwise."""
     if envs.VLLM_USE_TRITON_AWQ:
         from vllm.model_executor.layers.quantization.awq_triton import awq_gemm_triton
 
@@ -835,6 +861,10 @@ def cutlass_scaled_mm_azp(
 
 
 def cutlass_group_gemm_supported(cuda_device_capability: int) -> bool:
+    """Reports whether the CUTLASS grouped-GEMM kernel is available for
+      the given CUDA device capability: False outside SM 90-109, otherwise the C++
+      helper result, or False when the helper op is not registered (e.g. non-CUDA
+      builds)."""
     if cuda_device_capability < 90 or cuda_device_capability >= 110:
         return False
     try:
@@ -3331,6 +3361,8 @@ if hasattr(torch.ops._C, "weight_packed_linear"):
 
 
 class CPUQuantMethod(IntEnum):
+    """Quantization methods accepted by the CPU fused-experts op: unquantized,
+      INT8 W8A8, FP8 W8A16, INT4 W4A8, and MXFP4."""
     UNQUANT = 0
     INT8_W8A8 = 1
     FP8_W8A16 = 2
@@ -3438,6 +3470,8 @@ if hasattr(torch.ops._C, "int8_scaled_mm_with_quant"):
 
 
 class CPUQuantAlgo(IntEnum):
+    """4-bit quantization algorithms for the CPU weight-packing path: AWQ
+      and GPTQ."""
     AWQ = 0
     GPTQ = 1
 
@@ -3708,6 +3742,9 @@ def causal_conv1d_update_cpu(
 
 
 class CPUDNNLGEMMHandler:
+    """Owns a oneDNN matmul-primitive handler: stores the C++ handler pointer
+      in a 0-dim int64 tensor (so the allocator does not inline it) and releases it
+      via release_dnnl_matmul_handler in __del__."""
     def __init__(self) -> None:
         self.handler_tensor: torch.Tensor | None = None
         self.n = -1
@@ -4195,6 +4232,10 @@ if hasattr(torch.ops._qutlass_C, "fusedQuantizeMxAbsMax"):
 def fusedQuantizeMx(
     a: torch.Tensor, b: torch.Tensor, *, method: Literal["quest", "abs_max"] = "quest"
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantizes (a, b) into MXFP4 via the QUTLASS kernels: validates that
+      a has at least one dimension and a last dim divisible by 32, allocates the packed
+      E2M1 values and the E8M0 block scales in the padded 128x4 swizzle, and dispatches
+      to the quest or abs-max kernel selected by method."""
     if a.dim() == 0:
         raise ValueError("`a` must have at least 1 dimension.")
     if a.size(-1) % 32 != 0:
@@ -4246,6 +4287,10 @@ if hasattr(torch.ops._qutlass_C, "fusedQuantizeNvAbsMax"):
 def fusedQuantizeNv(
     a: torch.Tensor, b: torch.Tensor, global_scale: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantizes (a, b) into NVFP4 via the QUTLASS abs-max kernel: allocates
+      the packed E2M1 values and the E4M3 block scales in the padded 128x4 swizzle
+      (last dim grouped in 16s), then writes both in place through safeFusedQuantizeNv
+      using global_scale."""
     xh_e2m1 = torch.empty(
         *a.shape[:-1], a.size(-1) // 2, dtype=torch.uint8, device=a.device
     )

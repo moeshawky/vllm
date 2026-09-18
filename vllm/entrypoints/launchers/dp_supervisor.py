@@ -40,6 +40,9 @@ CHILD_EXIT_GRACE_S = 5.0
 
 
 def infer_multi_port_external_lb_start_rank(args: argparse.Namespace) -> int:
+    """Infer the starting rank for multi-port external LB data parallel setup
+    from node_rank and data_parallel_size_local.
+    """
     start_rank = getattr(args, "data_parallel_start_rank", None)
     if start_rank is not None:
         return start_rank
@@ -50,6 +53,10 @@ def infer_multi_port_external_lb_start_rank(args: argparse.Namespace) -> int:
 
 
 def validate_multi_port_external_lb_args(args: argparse.Namespace) -> None:
+    """Validate all arguments for the multi-port external LB data parallel
+    mode. Checks grpc/uds compatibility, SSL consistency,
+    api_server_count, rank management, and port range constraints.
+    """
     if getattr(args, "grpc", False):
         raise ValueError(
             "Error: --data-parallel-multi-port-external-lb does not support --grpc"
@@ -118,6 +125,9 @@ def validate_multi_port_external_lb_args(args: argparse.Namespace) -> None:
 def _build_vllm_dp_server_args(
     args: argparse.Namespace, local_rank: int
 ) -> argparse.Namespace:
+    """Build child argument namespace for a DP server process. Sets port,
+    data_parallel_rank, and disables multi-port flags for the child process.
+    """
     child_args = copy.copy(args)
     child_args.port = args.port + local_rank
     child_args.data_parallel_rank = (
@@ -156,6 +166,8 @@ def _build_device_ids(args: argparse.Namespace, local_rank: int) -> list[int | s
 
 
 def _child_base_url(args: argparse.Namespace, port: int) -> str:
+    """Construct the base URL for a child DP server process from host and port.
+    """
     host = args.host or "127.0.0.1"
     if host == "0.0.0.0":
         host = "127.0.0.1"
@@ -166,6 +178,8 @@ def _child_base_url(args: argparse.Namespace, port: int) -> str:
 
 
 def _join_processes_with_timeout(processes: list[BaseProcess], timeout: float) -> None:
+    """Join a list of processes with a shared deadline timeout.
+    """
     deadline = time.monotonic() + timeout
     for process in processes:
         remaining = deadline - time.monotonic()
@@ -268,6 +282,9 @@ def _run_vllm_dp_server(child_args: argparse.Namespace) -> None:
 
 
 class DPSupervisor:
+    """Supervisor for multi-port data-parallel vLLM API server processes. Manages
+    child process lifecycle, health probing, and graceful shutdown.
+    """
     def __init__(self, args: argparse.Namespace):
         validate_multi_port_external_lb_args(args)
         self.args = args
@@ -286,6 +303,9 @@ class DPSupervisor:
         return self._is_ready and not self._shutdown_event.is_set()
 
     async def run(self) -> None:
+        """Main run loop. Launches children, monitors them, starts the supervisor
+        server when ready, and handles graceful shutdown on signal.
+        """
         loop = asyncio.get_running_loop()
         decorate_logs("DPSupervisor")
 
@@ -569,4 +589,6 @@ class DPSupervisor:
 
 
 def run_dp_supervisor(args: argparse.Namespace) -> None:
+    """Entry point for running the DP supervisor with uvloop.
+    """
     uvloop.run(DPSupervisor(args).run())

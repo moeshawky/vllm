@@ -1,12 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
+"""Data types for `vllm bench sweep` parameter sweep inputs: ParameterSweep
+  loads a sweep from JSON (dict or list form) and ParameterSweepItem wraps
+  one record of parameter key/value pairs, providing JSON/CLI key-spelling
+  lookup and application of the parameters onto a base command line."""
 import json
 import os
 
 
 class ParameterSweep(list["ParameterSweepItem"]):
+    """List of ParameterSweepItem records describing one parameter sweep.
+      Instances are built from JSON via read_json, which accepts either a dict mapping
+      names to parameter dicts or a plain list of parameter dicts."""
     @classmethod
     def read_json(cls, filepath: os.PathLike):
+        """Loads and parses a JSON sweep file. A top-level dict is treated as
+          name-to-parameters (read_from_dict); a top-level list is treated as parameter
+          records (from_records)."""
         with open(filepath, "rb") as f:
             data = json.load(f)
 
@@ -32,6 +43,9 @@ class ParameterSweep(list["ParameterSweepItem"]):
 
     @classmethod
     def from_records(cls, records: list[dict[str, object]]):
+        """Builds a ParameterSweep from a list of dicts. Raises TypeError if
+          the input is not a list, and ValueError if any _benchmark_name values
+          are duplicated. Each record is wrapped via ParameterSweepItem.from_record."""
         if not isinstance(records, list):
             raise TypeError(
                 f"The parameter sweep should be a list of dictionaries, "
@@ -51,8 +65,14 @@ class ParameterSweep(list["ParameterSweepItem"]):
 
 
 class ParameterSweepItem(dict[str, object]):
+    """Dict mapping one sweep configuration's parameter names to values,
+      plus the optional _benchmark_name key. Provides key lookup that tolerates JSON/CLI
+      spelling differences (underscore vs dash) and application of the parameters
+      onto a base command list."""
     @classmethod
     def from_record(cls, record: dict[str, object]):
+        """Wraps a plain dict as a ParameterSweepItem. Raises TypeError if the
+          record is not a dict."""
         if not isinstance(record, dict):
             raise TypeError(
                 f"Each item in the parameter sweep should be a dictionary, "
@@ -62,6 +82,9 @@ class ParameterSweepItem(dict[str, object]):
         return cls(record)
 
     def __or__(self, other: dict[str, object], /) -> "ParameterSweepItem":  # type: ignore[override]
+        """Merges another dict into this item and returns the result as a new
+          ParameterSweepItem, so `item | other` stays typed as ParameterSweepItem
+          instead of plain dict."""
         return ParameterSweepItem(super().__or__(other))
 
     @property
@@ -97,9 +120,14 @@ class ParameterSweepItem(dict[str, object]):
             yield "--" + k
 
     def _normalize_cmd_key(self, param_key: str):
+        """Resolves to the first candidate of the reversed iteration, i.e. the
+          dash-separated CLI spelling; for a key with no dashes or underscores all three
+          candidates are identical."""
         return next(self._iter_cmd_key_candidates(param_key))
 
     def has_param(self, param_key: str) -> bool:
+        """Returns True if any spelling candidate of param_key (dash/underscore
+          variants, recursing on dotted prefixes) is present as a key in the item."""
         return any(k in self for k in self._iter_param_key_candidates(param_key))
 
     def _normalize_cmd_kv_pair(self, k: str, v: object) -> list[str]:
@@ -120,6 +148,11 @@ class ParameterSweepItem(dict[str, object]):
             return [self._normalize_cmd_key(k), str(v)]
 
     def apply_to_cmd(self, cmd: list[str]) -> list[str]:
+        """Returns a copy of the base command list with this item's parameters
+          applied. For each key (skipping _benchmark_name), if a matching flag token
+          exists the in-place value is replaced; otherwise the key/value pair is
+          appended. Dict values are JSON-serialized; boolean values become flags
+          (with no- prefix for False)."""
         cmd = list(cmd)
 
         for k, v in self.items():
@@ -155,4 +188,7 @@ class ParameterSweepItem(dict[str, object]):
         return cmd
 
     def as_text(self, sep: str = ", ") -> str:
+        """Renders all parameters except _benchmark_name as 'key=value' pairs
+          joined by sep (default ', '); used by the name property as the fallback
+          display string."""
         return sep.join(f"{k}={v}" for k, v in self.items() if k != "_benchmark_name")

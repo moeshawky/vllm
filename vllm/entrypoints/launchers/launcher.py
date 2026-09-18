@@ -207,6 +207,9 @@ def create_server_socket(
     *,
     reuse_port: bool,
 ) -> socket.socket:
+    """Create a TCP socket with SO_REUSEADDR and optional SO_REUSEPORT bound
+    to the given address.
+    """
     family = socket.AF_INET
     if is_valid_ipv6_address(addr[0]):
         family = socket.AF_INET6
@@ -221,12 +224,17 @@ def create_server_socket(
 
 
 def create_server_unix_socket(path: str) -> socket.socket:
+    """Create a Unix domain socket bound to the given path.
+    """
     sock = socket.socket(family=socket.AF_UNIX, type=socket.SOCK_STREAM)
     sock.bind(path)
     return sock
 
 
 def validate_api_server_args(args):
+    """Validate API server arguments: check that the tool call parser and
+    reasoning parser are registered.
+    """
     valid_tool_parses = ToolParserManager.list_registered()
     if args.enable_auto_tool_choice and args.tool_call_parser not in valid_tool_parses:
         raise KeyError(

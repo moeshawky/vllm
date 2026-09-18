@@ -58,6 +58,9 @@ def generate_timeline_plot(
             f"ITL ≥ {itl_thresholds[1] * 1000:.0f}ms",
         ]
 
+    # TTFT color is pinned to '#636EFA' first; user labels are then zipped
+    # positionally with colors, so a user label equal to 'TTFT' overwrites the
+    # pinned entry and zip silently drops the longer of the two lists.
     labels_colors = {"TTFT": "#636EFA", **dict(zip(labels, colors))}
     labels_order = ["TTFT"] + labels
 
@@ -88,6 +91,10 @@ def generate_timeline_plot(
     )
 
     # Customize hover template to show only time without date
+    # customdata[N] follows the hover_data order at lines 79-87:
+    # 0=prompt_tokens, 1=output_tokens, 2=req_start_time, 3=req_finish_time,
+    # 4=segment_start, 5=segment_end, 6=duration. Reordering hover_data shifts
+    # these indices.
     fig.update_traces(
         hovertemplate="<b>%{y}</b><br>"
         "Type: %{fullData.name}<br>"
