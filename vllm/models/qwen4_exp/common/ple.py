@@ -6,6 +6,10 @@ from dataclasses import dataclass
 
 import torch
 
+from vllm.model_executor.layers.vocab_parallel_embedding import (
+    VocabParallelEmbedding,
+)
+
 
 @dataclass(frozen=True)
 class PLEShardOverlap:
@@ -24,7 +28,6 @@ def compute_ple_shard_overlap(
     tp_end: int,
 ) -> PLEShardOverlap | None:
     """Compute the overlap of a checkpoint shard and one TP vocabulary range."""
-
     if checkpoint_start < 0 or checkpoint_rows < 0:
         raise ValueError("checkpoint shard bounds must be non-negative")
     if tp_start < 0 or tp_end < tp_start:
@@ -50,7 +53,6 @@ def copy_ple_embedding_shard_(
     tp_end: int,
 ) -> int:
     """Copy the overlapping rows of a PLE checkpoint shard into a TP table."""
-
     if destination.ndim == 0 or loaded_weight.ndim != destination.ndim:
         raise ValueError("destination and loaded weight must have matching ranks")
     if destination.shape[1:] != loaded_weight.shape[1:]:
@@ -73,3 +75,24 @@ def copy_ple_embedding_shard_(
     with torch.no_grad():
         target.copy_(source.to(device=target.device, dtype=target.dtype))
     return overlap.row_count
+
+
+class PLEVocabParallelEmbedding(VocabParallelEmbedding):
+    """Vocab-parallel embedding that accepts checkpoint row shards."""
+
+    def weight_loader(
+        self,
+        param: torch.Tensor,
+        loaded_weight: torch.Tensor,
+        checkpoint_start: int | None = None,
+    ) -> None:
+        if checkpoint_start is None:
+            super().weight_loader(param, loaded_weight)
+            return
+        copy_ple_embedding_shard_(
+            param,
+            loaded_weight,
+            checkpoint_start=checkpoint_start,
+            tp_start=self.shard_indices.org_vocab_start_index,
+            tp_end=self.shard_indices.org_vocab_end_index,
+        )
