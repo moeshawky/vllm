@@ -313,7 +313,6 @@ class FunctionDefinition(OpenAIBaseModel):
         return data
 
 
-vllm/entrypoints/generate/base/protocol.py
 class FunctionCall(OpenAIBaseModel):
     # Internal field to preserve native tool call ID from tool parser.
     # Excluded from serialization to maintain OpenAI API compatibility
