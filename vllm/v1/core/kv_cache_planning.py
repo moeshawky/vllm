@@ -1479,10 +1479,18 @@ def get_kv_cache_configs(
     4. Generate the KV cache configs for each worker based on the KV cache
        grouping strategy. (This is reasonable because the layer ratio of
        different PP stages are similar.)
-    5. Change the num_blocks of each worker to the smallest among all workers
-       and shrink tensor sizes proportionally to avoid allocating unused memory.
+     5. Change the num_blocks of each worker to the smallest among all workers
+        and shrink tensor sizes proportionally to avoid allocating unused memory.
 
-    Args:
+     The generic per-worker admission check (step 3) is skipped when the
+     current platform is TPU: the TPU runner physically sizes the pools
+     from measured HBM, so the padded-page estimate double-counts the
+     layout. The decision uses platform provenance, not the presence of
+     mamba_page_size_padded, which the generic hybrid aligner also sets on
+     non-TPU platforms and which the TPU runner's write does not reach on
+     TPU-mp/ray topologies.
+
+     Args:
         vllm_config: The global VllmConfig
         kv_cache_specs: List of dict[layer_name, KVCacheSpec] for each worker.
         available_memory: Memory available for KV cache in bytes for each
@@ -1587,16 +1595,24 @@ def get_kv_cache_configs(
         )
 
     # Check if the available memory is enough per worker.
-    # TPU compact-mamba layout is authoritative when mamba_page_size_padded is set:
-    # the TPU worker has already validated physical allocation (attn blocks + mamba
-    # slots) and the generic hybrid padded calculation (9.03 -> 93 GiB) is invalid.
-    # Bypass the generic admission check in that case — this is the remedied
-    # hybrid-KV accounting bug (see Qwen3.5 compact 7.05+1.98=9.03 vs generic 93.58).
-    is_tpu_compact = getattr(vllm_config.cache_config, "mamba_page_size_padded", None) is not None
+    # The compact-mamba layout is backend-authoritative on TPU: the TPU
+    # runner (tpu_inference) sizes the attention + mamba pools from
+    # measured HBM, so the generic padded-page admission estimate
+    # double-counts that layout (a4c0fb3ac7: 9.03 GiB physical vs 93.58
+    # GiB "needed"). Decide the bypass by PLATFORM PROVENANCE, not by
+    # mamba_page_size_padded presence: the generic aligner
+    # (platforms/interface.py:1129) writes the same field on every
+    # non-TPU hybrid platform, and the TPU runner's write is invisible to
+    # the core on TPU-mp/ray (worker-local config copy), so field
+    # presence is wrong in both directions.
+    from vllm.platforms import current_platform
+
+    is_tpu_compact = current_platform.is_tpu()
     if is_tpu_compact:
         logger.info(
-            "TPU compact-mamba layout authoritative (mamba_page_size_padded=%s), "
-            "skipping generic KV cache admission check (physical allocation already validated)",
+            "TPU compact-mamba layout authoritative (platform provenance), "
+            "skipping generic KV cache admission check (mamba_page_size_padded="
+            "%s, physical allocation already validated)",
             vllm_config.cache_config.mamba_page_size_padded,
         )
     else:

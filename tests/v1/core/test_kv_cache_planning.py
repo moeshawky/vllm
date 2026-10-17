@@ -2136,3 +2136,45 @@ def test_kv_cache_groups_tp_replicas(specs, tp_size, dcp_size, expected):
     """Replicas are the gcd of each layer's tp_size // max_tp_shards."""
     groups = [KVCacheGroupSpec([f"l.{i}"], spec) for i, spec in enumerate(specs)]
     assert kv_cache_groups_tp_replicas(groups, tp_size, dcp_size) == expected
+
+
+def test_kv_cache_admission_bypass_uses_platform_provenance(monkeypatch):
+    """a4c0fb3ac7 bypass must key off platform provenance, not
+    mamba_page_size_padded presence: the generic aligner
+    (platforms/interface.py:1129) also writes the field on non-TPU (B0), and
+    the TPU runner's write is invisible to the core on TPU-mp/ray (B1)."""
+    from vllm.platforms import Platform  # platforms/__init__.py:13 re-exports it
+
+    specs = {
+        "layer_1": new_kv_cache_spec(),
+        "layer_2": new_kv_cache_spec(),
+    }
+    mem_per_block_per_layer = 16 * 2 * 64 * 4 * 2  # geometry of :1658
+    small_available = mem_per_block_per_layer * 2 * 4  # 4 blocks: far below
+    # what max_model_len=16384 needs (1024 blocks) -> check must reject
+    large_available = mem_per_block_per_layer * 2 * 4096  # fits
+
+    def make_config():
+        config = VllmConfig(model_config=ModelConfig(max_model_len=16384))
+        config.cache_config.kv_cache_layout = "LBNHC"
+        return config
+
+    # (a) B0 witness: non-TPU + aligner-style field SET + memory pressure
+    #     -> the check must STILL run.
+    monkeypatch.setattr(Platform, "is_tpu", lambda self: False)
+    config = make_config()
+    config.cache_config.mamba_page_size_padded = 8 * 1024 * 1024
+    with pytest.raises(ValueError, match="max seq len"):
+        get_kv_cache_configs(config, [specs], [small_available])
+
+    # (b) B1 witness: TPU topology with the publication INVISIBLE to the core
+    #     (field None) + memory pressure -> the bypass must STILL fire.
+    monkeypatch.setattr(Platform, "is_tpu", lambda self: True)
+    get_kv_cache_configs(make_config(), [specs], [small_available])
+
+    # (c) Frozen-line witness: TPU-uni publication shape (field + override,
+    #     as the runner writes at kv_cache_manager.py:292/:462) -> bypass.
+    config = make_config()
+    config.cache_config.mamba_page_size_padded = 8 * 1024 * 1024
+    config.cache_config.num_gpu_blocks_override = 32
+    get_kv_cache_configs(config, [specs], [large_available])
